@@ -43,7 +43,7 @@
   - [ ] Define interfaces for session/chat/backlog/vfs/patch/build/deploy/template/telemetry/pricing; Result helper and error categories.
   - [ ] Acceptance: `tsc --noEmit` passes with no `any`; types consumed by tests compile.
 
-- [ ] Epic: VFS Core
+- [x] Epic: VFS Core
   - [ ] Implement in-memory VFS CRUD with versioning + content hash; manifest serialization.
   - [ ] Acceptance: Unit tests cover CRUD, version bump, hash integrity.
 

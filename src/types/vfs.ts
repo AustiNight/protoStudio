@@ -103,3 +103,42 @@ export interface VirtualFileSystem {
    */
   metadata: VfsMetadata;
 }
+
+/**
+ * Summary of a single HTML page in the VFS.
+ */
+export interface SiteManifestPage {
+  /**
+   * File path for the page.
+   */
+  path: string;
+  /**
+   * Ordered list of section names found in the page.
+   */
+  sections: string[];
+}
+
+/**
+ * Lightweight summary of the current VFS for builder context.
+ */
+export interface SiteManifest {
+  /**
+   * List of HTML pages and their sections.
+   */
+  pages: SiteManifestPage[];
+  /**
+   * List of CSS block anchor names.
+   */
+  cssBlocks: string[];
+  /**
+   * List of JS function anchor names.
+   */
+  jsFunctions: string[];
+  /**
+   * Theme metadata for colors and fonts.
+   */
+  theme: {
+    colors: ColorPalette;
+    fonts: FontSelection;
+  };
+}
