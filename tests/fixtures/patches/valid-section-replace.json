@@ -1,0 +1,13 @@
+{
+  "workItemId": "WI-hero-replace",
+  "targetVersion": 1,
+  "operations": [
+    {
+      "op": "section.replace",
+      "file": "index.html",
+      "sectionId": "hero",
+      "html": "<section class=\"hero\" data-pp-section=\"hero\"><h1 class=\"hero__title\">Updated Hero</h1></section>",
+      "ifVersion": 1
+    }
+  ]
+}

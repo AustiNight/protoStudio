@@ -1,0 +1,33 @@
+{
+  "metadata": {
+    "title": "Basic Scaffold",
+    "description": "Fixture scaffold for patch engine tests",
+    "colors": {
+      "primary": "#111111",
+      "secondary": "#222222",
+      "accent": "#333333",
+      "bg": "#ffffff",
+      "text": "#000000"
+    },
+    "fonts": {
+      "headingFont": "Satoshi",
+      "bodyFont": "Satoshi"
+    }
+  },
+  "version": 1,
+  "templateId": "basic",
+  "files": [
+    {
+      "path": "index.html",
+      "content": "<!doctype html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>Basic Scaffold</title>\n  <link rel=\"stylesheet\" href=\"styles.css\" />\n</head>\n<body>\n  <!-- PP:SECTION:nav -->\n  <nav class=\"nav\" data-pp-section=\"nav\">\n    <div class=\"nav__inner\">Nav</div>\n  </nav>\n  <!-- /PP:SECTION:nav -->\n\n  <!-- PP:SECTION:hero -->\n  <section class=\"hero\" data-pp-section=\"hero\">\n    <h1 class=\"hero__title\">Hello</h1>\n  </section>\n  <!-- /PP:SECTION:hero -->\n\n  <!-- PP:INSERT_BEFORE:footer -->\n\n  <!-- PP:SECTION:footer -->\n  <footer class=\"footer\" data-pp-section=\"footer\">Footer</footer>\n  <!-- /PP:SECTION:footer -->\n\n  <script src=\"main.js\"></script>\n</body>\n</html>"
+    },
+    {
+      "path": "styles.css",
+      "content": "/* === PP:BLOCK:variables === */\n:root {\n  --color-primary: #111111;\n  --color-text: #000000;\n}\n/* === /PP:BLOCK:variables === */\n\n/* === PP:BLOCK:nav === */\n.nav {\n  background: var(--color-primary);\n}\n/* === /PP:BLOCK:nav === */\n\n/* === PP:BLOCK:hero === */\n.hero {\n  color: var(--color-text);\n}\n/* === /PP:BLOCK:hero === */\n\n/* PP:CSS_INSERT_POINT */"
+    },
+    {
+      "path": "main.js",
+      "content": "// === PP:FUNC:init ===\nfunction init() {\n  console.log('init');\n}\n// === /PP:FUNC:init ===\n\n// PP:JS_INSERT_POINT"
+    }
+  ]
+}

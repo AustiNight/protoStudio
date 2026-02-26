@@ -1,0 +1,13 @@
+{
+  "workItemId": "WI-css-append",
+  "targetVersion": 1,
+  "operations": [
+    {
+      "op": "css.append",
+      "file": "styles.css",
+      "blockId": "testimonials",
+      "css": "/* === PP:BLOCK:testimonials === */\n.testimonials {\n  padding: 48px;\n}\n/* === /PP:BLOCK:testimonials === */",
+      "ifVersion": 1
+    }
+  ]
+}

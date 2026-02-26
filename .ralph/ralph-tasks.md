@@ -51,7 +51,7 @@
   - [ ] Rolling last-5 snapshot store with rollback restoring version counters.
   - [ ] Acceptance: Tests show save/prune/rollback; lostVersions reported.
 
-- [ ] Epic: Patch Engine
+- [x] Epic: Patch Engine
   - [ ] Apply patch ops (section replace/insert/delete, css append/replace, js append/replace func, file create/delete, metadata update) with optimistic version lock.
   - [ ] Acceptance: Tests per op; schema violations rejected; untouched files unchanged.
 

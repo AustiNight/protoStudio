@@ -1,0 +1,13 @@
+{
+  "workItemId": "WI-missing-section",
+  "targetVersion": 1,
+  "operations": [
+    {
+      "op": "section.replace",
+      "file": "index.html",
+      "sectionId": "missing",
+      "html": "<section class=\"missing\" data-pp-section=\"missing\">Missing</section>",
+      "ifVersion": 1
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "workItemId": "WI-bad-version",
+  "targetVersion": 99,
+  "operations": [
+    {
+      "op": "section.replace",
+      "file": "index.html",
+      "sectionId": "hero",
+      "html": "<section class=\"hero\" data-pp-section=\"hero\">Mismatch</section>",
+      "ifVersion": 99
+    }
+  ]
+}

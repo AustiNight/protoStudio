@@ -1,0 +1,11 @@
+{
+  "workItemId": "WI-wrong-schema",
+  "targetVersion": 1,
+  "operations": [
+    {
+      "op": "css.replace",
+      "file": "styles.css",
+      "ifVersion": 1
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "workItemId": "WI-section-insert",
+  "targetVersion": 1,
+  "operations": [
+    {
+      "op": "section.insert",
+      "file": "index.html",
+      "before": "footer",
+      "sectionId": "testimonials",
+      "html": "<!-- PP:SECTION:testimonials -->\n<section class=\"testimonials\" data-pp-section=\"testimonials\">\n  <h2 class=\"testimonials__title\">Testimonials</h2>\n</section>\n<!-- /PP:SECTION:testimonials -->",
+      "ifVersion": 1
+    }
+  ]
+}

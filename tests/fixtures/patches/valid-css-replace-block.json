@@ -1,0 +1,13 @@
+{
+  "workItemId": "WI-css-replace",
+  "targetVersion": 1,
+  "operations": [
+    {
+      "op": "css.replace",
+      "file": "styles.css",
+      "blockId": "hero",
+      "css": "/* === PP:BLOCK:hero === */\n.hero {\n  color: var(--color-text);\n  padding: 72px;\n}\n/* === /PP:BLOCK:hero === */",
+      "ifVersion": 1
+    }
+  ]
+}

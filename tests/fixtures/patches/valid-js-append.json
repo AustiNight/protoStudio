@@ -1,0 +1,13 @@
+{
+  "workItemId": "WI-js-append",
+  "targetVersion": 1,
+  "operations": [
+    {
+      "op": "js.append",
+      "file": "main.js",
+      "funcId": "hero-init",
+      "js": "// === PP:FUNC:hero-init ===\nfunction initHero() {\n  console.log('hero');\n}\n// === /PP:FUNC:hero-init ===",
+      "ifVersion": 1
+    }
+  ]
+}

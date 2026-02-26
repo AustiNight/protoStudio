@@ -1,0 +1,12 @@
+{
+  "workItemId": "WI-file-create",
+  "targetVersion": 1,
+  "operations": [
+    {
+      "op": "file.create",
+      "file": "pages/about.html",
+      "content": "<!doctype html><html><body>About</body></html>",
+      "ifAbsent": true
+    }
+  ]
+}
