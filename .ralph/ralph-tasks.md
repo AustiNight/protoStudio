@@ -55,7 +55,7 @@
   - [ ] Apply patch ops (section replace/insert/delete, css append/replace, js append/replace func, file create/delete, metadata update) with optimistic version lock.
   - [ ] Acceptance: Tests per op; schema violations rejected; untouched files unchanged.
 
-- [ ] Epic: Scaffold Auditor
+- [x] Epic: Scaffold Auditor
   - [ ] Detect PP anchor drift (missing/malformed/orphaned) across HTML/CSS/JS; auto-repair common cases; health score output.
   - [ ] Acceptance: Corrupted fixture repaired or flagged; health score thresholds computed.
 

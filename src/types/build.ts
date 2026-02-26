@@ -153,6 +153,20 @@ export interface ScaffoldIssue {
 }
 
 /**
+ * Summary of scaffold auto-repair results.
+ */
+export interface RepairResult {
+  /**
+   * Number of issues successfully repaired.
+   */
+  repaired: number;
+  /**
+   * Number of issues that remain unrepairable.
+   */
+  unrepairable: number;
+}
+
+/**
  * Token budget allocation for context assembly.
  */
 export interface ContextBudget {
