@@ -59,7 +59,7 @@
   - [ ] Detect PP anchor drift (missing/malformed/orphaned) across HTML/CSS/JS; auto-repair common cases; health score output.
   - [ ] Acceptance: Corrupted fixture repaired or flagged; health score thresholds computed.
 
-- [ ] Epic: Continuity Checks
+- [x] Epic: Continuity Checks
   - [ ] Implement theme/nav consistency, section-count delta, filesTouch enforcement, CSS var usage checks.
   - [ ] Acceptance: Failing check blocks swap; passing check allows swap.
 

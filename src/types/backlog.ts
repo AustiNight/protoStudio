@@ -88,6 +88,10 @@ export interface WorkItem {
    */
   estimatedLines: number;
   /**
+   * Expected section count delta for this atom when structure changes occur.
+   */
+  expectedSectionDelta?: number;
+  /**
    * Short description of the visible change the user should notice.
    */
   visibleChange: string;
