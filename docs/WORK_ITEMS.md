@@ -21,6 +21,36 @@
 
 ---
 
+## Sequencing Roadmap (Dependency Order)
+
+Execution order (complete upstream before starting downstream):
+
+1. Project Scaffold
+2. CI/CD
+3. Foundational Docs
+4. Type Contracts
+5. VFS Core
+6. Snapshot Manager
+7. Patch Engine
+8. Scaffold/Continuity
+9. Section Library
+10. Template Configs
+11. UI Shell/Panels
+12. Builder/PO Wiring
+13. Deploy Flows
+14. E2E Suites
+
+Dependency Gate Checklist (CI/PR):
+
+- [ ] All listed dependencies for the work item(s) are `✅ DONE` in this file.
+- [ ] The roadmap stage above this item is complete (no upstream stage left `⬜ TODO`, `🔵 IN PROGRESS`, or `🟡 BLOCKED`).
+- [ ] If an exception is required, it is documented in `docs/DECISIONS.md` with owner sign-off.
+- [ ] The work item ID(s) are referenced in the PR description.
+
+If any box is unchecked, the PR must not merge.
+
+---
+
 ## Sprint 0 — Project Foundation
 
 **Goal:** Empty app builds, deploys, and CI is green. All conventions

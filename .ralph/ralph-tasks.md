@@ -20,7 +20,7 @@
   - [ ] Extend guardrail tests to enforce WCAG AA contrast for new CSS, CSS var-only colors, and zero-cost host priority in Deploy Manager.
   - [ ] Acceptance: Guardrail suite fails seeded violations (missing PP anchor, hardcoded hex, CSP missing, autoplay video) and blocks swap/CI; passes on corrected code.
 
-- [ ] Epic: Sequencing Roadmap (Dependency Order)
+- [x] Epic: Sequencing Roadmap (Dependency Order)
   - [ ] Document execution order: Project Scaffold → CI/CD → Foundational Docs → Type Contracts → VFS Core → Snapshot Manager → Patch Engine → Scaffold/Continuity → Section Library → Template Configs → UI Shell/Panels → Builder/PO wiring → Deploy flows → E2E suites.
   - [ ] Add checklist to gating CI to ensure upstream dependencies completed before downstream epics are picked up.
   - [ ] Acceptance: Roadmap published in docs/WORK_ITEMS.md and referenced in PR templates.
