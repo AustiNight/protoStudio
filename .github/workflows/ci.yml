@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm run test:unit -- --passWithNoTests
+      - name: Integration tests
+        run: npm run test:integration -- --passWithNoTests
+      - name: Build
+        run: npm run build
+      - name: Bundle size gate
+        run: |
+          if [ ! -d dist ]; then
+            echo "dist missing"
+            exit 1
+          fi
+          size_kb=$(du -sk dist | awk '{print $1}')
+          echo "dist size: ${size_kb} KB"
+          max_kb=512
+          if [ "$size_kb" -gt "$max_kb" ]; then
+            echo "Bundle size ${size_kb}KB exceeds ${max_kb}KB"
+            exit 1
+          fi

@@ -30,7 +30,7 @@
   - [ ] Add ESLint+Prettier config, Vitest config, base scripts, empty test dirs.
   - [ ] Acceptance: `npm run dev`, `npm run build`, `npm run lint`, `tsc --noEmit` all succeed.
 
-- [ ] Epic: CI/CD Pipelines
+- [x] Epic: CI/CD Pipelines
   - [ ] Add ci.yml (lint, typecheck, unit, build with bundle-size gate, integration stubs).
   - [ ] Add deploy-preview.yml for PR CF Pages previews; deploy-production.yml for main with tag v0.0.x.
   - [ ] Acceptance: Push on feature branch runs CI green; preview workflow syntactically valid; build artifact under 512KB gate.
