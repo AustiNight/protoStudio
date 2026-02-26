@@ -25,7 +25,7 @@
   - [ ] Add checklist to gating CI to ensure upstream dependencies completed before downstream epics are picked up.
   - [ ] Acceptance: Roadmap published in docs/WORK_ITEMS.md and referenced in PR templates.
 
-- [ ] Epic: Project Scaffold
+- [x] Epic: Project Scaffold
   - [ ] Initialize Vite React TS project with Tailwind/PostCSS, strict TS, @/ alias, placeholder App.
   - [ ] Add ESLint+Prettier config, Vitest config, base scripts, empty test dirs.
   - [ ] Acceptance: `npm run dev`, `npm run build`, `npm run lint`, `tsc --noEmit` all succeed.
