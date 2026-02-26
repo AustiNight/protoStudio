@@ -39,7 +39,7 @@
   - [ ] Author CONVENTIONS, ARCHITECTURE, DECISIONS (D-001/002), PATCH-PROTOCOL, SECTION-SCHEMA, SYSTEM-PROMPTS, ZERO-COST-PLAYBOOK, README aligned to operating model.
   - [ ] Acceptance: Docs render without TODOs; links to files/sections resolve; DECISIONS append-only.
 
-- [ ] Epic: Type Contracts
+- [x] Epic: Type Contracts
   - [ ] Define interfaces for session/chat/backlog/vfs/patch/build/deploy/template/telemetry/pricing; Result helper and error categories.
   - [ ] Acceptance: `tsc --noEmit` passes with no `any`; types consumed by tests compile.
 
