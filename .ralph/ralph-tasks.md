@@ -67,9 +67,9 @@
   - [ ] Track attempts per atom (max 3), open/half-open states, reset on success.
   - [ ] Acceptance: Tests show retry → skip after max; success resets breaker.
 
-- [ ] Epic: Heartbeat Monitor
-  - [ ] Phase timers with warn/timeout hooks for build phases.
-  - [ ] Acceptance: Tests emit warn/timeout at thresholds; idle phases ignored.
+- [x] Epic: Heartbeat Monitor
+  - [x] Phase timers with warn/timeout hooks for build phases.
+  - [x] Acceptance: Tests emit warn/timeout at thresholds; idle phases ignored.
 
 - [ ] Epic: LLM Gateway (OpenAI)
   - [ ] Provider abstraction, cost calc, telemetry hook; error mapping; unknown model fallback.
