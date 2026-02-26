@@ -11,7 +11,7 @@
 - Content constraints: No user image upload for MVP; use SVG/Unsplash/gradients; SEO items auto-added; single active session model.
 - Change control: New dependencies documented in DECISIONS; commit message format `feat|fix(module): ...`; maintain section anchors and CSS blocks.
 
-- [ ] Epic: Constraint Check (Guardrails)
+- [x] Epic: Constraint Check (Guardrails)
   - [ ] Implement automated checks that enforce anchors intact, CSS var usage, accessibility basics, zero-cost host selection, and Builder Atom size before swap.
   - [ ] Wire guardrail violations to retry/skip with PO chat notification; block swap on failures.
   - [ ] Add CI step/lint rule stubs to prevent engine React imports and disallow `any`.
