@@ -47,6 +47,16 @@ propose a change — do not silently deviate.
 - Test names: "should [expected behavior] when [condition]"
 - Minimum coverage: 80% lines, 80% functions, 70% branches for engine/
 
+## Guardrails
+
+- Accessibility: semantic HTML, AA contrast, keyboard-friendly patterns.
+- No autoplay media, modal-on-load, or dark patterns.
+- Preview content must be CSP-restricted; no `eval`.
+- No third-party trackers in studio or generated sites.
+- Zero-cost hosting priority: GitHub Pages -> Cloudflare Pages -> Netlify -> Vercel.
+- No paid services unless the user explicitly consents.
+- No user image upload for MVP; use SVG, gradients, or Unsplash.
+
 ## Section Template Conventions
 
 - See docs/SECTION-SCHEMA.md for the full SectionDefinition interface.
@@ -57,6 +67,7 @@ propose a change — do not silently deviate.
 - All HTML must include PP:SECTION comment anchors.
 - All CSS must include PP:BLOCK comment anchors.
 - All JS must include PP:FUNC comment anchors.
+- All scaffold edits must follow docs/PATCH-PROTOCOL.md. No full-file rewrites.
 
 ## Commit Messages
 

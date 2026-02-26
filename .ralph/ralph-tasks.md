@@ -35,7 +35,7 @@
   - [ ] Add deploy-preview.yml for PR CF Pages previews; deploy-production.yml for main with tag v0.0.x.
   - [ ] Acceptance: Push on feature branch runs CI green; preview workflow syntactically valid; build artifact under 512KB gate.
 
-- [ ] Epic: Foundational Docs
+- [x] Epic: Foundational Docs
   - [ ] Author CONVENTIONS, ARCHITECTURE, DECISIONS (D-001/002), PATCH-PROTOCOL, SECTION-SCHEMA, SYSTEM-PROMPTS, ZERO-COST-PLAYBOOK, README aligned to operating model.
   - [ ] Acceptance: Docs render without TODOs; links to files/sections resolve; DECISIONS append-only.
 
