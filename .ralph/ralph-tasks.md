@@ -47,7 +47,7 @@
   - [ ] Implement in-memory VFS CRUD with versioning + content hash; manifest serialization.
   - [ ] Acceptance: Unit tests cover CRUD, version bump, hash integrity.
 
-- [ ] Epic: Snapshot Manager
+- [x] Epic: Snapshot Manager
   - [ ] Rolling last-5 snapshot store with rollback restoring version counters.
   - [ ] Acceptance: Tests show save/prune/rollback; lostVersions reported.
 
