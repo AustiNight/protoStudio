@@ -75,6 +75,29 @@ export interface CircuitBreaker {
 }
 
 /**
+ * Circuit breaker action for an atom retry decision.
+ */
+export type CircuitBreakerAction = 'retry' | 'skip';
+
+/**
+ * Decision output from a circuit breaker failure record.
+ */
+export interface CircuitBreakerDecision {
+  /**
+   * Whether to retry the atom or skip it.
+   */
+  action: CircuitBreakerAction;
+  /**
+   * Updated breaker state.
+   */
+  breaker: CircuitBreaker;
+  /**
+   * Remaining retry attempts before the breaker opens.
+   */
+  remainingAttempts: number;
+}
+
+/**
  * Result from an individual continuity check.
  */
 export interface ContinuityResult {

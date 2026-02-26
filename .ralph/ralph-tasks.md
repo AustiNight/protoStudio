@@ -63,7 +63,7 @@
   - [ ] Implement theme/nav consistency, section-count delta, filesTouch enforcement, CSS var usage checks.
   - [ ] Acceptance: Failing check blocks swap; passing check allows swap.
 
-- [ ] Epic: Circuit Breaker
+- [x] Epic: Circuit Breaker
   - [ ] Track attempts per atom (max 3), open/half-open states, reset on success.
   - [ ] Acceptance: Tests show retry → skip after max; success resets breaker.
 
