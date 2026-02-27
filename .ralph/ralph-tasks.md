@@ -151,7 +151,7 @@
   - [ ] Iframes with srcdoc injection, responsive toggles, status bar.
   - [ ] Acceptance: Swap animation occurs only after validation; inactive frame hidden.
 
-- [ ] Epic: Blue/Green Swap Manager
+- [x] Epic: Blue/Green Swap Manager
   - [ ] Swap controller + iframe bridge postMessage.
   - [ ] Acceptance: Tests cover swap, error handling, postMessage routing.
 
