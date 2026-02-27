@@ -1,0 +1,19 @@
+<!-- PP:SECTION:features-grid -->
+<section class="features-grid" data-pp-section="features-grid">
+  <div class="features-grid__inner">
+    <header class="features-grid__header">
+      <h2 class="features-grid__title">{{heading}}</h2>
+      <p class="features-grid__subtitle">{{subheading}}</p>
+    </header>
+    <div class="features-grid__grid">
+      {{#each items}}
+      <article class="features-grid__card">
+        <div class="features-grid__icon" aria-hidden="true">{{this.icon}}</div>
+        <h3 class="features-grid__card-title">{{this.title}}</h3>
+        <p class="features-grid__card-body">{{this.description}}</p>
+      </article>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:features-grid -->

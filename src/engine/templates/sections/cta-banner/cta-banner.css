@@ -1,0 +1,83 @@
+/* === PP:BLOCK:cta-banner === */
+.cta-banner {
+  padding: var(--space-section) 0;
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.cta-banner--accent {
+  background: var(--color-accent, var(--color-primary));
+  color: var(--color-accent-contrast, var(--color-primary-contrast));
+}
+
+.cta-banner__inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--space-section);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  align-items: flex-start;
+}
+
+.cta-banner__content {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.cta-banner__title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(1.6rem, 2.6vw, 2.35rem);
+  line-height: var(--line-height-tight);
+}
+
+.cta-banner__subtitle {
+  margin: 0;
+  font-family: var(--font-body);
+  color: currentColor;
+  line-height: var(--line-height-relaxed);
+}
+
+.cta-banner__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-pill);
+  border: var(--border-width) solid var(--color-primary-contrast);
+  background: var(--color-primary-contrast);
+  color: var(--color-primary);
+  font-family: var(--font-body);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+}
+
+.cta-banner__button:hover,
+.cta-banner__button:focus-visible {
+  background: var(--color-primary-strong);
+  border-color: var(--color-primary-strong);
+  color: var(--color-primary-contrast);
+}
+
+.cta-banner--accent .cta-banner__button {
+  border-color: var(--color-accent-contrast, var(--color-primary-contrast));
+  background: var(--color-accent-contrast, var(--color-primary-contrast));
+  color: var(--color-accent, var(--color-primary));
+}
+
+.cta-banner--accent .cta-banner__button:hover,
+.cta-banner--accent .cta-banner__button:focus-visible {
+  background: var(--color-primary-strong);
+  border-color: var(--color-primary-strong);
+  color: var(--color-primary-contrast);
+}
+
+@media (min-width: 48rem) {
+  .cta-banner__inner {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+/* === /PP:BLOCK:cta-banner === */

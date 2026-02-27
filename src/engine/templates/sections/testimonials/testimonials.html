@@ -1,0 +1,26 @@
+<!-- PP:SECTION:testimonials -->
+<section class="testimonials" data-pp-section="testimonials">
+  <div class="testimonials__inner">
+    <header class="testimonials__header">
+      <h2 class="testimonials__title">{{heading}}</h2>
+      <p class="testimonials__subtitle">{{subheading}}</p>
+    </header>
+    <div class="testimonials__grid">
+      {{#each items}}
+      <article class="testimonials__card">
+        <blockquote class="testimonials__quote">
+          <p>"{{this.quote}}"</p>
+        </blockquote>
+        <div class="testimonials__author">
+          <strong>{{this.name}}</strong>
+          <span>{{this.role}}</span>
+        </div>
+        <div class="testimonials__rating" aria-label="{{this.rating}} out of 5 stars">
+          {{{this.starsHtml}}}
+        </div>
+      </article>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:testimonials -->

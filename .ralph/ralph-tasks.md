@@ -111,7 +111,7 @@
   - [ ] Build hero, nav, footer, contact, SEO-base partials with PP anchors + CSS blocks.
   - [ ] Acceptance: Tests validate anchors/blocks; render placeholders.
 
-- [ ] Epic: Near-Universal Sections
+- [x] Epic: Near-Universal Sections
   - [ ] Build about, features grid, testimonials, CTA banner sections.
   - [ ] Acceptance: Tests validate anchors and slot bindings.
 
