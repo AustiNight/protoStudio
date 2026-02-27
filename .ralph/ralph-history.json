@@ -2075,13 +2075,47 @@
         "- [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pass when constraints met.",
         "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path."
       ]
+    },
+    {
+      "iteration": 56,
+      "startedAt": "2026-02-27T04:39:53.504Z",
+      "endedAt": "2026-02-27T04:45:38.742Z",
+      "durationMs": 344930,
+      "agent": "codex",
+      "model": "gpt-5.2-codex",
+      "toolsUsed": {
+        "LLM": 2,
+        "total": 1,
+        "a": 2,
+        "pure": 1,
+        "the": 17,
+        "section": 1,
+        "site": 1,
+        "all": 1,
+        "targeted": 1
+      },
+      "filesModified": [
+        ".ralph/ralph-last-output.txt",
+        ".ralph/ralph-tasks.md",
+        ".ralph/ralph-last-output-iter-56.txt",
+        "src/engine/deploy/doc-generator.ts",
+        "tests/unit/engine/doc-generator.test.ts"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- `npm run test:unit -- doc-generator` failed: `vitest: not found` (dev dependencies not installed in this environment).",
+        "- [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pass when constraints met.",
+        "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.",
+        "- Attempted to run `npm run test:unit -- doc-generator`, but the tests failed because the `vitest` dependency was missing."
+      ]
     }
   ],
-  "totalDurationMs": 22676064,
+  "totalDurationMs": 23020994,
   "struggleIndicators": {
     "repeatedErrors": {
       "- [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 43,
-      "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.": 55,
+      "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.": 56,
       "Outlining full guardrail input/output types and functions covering accessibility, CSP, SRI, third-pa": 1,
       "I'm outlining a detailed test file to cover guardrail success and failure cases, plus verifying secu": 1,
       "I'm specifying various failure cases for guardrails, including missing anchors, hardcoded colors, CS": 1,
@@ -2220,7 +2254,7 @@
       "-  - [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; ": 1,
       "+  - [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; ": 1,
       "Summary: Added imagery policy enforcement in `src/engine/content/imagery.ts`, SEO validation checks ": 1,
-      "- [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 12,
+      "- [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 13,
       "Confirmed backlog reorder only affects backlog items, avoiding conflicts with onDeck. Noted potentia": 1,
       "- `npm run test:unit -- tests/unit/engine/context.test.ts` (failed: `vitest` not found).": 1,
       "Fixed a bug with context assembly token usage by removing an undefined backlog summary, added a unit": 1,
@@ -2252,7 +2286,9 @@
       "Implemented Netlify deploy host to create site, create deploy with digests, upload required files, a": 1,
       "1. `npm run test:unit -- tests/unit/engine/deploy-manager.test.ts tests/unit/engine/validators.test.": 1,
       "I'm drafting a structured summary listing changed files and updates, noting tests failed to run due ": 1,
-      "I'm listing deployment validators, deploy manager, and their unit tests with file references as a nu": 1
+      "I'm listing deployment validators, deploy manager, and their unit tests with file references as a nu": 1,
+      "- `npm run test:unit -- doc-generator` failed: `vitest: not found` (dev dependencies not installed i": 1,
+      "- Attempted to run `npm run test:unit -- doc-generator`, but the tests failed because the `vitest` d": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

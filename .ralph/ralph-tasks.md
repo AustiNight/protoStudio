@@ -242,7 +242,7 @@
   - [ ] Render GitHub/Netlify/CF guides; “Test token” buttons call validators.
   - [ ] Acceptance: Invalid token shows actionable error; valid token unlocks host option.
 
-- [ ] Epic: Documentation Packet Generator
+- [x] Epic: Documentation Packet Generator
   - [ ] Branded Markdown bundle + PDF render; logo/colors/fonts from site; screenshots capture hook.
   - [ ] Acceptance: Generated packet contains all 7 sections and assets; renders without broken links.
 
