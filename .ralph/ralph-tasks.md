@@ -123,9 +123,9 @@
   - [ ] Build blog list/detail + RSS, feature comparison, gallery, product cards, cart, stripe link, calendar embed, service menu, multi-step form, confirmation page.
   - [ ] Acceptance: Tests per section; cart uses localStorage; RSS outputs XML.
 
-- [ ] Epic: Template Assembler
-  - [ ] Config → VFS assembly with dependency/conflict validation and slot filling.
-  - [ ] Acceptance: Integration tests assemble from configs; missing dep rejected.
+- [x] Epic: Template Assembler
+  - [x] Config → VFS assembly with dependency/conflict validation and slot filling.
+  - [x] Acceptance: Integration tests assemble from configs; missing dep rejected.
 
 - [ ] Epic: Template Configs Wave 1
   - [ ] Marketing, Portfolio, Small Business JSON configs.

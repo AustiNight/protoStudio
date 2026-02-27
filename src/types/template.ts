@@ -252,3 +252,61 @@ export interface TemplateConfig {
    */
   defaultTheme: TemplateTheme;
 }
+
+/**
+ * Quick customization inputs applied during template assembly.
+ */
+export interface QuickCustomization {
+  /**
+   * Suggested site title.
+   */
+  title?: string;
+  /**
+   * Suggested slogan or subtitle.
+   */
+  slogan?: string;
+  /**
+   * Suggested primary brand color override.
+   */
+  primaryColor?: string;
+  /**
+   * Optional industry hint from classification.
+   */
+  industry?: string;
+  /**
+   * Optional color palette overrides.
+   */
+  colors?: Partial<ColorPalette>;
+  /**
+   * Slot-specific overrides for section assembly.
+   */
+  slotOverrides?: Record<string, string | string[]>;
+}
+
+/**
+ * Single template configuration validation issue.
+ */
+export interface ValidationIssue {
+  /**
+   * Path to the invalid field.
+   */
+  path: string;
+  /**
+   * Description of the validation error.
+   */
+  message: string;
+}
+
+/**
+ * Result of validating a template configuration.
+ */
+export interface ValidationResult {
+  /**
+   * Whether the template config is valid.
+   */
+  valid: boolean;
+  /**
+   * List of validation issues discovered.
+   */
+  issues: ValidationIssue[];
+}
