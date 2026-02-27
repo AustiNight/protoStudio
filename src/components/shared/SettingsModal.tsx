@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 
 import pricingConfigRaw from '@/config/model-pricing.json';
 import { decrypt, encrypt, EncryptionError } from '@/persistence/encryption';
+import { useTelemetryStore } from '@/store/telemetry-store';
 
 type ProviderName = 'openai' | 'anthropic' | 'google';
 
 type DeployHost = 'github' | 'cloudflare' | 'netlify' | 'vercel';
 
-type TabKey = 'keys' | 'models' | 'deploy';
+type TabKey = 'keys' | 'models' | 'deploy' | 'telemetry';
 
 type PricingConfig = {
   lastUpdated: string;
@@ -85,6 +86,11 @@ const TABS: Array<{ id: TabKey; label: string; description: string }> = [
     label: 'Deploy Tokens',
     description: 'Connect zero-cost hosts for deploys.',
   },
+  {
+    id: 'telemetry',
+    label: 'Telemetry',
+    description: 'Export local-only telemetry captured for this session.',
+  },
 ];
 
 const LLM_PROVIDERS: ProviderName[] = ['openai', 'anthropic', 'google'];
@@ -130,9 +136,19 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [tokenStatus, setTokenStatus] = useState<Record<DeployHost, ValidationState>>(
     () => buildValidationMap(DEPLOY_HOSTS),
   );
+  const [isExportingTelemetry, setIsExportingTelemetry] = useState(false);
+
+  const telemetrySessionId = useTelemetryStore((state) => state.sessionId);
+  const telemetryCounters = useTelemetryStore((state) => state.counters);
+  const telemetryEvents = useTelemetryStore((state) => state.events);
+  const exportTelemetryBundle = useTelemetryStore((state) => state.exportBundle);
 
   const isPassphraseValid = passphrase.length >= MIN_PASSPHRASE_LENGTH;
   const storedUpdatedAt = settings.updatedAt;
+  const lastTelemetryTimestamp =
+    telemetryEvents.length > 0
+      ? telemetryEvents[telemetryEvents.length - 1]?.timestamp ?? null
+      : null;
 
   useEffect(() => {
     if (!open) return;
@@ -242,6 +258,37 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     setKeyStatus(buildValidationMap(LLM_PROVIDERS));
     setTokenStatus(buildValidationMap(DEPLOY_HOSTS));
     setNotice({ tone: 'info', message: 'Stored settings cleared.' });
+  };
+
+  const handleTelemetryExport = async () => {
+    if (isExportingTelemetry) {
+      return;
+    }
+    setIsExportingTelemetry(true);
+    try {
+      const bundle = await exportTelemetryBundle();
+      if (!bundle) {
+        setNotice({ tone: 'error', message: 'No telemetry available to export.' });
+        return;
+      }
+      if (typeof window === 'undefined') {
+        setNotice({ tone: 'error', message: 'Telemetry export is unavailable.' });
+        return;
+      }
+      const blob = new Blob([bundle], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const filename = `telemetry-${telemetrySessionId ?? 'session'}-${new Date()
+        .toISOString()
+        .slice(0, 10)}.json`;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      setNotice({ tone: 'success', message: 'Telemetry exported.' });
+    } finally {
+      setIsExportingTelemetry(false);
+    }
   };
 
   const handleLlmKeyChange = (provider: ProviderName, value: string) => {
@@ -665,6 +712,87 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   'Paste it into the Vercel field and ping it.',
                 ]}
               />
+            </div>
+          </section>
+
+          <section role="tabpanel" hidden={activeTab !== 'telemetry'}>
+            <p className="text-sm text-slate-300">{TABS[3].description}</p>
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                  Session ID
+                </div>
+                <div className="mt-2 text-sm text-slate-100">
+                  {telemetrySessionId ?? 'No active session'}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                  Events Logged
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-slate-100">
+                  {telemetryEvents.length}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                  Last Event
+                </div>
+                <div className="mt-2 text-sm text-slate-100">
+                  {lastTelemetryTimestamp
+                    ? formatLongDate(lastTelemetryTimestamp)
+                    : 'No activity yet'}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/50 p-3">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                  Messages
+                </div>
+                <div className="mt-1 text-lg font-semibold text-slate-100">
+                  {telemetryCounters.messageCount}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/50 p-3">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                  Backlog
+                </div>
+                <div className="mt-1 text-lg font-semibold text-slate-100">
+                  {telemetryCounters.backlogCount}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/50 p-3">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                  Builds
+                </div>
+                <div className="mt-1 text-lg font-semibold text-slate-100">
+                  {telemetryCounters.buildCount}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/50 p-3">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                  Deploys
+                </div>
+                <div className="mt-1 text-lg font-semibold text-slate-100">
+                  {telemetryCounters.deployCount}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleTelemetryExport}
+                disabled={isExportingTelemetry || telemetryEvents.length === 0}
+                className="rounded-full border border-slate-800/80 bg-slate-900/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-emerald-300/60 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isExportingTelemetry ? 'Exporting' : 'Export JSON'}
+              </button>
+              <span className="text-xs text-slate-400">
+                Stored locally in IndexedDB. No network calls.
+              </span>
             </div>
           </section>
         </div>

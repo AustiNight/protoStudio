@@ -4,6 +4,7 @@ import type { ChatMessage } from '../../types/chat';
 import type { BuildPatch } from '../../types/patch';
 import type { AppError, Result } from '../../types/result';
 import type { DeploySelection, PreviewSecurityInput } from '../../types/guardrails';
+import type { TelemetryBuildErrorCategory, TelemetryBuildStatus } from '../../types/telemetry';
 
 import { runGuardrails, decideGuardrailAction } from '../guardrails/guardrails';
 import { ContextManager } from '../llm/context';
@@ -60,6 +61,19 @@ export interface BuilderLoopEvents {
   onEvent?: (event: BuilderLoopEvent) => void;
 }
 
+export interface BuilderLoopTelemetry {
+  onBuildStart?: (input: { atom: WorkItem; attempt: number; timestamp: number }) => void;
+  onBuildPreview?: (input: { atom: WorkItem; durationMs: number; timestamp: number }) => void;
+  onBuildComplete?: (input: {
+    atom: WorkItem;
+    durationMs: number;
+    status: TelemetryBuildStatus;
+    errorCategory?: TelemetryBuildErrorCategory;
+    timestamp: number;
+  }) => void;
+  onBuildSwap?: (input: { atom: WorkItem; slot?: 'blue' | 'green'; timestamp: number }) => void;
+}
+
 export interface BuilderLoopOptions {
   gateway: LLMGateway;
   contextManager: ContextManager;
@@ -72,6 +86,7 @@ export interface BuilderLoopOptions {
   maxAttempts?: number;
   now?: () => number;
   events?: BuilderLoopEvents;
+  telemetry?: BuilderLoopTelemetry;
 }
 
 export interface BuilderLoopInput {
@@ -125,6 +140,7 @@ export class BuilderLoop {
   private now: () => number;
   private maxAttempts: number;
   private events?: BuilderLoopEvents;
+  private telemetry?: BuilderLoopTelemetry;
   private buildState: BuildState = { ...initialBuildState };
 
   constructor(options: BuilderLoopOptions) {
@@ -141,6 +157,7 @@ export class BuilderLoop {
     this.now = options.now ?? (() => Date.now());
     this.maxAttempts = sanitizeMaxAttempts(options.maxAttempts, DEFAULT_MAX_ATTEMPTS);
     this.events = options.events;
+    this.telemetry = options.telemetry;
   }
 
   getState(): BuildState {
@@ -161,6 +178,7 @@ export class BuilderLoop {
 
     if (!this.circuitBreaker.canAttempt(atom.id)) {
       const outcome = this.skipAtom(atom, input.backlog, 'Circuit breaker open.', 0);
+      this.recordBuildFailure(atom, this.now(), 'unknown');
       return okResult(outcome);
     }
 
@@ -180,6 +198,11 @@ export class BuilderLoop {
     while (attempt < this.maxAttempts) {
       attempt += 1;
       const attemptStartedAt = this.now();
+      this.telemetry?.onBuildStart?.({
+        atom,
+        attempt,
+        timestamp: attemptStartedAt,
+      });
 
       input.backlog.updateItem(atom.id, { status: 'in_progress' });
 
@@ -203,6 +226,7 @@ export class BuilderLoop {
       if (!llmResult.ok) {
         if (llmResult.error.category === 'retryable') {
           const decision = this.recordFailure(atom, llmResult.error.message, attempt);
+          this.recordBuildFailure(atom, attemptStartedAt, 'llm');
           if (decision.action === 'retry') {
             retryContext = { reason: llmResult.error.message };
             continue;
@@ -215,6 +239,7 @@ export class BuilderLoop {
         this.setPhase('error');
         this.buildState.lastError = errorMessage;
         this.emit({ type: 'error', atom, message: errorMessage });
+        this.recordBuildFailure(atom, attemptStartedAt, 'llm');
         this.heartbeat.stop();
         return errResult({
           category: llmResult.error.category,
@@ -228,6 +253,7 @@ export class BuilderLoop {
       const parsed = parsePatchResponse(llmResult.value.content);
       if (!parsed.ok) {
         const decision = this.recordFailure(atom, parsed.error.message, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'patch');
         if (decision.action === 'retry') {
           retryContext = { reason: parsed.error.message };
           continue;
@@ -242,6 +268,7 @@ export class BuilderLoop {
       const patchValidationError = validatePatch(atom, input.vfs, patch);
       if (patchValidationError) {
         const decision = this.recordFailure(atom, patchValidationError, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'patch');
         if (decision.action === 'retry') {
           retryContext = { reason: patchValidationError };
           continue;
@@ -257,6 +284,7 @@ export class BuilderLoop {
       if (!patchResult.success) {
         const reason = patchResult.error ?? 'Patch application failed.';
         const decision = this.recordFailure(atom, reason, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'patch');
         if (decision.action === 'retry') {
           retryContext = { reason };
           continue;
@@ -270,6 +298,7 @@ export class BuilderLoop {
       if (!previewResult.ok) {
         const reason = previewResult.error.message;
         const decision = this.recordFailure(atom, reason, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'patch');
         if (decision.action === 'retry') {
           retryContext = { reason };
           continue;
@@ -278,11 +307,18 @@ export class BuilderLoop {
         return okResult(outcome);
       }
 
+      this.telemetry?.onBuildPreview?.({
+        atom,
+        durationMs: Math.max(0, this.now() - attemptStartedAt),
+        timestamp: this.now(),
+      });
+
       this.setPhase('validating_preview');
       const continuity = validateContinuity(before, sandbox, atom);
       if (!continuity.pass) {
         const reason = `Continuity failed: ${continuity.violations.join(' | ')}`;
         const decision = this.recordFailure(atom, reason, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
         if (decision.action === 'retry') {
           retryContext = { reason, violations: continuity.violations };
           continue;
@@ -299,6 +335,7 @@ export class BuilderLoop {
         );
         const reason = `Scaffold audit failed: ${violations.join(' | ')}`;
         const decision = this.recordFailure(atom, reason, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
         if (decision.action === 'retry') {
           retryContext = { reason, violations };
           continue;
@@ -318,6 +355,7 @@ export class BuilderLoop {
       if (!metrics.visibleChange) {
         const reason = 'Patch produced no visible changes.';
         const decision = this.recordFailure(atom, reason, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
         if (decision.action === 'retry') {
           retryContext = { reason };
           continue;
@@ -346,6 +384,7 @@ export class BuilderLoop {
         );
         const reason = decision.poMessage;
         const breakerDecision = this.recordFailure(atom, reason, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
 
         if (decision.action === 'retry' && breakerDecision.action === 'retry') {
           retryContext = { reason, violations: violationMessages };
@@ -373,10 +412,21 @@ export class BuilderLoop {
         atom,
         slot: input.preview.getInactiveSlot?.(),
       });
+      this.telemetry?.onBuildSwap?.({
+        atom,
+        slot: input.preview.getInactiveSlot?.(),
+        timestamp: this.now(),
+      });
 
       await this.scaffoldHealth.evaluate(input.vfs);
 
       this.circuitBreaker.recordSuccess(atom.id, this.maxAttempts);
+      this.telemetry?.onBuildComplete?.({
+        atom,
+        durationMs: Math.max(0, this.now() - attemptStartedAt),
+        status: 'success',
+        timestamp: this.now(),
+      });
       this.resetBuildState();
 
       return okResult({
@@ -394,6 +444,7 @@ export class BuilderLoop {
       `Exceeded ${this.maxAttempts} attempts.`,
       attempt,
     );
+    this.recordBuildFailure(atom, this.buildState.startedAt || this.now(), 'unknown');
     return okResult(outcome);
   }
 
@@ -444,6 +495,20 @@ export class BuilderLoop {
       this.emit({ type: 'retry', atom, attempt, reason });
     }
     return decision;
+  }
+
+  private recordBuildFailure(
+    atom: WorkItem,
+    startedAt: number,
+    category: TelemetryBuildErrorCategory,
+  ): void {
+    this.telemetry?.onBuildComplete?.({
+      atom,
+      durationMs: Math.max(0, this.now() - startedAt),
+      status: 'failed',
+      errorCategory: category,
+      timestamp: this.now(),
+    });
   }
 
   private skipAtom(

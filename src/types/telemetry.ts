@@ -138,6 +138,28 @@ export interface TelemetryEventRecord<E extends TelemetryEventName = TelemetryEv
 
 export type TelemetryEvent = TelemetryEventRecord;
 
+/**
+ * Export bundle for telemetry downloads.
+ */
+export interface TelemetryExportBundle {
+  /**
+   * Session identifier associated with the export.
+   */
+  sessionId: string;
+  /**
+   * Unix timestamp (ms) when the bundle was generated.
+   */
+  exportedAt: number;
+  /**
+   * Total number of events in the bundle.
+   */
+  eventCount: number;
+  /**
+   * Telemetry events captured for the session.
+   */
+  events: TelemetryEvent[];
+}
+
 export type TelemetryValidationCode =
   | 'invalid_timestamp'
   | 'invalid_session_id'

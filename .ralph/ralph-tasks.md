@@ -262,9 +262,9 @@
   - [x] Auto-save healthy snapshots; auto-repair degraded; rollback on critical score.
   - [x] Acceptance: Health <50 triggers rollback; >=90 saves snapshot; tests verify.
 
-- [ ] Epic: Telemetry Surfacing
-  - [ ] Capture metrics per PRD §4.5; export hook; ensure local-only storage.
-  - [ ] Acceptance: Logged events match schema; export produces JSON bundle.
+- [x] Epic: Telemetry Surfacing
+  - [x] Capture metrics per PRD §4.5; export hook; ensure local-only storage.
+  - [x] Acceptance: Logged events match schema; export produces JSON bundle.
 
 - [ ] Epic: E2E – Template Flow
   - [ ] Playwright: first message → preview → 3 swaps → deploy (mocked).

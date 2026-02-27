@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import type { WorkItem, WorkItemStatus } from '../types/backlog';
+import { useTelemetryStore } from './telemetry-store';
 
 export interface BacklogStoreState {
   items: WorkItem[];
@@ -30,7 +31,7 @@ const initialState: Pick<BacklogStoreState, 'items' | 'onDeckId' | 'focusedItemI
 export const createBacklogStore = () =>
   create<BacklogStoreState>((set) => ({
     ...initialState,
-    addItem: (item) =>
+    addItem: (item) => {
       set((state) => {
         const nextOrder = getNextOrder(state.items);
         const nextItem: WorkItem = {
@@ -41,8 +42,15 @@ export const createBacklogStore = () =>
         return {
           items: normalizeOrder(ordered),
         };
-      }),
-    addItems: (items) =>
+      });
+      const telemetry = useTelemetryStore.getState();
+      void telemetry.recordBacklogAdded({
+        sessionId: item.sessionId,
+        count: 1,
+        timestamp: item.createdAt,
+      });
+    },
+    addItems: (items) => {
       set((state) => {
         let nextItems = [...state.items];
         for (const item of items) {
@@ -53,11 +61,29 @@ export const createBacklogStore = () =>
         return {
           items: normalizeOrder(ordered),
         };
-      }),
-    setItems: (items) =>
+      });
+      const telemetry = useTelemetryStore.getState();
+      if (items.length > 0) {
+        void telemetry.recordBacklogAdded({
+          sessionId: items[0]?.sessionId,
+          count: items.length,
+          timestamp: Date.now(),
+        });
+      }
+    },
+    setItems: (items) => {
       set(() => ({
         items: normalizeOrder(sortByOrder(items)),
-      })),
+      }));
+      if (items.length > 0) {
+        const telemetry = useTelemetryStore.getState();
+        void telemetry.recordBacklogCount({
+          sessionId: items[0]?.sessionId,
+          count: items.length,
+          timestamp: Date.now(),
+        });
+      }
+    },
     reorderItems: (fromIndex, toIndex) =>
       set((state) => {
         const count = state.items.length;

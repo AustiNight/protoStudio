@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getMilestoneChatMessage } from '@/engine/chat/narration';
-import { deploySite, type Deployers } from '@/engine/deploy/deploy-manager';
+import {
+  deploySite,
+  selectDeployHost,
+  type DeployHostConfig,
+  type Deployers,
+  type DeployTokens,
+} from '@/engine/deploy/deploy-manager';
 import {
   generateDocumentationPacket,
   type DocumentationPacket,
@@ -9,8 +15,11 @@ import {
 import { VirtualFileSystem } from '@/engine/vfs/vfs';
 import { useChatStore } from '@/store/chat-store';
 import { useSettingsStore } from '@/store/settings-store';
+import { useTelemetryStore } from '@/store/telemetry-store';
 import type { ChatMessage } from '@/types/chat';
 import type { DeployHost, Deployment } from '@/types/deploy';
+import type { TelemetryDeployErrorReason } from '@/types/telemetry';
+import type { AppError } from '@/types/result';
 import type { VfsMetadata } from '@/types/vfs';
 
 import { DeployButton } from './DeployButton';
@@ -114,6 +123,29 @@ function buildChatMessage(
     sender,
     content,
   };
+}
+
+function resolveDeployHost(
+  tokens: DeployTokens,
+  hostConfig: DeployHostConfig | undefined,
+  deployers: Partial<Deployers>,
+): DeployHost | null {
+  const selection = selectDeployHost({ tokens, hostConfig, deployers });
+  return selection.ok ? selection.value.selectedHost : null;
+}
+
+function mapDeployErrorReason(error: AppError): TelemetryDeployErrorReason {
+  const code = error.code?.toLowerCase() ?? '';
+  if (code.includes('auth') || code.includes('token') || code.includes('unauthorized')) {
+    return 'auth';
+  }
+  if (code.includes('rate')) {
+    return 'rate_limit';
+  }
+  if (error.category === 'retryable' || code.includes('network')) {
+    return 'network';
+  }
+  return 'unknown';
 }
 
 async function buildDemoVfs(html: string): Promise<VirtualFileSystem> {
@@ -500,6 +532,10 @@ export function PreviewPanel({
   const [deployError, setDeployError] = useState<string | null>(null);
   const addMessage = useChatStore((state) => state.addMessage);
   const deployTokens = useSettingsStore((state) => state.settings.deployTokens);
+  const recordBuildSwap = useTelemetryStore((state) => state.recordBuildSwap);
+  const recordDeployStart = useTelemetryStore((state) => state.recordDeployStart);
+  const recordDeployComplete = useTelemetryStore((state) => state.recordDeployComplete);
+  const recordDeployError = useTelemetryStore((state) => state.recordDeployError);
 
   const validationTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const swapTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null);
@@ -584,6 +620,11 @@ export function PreviewPanel({
       setActiveSlot((current) => (current === 'blue' ? 'green' : 'blue'));
       setIsSwapping(false);
       setValidationState('pending');
+      void recordBuildSwap({
+        sessionId,
+        slot: incomingSlot,
+        timestamp: Date.now(),
+      });
     }, SWAP_DURATION_MS);
   };
 
@@ -598,6 +639,23 @@ export function PreviewPanel({
       return null;
     });
 
+    const deployStartedAt = Date.now();
+    const tokens: DeployTokens = {
+      github: deployTokens.github,
+      cloudflare: deployTokens.cloudflare,
+      netlify: deployTokens.netlify,
+      vercel: deployTokens.vercel,
+    };
+    const deployers = buildMockDeployers();
+    const selectedHost = resolveDeployHost(tokens, deployHostConfig, deployers);
+    if (selectedHost) {
+      void recordDeployStart({
+        sessionId,
+        host: selectedHost,
+        timestamp: deployStartedAt,
+      });
+    }
+
     emitSystemMessage('Deploy started. Running pre-deploy checks...');
 
     try {
@@ -608,18 +666,32 @@ export function PreviewPanel({
       const deployResult = await deploySite({
         vfs,
         sessionId,
-        tokens: {
-          github: deployTokens.github,
-          cloudflare: deployTokens.cloudflare,
-          netlify: deployTokens.netlify,
-          vercel: deployTokens.vercel,
-        },
+        tokens,
         hostConfig: deployHostConfig,
-        deployers: buildMockDeployers(),
+        deployers,
       });
 
       if (!deployResult.ok) {
         const message = deployResult.error.message ?? 'Deploy failed.';
+        const durationMs = Math.max(0, Date.now() - deployStartedAt);
+        if (selectedHost) {
+          const reason = mapDeployErrorReason(deployResult.error);
+          void recordDeployError({
+            sessionId,
+            host: selectedHost,
+            reason,
+            timestamp: Date.now(),
+          });
+          void recordDeployComplete({
+            sessionId,
+            host: selectedHost,
+            status: 'failed',
+            durationMs,
+            siteSize: 0,
+            fileCount: 0,
+            timestamp: Date.now(),
+          });
+        }
         emitSystemMessage(`Deploy failed: ${message}`);
         setDeployState('error');
         setDeployError(message);
@@ -627,6 +699,15 @@ export function PreviewPanel({
       }
 
       const deployment = deployResult.value;
+      void recordDeployComplete({
+        sessionId,
+        host: deployment.host,
+        status: 'live',
+        durationMs: Math.max(0, Date.now() - deployStartedAt),
+        siteSize: deployment.siteSize,
+        fileCount: deployment.fileCount,
+        timestamp: Date.now(),
+      });
       emitSystemMessage(
         `Deploy complete on ${HOST_LABELS[deployment.host]}. Generating documentation packet...`,
       );
@@ -644,6 +725,24 @@ export function PreviewPanel({
       setDeployState('success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Deploy failed.';
+      const durationMs = Math.max(0, Date.now() - deployStartedAt);
+      if (selectedHost) {
+        void recordDeployError({
+          sessionId,
+          host: selectedHost,
+          reason: 'unknown',
+          timestamp: Date.now(),
+        });
+        void recordDeployComplete({
+          sessionId,
+          host: selectedHost,
+          status: 'failed',
+          durationMs,
+          siteSize: 0,
+          fileCount: 0,
+          timestamp: Date.now(),
+        });
+      }
       emitSystemMessage(`Deploy failed: ${message}`);
       setDeployState('error');
       setDeployError(message);
@@ -656,6 +755,9 @@ export function PreviewPanel({
     deployTokens.github,
     deployTokens.netlify,
     deployTokens.vercel,
+    recordDeployComplete,
+    recordDeployError,
+    recordDeployStart,
     emitStudioMessage,
     emitSystemMessage,
     sessionId,
