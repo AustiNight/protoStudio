@@ -214,7 +214,7 @@
   - [x] Drag/drop → PO approve/deny with revert animation.
   - [x] Acceptance: Approved reorder persists; denied reorder animates revert + chat rationale.
 
-- [ ] Epic: Focus-Chat Mode
+- [x] Epic: Focus-Chat Mode
   - [ ] Click backlog item → chat context tag + hint; builder unaffected mid-build.
   - [ ] Acceptance: Focused item highlighted; messages carry backlog item metadata.
 

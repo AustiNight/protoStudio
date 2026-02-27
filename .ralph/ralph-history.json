@@ -1834,13 +1834,42 @@
         "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.",
         "lastError: string | null;"
       ]
+    },
+    {
+      "iteration": 49,
+      "startedAt": "2026-02-27T04:04:04.867Z",
+      "endedAt": "2026-02-27T04:08:52.311Z",
+      "durationMs": 287175,
+      "agent": "codex",
+      "model": "gpt-5.2-codex",
+      "toolsUsed": {
+        "LLM": 1,
+        "total": 1,
+        "and": 1,
+        "correctly": 1
+      },
+      "filesModified": [
+        ".ralph/ralph-last-output.txt",
+        ".ralph/ralph-tasks.md",
+        "src/app/Layout.tsx",
+        ".ralph/ralph-last-output-iter-49.txt"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pass when constraints met.",
+        "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.",
+        "src/store/settings-store.ts:67:          lastError: getErrorMessage(error),",
+        "src/store/settings-store.ts:267:function getErrorMessage(error: unknown): string {",
+        "lastError: buildError,"
+      ]
     }
   ],
-  "totalDurationMs": 20538480,
+  "totalDurationMs": 20825655,
   "struggleIndicators": {
     "repeatedErrors": {
       "- [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 43,
-      "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.": 48,
+      "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.": 49,
       "Outlining full guardrail input/output types and functions covering accessibility, CSP, SRI, third-pa": 1,
       "I'm outlining a detailed test file to cover guardrail success and failure cases, plus verifying secu": 1,
       "I'm specifying various failure cases for guardrails, including missing anchors, hardcoded colors, CS": 1,
@@ -1979,7 +2008,7 @@
       "-  - [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; ": 1,
       "+  - [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; ": 1,
       "Summary: Added imagery policy enforcement in `src/engine/content/imagery.ts`, SEO validation checks ": 1,
-      "- [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 5,
+      "- [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 6,
       "Confirmed backlog reorder only affects backlog items, avoiding conflicts with onDeck. Noted potentia": 1,
       "- `npm run test:unit -- tests/unit/engine/context.test.ts` (failed: `vitest` not found).": 1,
       "Fixed a bug with context assembly token usage by removing an undefined backlog summary, added a unit": 1,
@@ -1991,7 +2020,10 @@
       "347:      return { success: false, error: 'scaffold_violation' };": 1,
       "209:  // idle, retrying, skipping, error: no timeouts": 1,
       "+  lastError: string | null;": 1,
-      "+      lastError: buildError,": 1
+      "+      lastError: buildError,": 1,
+      "src/store/settings-store.ts:67:          lastError: getErrorMessage(error),": 1,
+      "src/store/settings-store.ts:267:function getErrorMessage(error: unknown): string {": 1,
+      "lastError: buildError,": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

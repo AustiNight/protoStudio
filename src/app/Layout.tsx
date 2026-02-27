@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { resetChlorastroliteSession } from '@/components/preview/ChlorastroliteLoader';
 import { PreviewPanel } from '@/components/preview/PreviewPanel';
@@ -302,6 +302,7 @@ export function Layout() {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [previewResetKey, setPreviewResetKey] = useState(0);
+  const [autoFocusOnDeck, setAutoFocusOnDeck] = useState(true);
   const revertTimerRef = useRef<number | null>(null);
   const deniedTimerRef = useRef<number | null>(null);
   const isReorderPending = pendingReorder !== null;
@@ -327,6 +328,36 @@ export function Layout() {
       deniedTimerRef.current = null;
     }, 1200);
   };
+
+  const addFocusedMessage = useCallback(
+    (message: ChatMessage) => {
+      if (focusedItemId && !message.metadata?.backlogItemId) {
+        addMessage({
+          ...message,
+          metadata: {
+            ...message.metadata,
+            backlogItemId: focusedItemId,
+          },
+        });
+        return;
+      }
+      addMessage(message);
+    },
+    [addMessage, focusedItemId],
+  );
+
+  const handleFocusToggle = useCallback(
+    (itemId: string) => {
+      if (focusedItemId === itemId) {
+        focusItem(null);
+        setAutoFocusOnDeck(false);
+        return;
+      }
+      focusItem(itemId);
+      setAutoFocusOnDeck(true);
+    },
+    [focusItem, focusedItemId],
+  );
 
   useEffect(() => {
     return () => {
@@ -377,12 +408,13 @@ export function Layout() {
     () => backlogItems.some((item) => item.status === 'backlog'),
     [backlogItems],
   );
-  const hasFocusedItem = useMemo(() => {
+  const focusedItem = useMemo(() => {
     if (!focusedItemId) {
-      return false;
+      return null;
     }
-    return backlogItems.some((item) => item.id === focusedItemId);
+    return backlogItems.find((item) => item.id === focusedItemId) ?? null;
   }, [backlogItems, focusedItemId]);
+  const hasFocusedItem = focusedItem !== null;
 
   useEffect(() => {
     if (!onDeckItem && hasBacklog) {
@@ -397,10 +429,10 @@ export function Layout() {
   }, [onDeckItem?.status, promoteNext]);
 
   useEffect(() => {
-    if (onDeckItem && (!focusedItemId || !hasFocusedItem)) {
+    if (onDeckItem && (!focusedItemId || !hasFocusedItem) && autoFocusOnDeck) {
       focusItem(onDeckItem.id);
     }
-  }, [focusItem, focusedItemId, hasFocusedItem, onDeckItem]);
+  }, [autoFocusOnDeck, focusItem, focusedItemId, hasFocusedItem, onDeckItem]);
 
   useEffect(() => {
     if (seededMessagesRef.current) {
@@ -426,7 +458,7 @@ export function Layout() {
     }
 
     if (buildPhase === 'swapping' && buildAtom) {
-      addMessage(
+      addFocusedMessage(
         buildNarrationMessage(
           sampleSessionId,
           'chat_ai',
@@ -438,7 +470,7 @@ export function Layout() {
 
     if (buildPhase === 'skipping' && buildAtom) {
       const nextAtom = onDeckItem && onDeckItem.id !== buildAtom.id ? onDeckItem : null;
-      addMessage(
+      addFocusedMessage(
         buildNarrationMessage(
           sampleSessionId,
           'chat_ai',
@@ -450,7 +482,7 @@ export function Layout() {
 
     if (buildPhase === 'error') {
       const errorMessage = buildError ?? 'Unexpected build error.';
-      addMessage(
+      addFocusedMessage(
         buildNarrationMessage(
           sampleSessionId,
           'chat_ai',
@@ -465,7 +497,7 @@ export function Layout() {
       atomId,
       lastError: buildError,
     };
-  }, [addMessage, buildAtom, buildError, buildPhase, onDeckItem]);
+  }, [addFocusedMessage, buildAtom, buildError, buildPhase, onDeckItem]);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -492,6 +524,7 @@ export function Layout() {
     setDraggedId(null);
     setDragOverId(null);
     setShowCompleted(false);
+    setAutoFocusOnDeck(true);
     setActivePanel('chat');
     setPreviewResetKey((prev) => prev + 1);
     setIsResetDialogOpen(false);
@@ -567,6 +600,21 @@ export function Layout() {
                     <span className="h-2 w-2 rounded-full bg-emerald-300/90 shadow-[0_0_10px_rgba(16,185,129,0.6)]" />
                     Active
                   </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 px-4 py-2 text-[11px] text-slate-300">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="rounded-full border border-emerald-300/40 bg-emerald-300/10 px-2 py-0.5 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.3em] text-emerald-200">
+                      Focus
+                    </span>
+                    <span className="max-w-[220px] truncate font-medium text-slate-100">
+                      {focusedItem ? focusedItem.title : 'General'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                    {focusedItem
+                      ? 'Click focused card again to clear.'
+                      : 'Click a backlog card to focus.'}
+                  </span>
                 </div>
                 <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
                   <div className="flex flex-col">
@@ -651,7 +699,9 @@ export function Layout() {
                 <div className="border-t border-slate-800/80 px-4 py-3">
                   <div className="flex items-center gap-3 rounded-2xl border border-slate-800/70 bg-slate-900/70 px-4 py-3 text-xs text-slate-400">
                     <span className="h-2 w-2 rounded-full bg-emerald-300/80" />
-                    Type your next instruction...
+                    {focusedItem
+                      ? `Ask about ${focusedItem.title}...`
+                      : 'Type your next instruction...'}
                   </div>
                 </div>
               </div>
@@ -715,11 +765,11 @@ export function Layout() {
                     }`}
                     role="button"
                     tabIndex={0}
-                    onClick={() => focusItem(onDeckItem.id)}
+                    onClick={() => handleFocusToggle(onDeckItem.id)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault();
-                        focusItem(onDeckItem.id);
+                        handleFocusToggle(onDeckItem.id);
                       }
                     }}
                   >
@@ -823,11 +873,11 @@ export function Layout() {
                             tabIndex={0}
                             draggable={isDraggable}
                             aria-grabbed={isDraggable && draggedId === item.id}
-                            onClick={() => focusItem(item.id)}
+                            onClick={() => handleFocusToggle(item.id)}
                             onKeyDown={(event) => {
                               if (event.key === 'Enter' || event.key === ' ') {
                                 event.preventDefault();
-                                focusItem(item.id);
+                                handleFocusToggle(item.id);
                               }
                             }}
                             onDragStart={(event) => {
@@ -907,7 +957,7 @@ export function Layout() {
                                     if (fromItem) {
                                       triggerDeniedHighlight(fromItem.id);
                                     }
-                                    addMessage(
+                                    addFocusedMessage(
                                       buildNarrationMessage(
                                         sampleSessionId,
                                         'chat_ai',
@@ -933,7 +983,7 @@ export function Layout() {
                                   if (fromItem && toItem) {
                                     const direction =
                                       fromQueueIndex < toQueueIndex ? 'after' : 'before';
-                                    addMessage(
+                                    addFocusedMessage(
                                       buildNarrationMessage(
                                         sampleSessionId,
                                         'chat_ai',
@@ -949,7 +999,7 @@ export function Layout() {
                                   if (fromItem) {
                                     triggerDeniedHighlight(fromItem.id);
                                   }
-                                  addMessage(
+                                  addFocusedMessage(
                                     buildNarrationMessage(
                                       sampleSessionId,
                                       'chat_ai',
