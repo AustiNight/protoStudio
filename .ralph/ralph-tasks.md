@@ -75,7 +75,7 @@
   - [ ] Provider abstraction, cost calc, telemetry hook; error mapping; unknown model fallback.
   - [ ] Acceptance: Tests cover routing, cost math, unknown model returns “Cost: unknown”.
 
-- [ ] Epic: Anthropic & Google Providers
+- [x] Epic: Anthropic & Google Providers
   - [ ] Add adapters for Anthropic and Google models.
   - [ ] Acceptance: Tests show successful routing + error handling per provider.
 

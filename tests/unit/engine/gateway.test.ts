@@ -10,13 +10,17 @@ import type {
 import type { LLMConfig, LLMProvider } from '../../../src/types/session';
 
 class StubProvider implements LLMProviderClient {
-  name: LLMProvider['name'] = 'openai';
+  name: LLMProvider['name'];
   lastCall: {
     apiKey: string;
     model: string;
     messages: LLMMessage[];
     options: LLMCallOptions;
   } | null = null;
+
+  constructor(name: LLMProvider['name'] = 'openai') {
+    this.name = name;
+  }
 
   async call(
     apiKey: string,
@@ -52,6 +56,24 @@ function buildConfig(): LLMConfig {
   return {
     chatModel: { provider: openaiChat, model: 'gpt-4o-mini' },
     builderModel: { provider: openaiBuilder, model: 'gpt-4o' },
+  };
+}
+
+function buildConfigForProvider(name: LLMProvider['name']): LLMConfig {
+  const chatProvider: LLMProvider = {
+    name,
+    apiKey: 'chat-key',
+    models: ['model-id'],
+  };
+  const builderProvider: LLMProvider = {
+    name,
+    apiKey: 'builder-key',
+    models: ['model-id'],
+  };
+
+  return {
+    chatModel: { provider: chatProvider, model: 'model-id' },
+    builderModel: { provider: builderProvider, model: 'model-id' },
   };
 }
 
@@ -104,5 +126,31 @@ describe('LLMGateway', () => {
     expect(totals.chat).toBeCloseTo(0.00015, 6);
     expect(totals.builder).toBeCloseTo(0.0025, 6);
     expect(totals.total).toBeCloseTo(0.00265, 6);
+  });
+
+  it('should route requests to anthropic provider when configured', async () => {
+    const provider = new StubProvider('anthropic');
+    const gateway = new LLMGateway(buildConfigForProvider('anthropic'), {
+      providers: { anthropic: provider },
+    });
+
+    const result = await gateway.send(buildRequest('chat'));
+
+    expect(result.ok).toBe(true);
+    expect(provider.lastCall?.apiKey).toBe('chat-key');
+    expect(provider.lastCall?.model).toBe('model-id');
+  });
+
+  it('should route requests to google provider when configured', async () => {
+    const provider = new StubProvider('google');
+    const gateway = new LLMGateway(buildConfigForProvider('google'), {
+      providers: { google: provider },
+    });
+
+    const result = await gateway.send(buildRequest('builder'));
+
+    expect(result.ok).toBe(true);
+    expect(provider.lastCall?.apiKey).toBe('builder-key');
+    expect(provider.lastCall?.model).toBe('model-id');
   });
 });

@@ -10,6 +10,8 @@ import type {
 } from '../../types/llm';
 import type { LLMConfig, LLMModelSelection, LLMProviderName } from '../../types/session';
 import { calculateCost } from './cost';
+import { AnthropicProvider } from './providers/anthropic';
+import { GoogleProvider } from './providers/google';
 import { OpenAIProvider } from './providers/openai';
 
 interface LLMGatewayOptions {
@@ -27,6 +29,8 @@ export class LLMGateway {
     this.config = config;
     this.providers = {
       openai: new OpenAIProvider(),
+      anthropic: new AnthropicProvider(),
+      google: new GoogleProvider(),
       ...options?.providers,
     };
     this.telemetry = options?.telemetry;
