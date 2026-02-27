@@ -79,7 +79,7 @@
   - [ ] Add adapters for Anthropic and Google models.
   - [ ] Acceptance: Tests show successful routing + error handling per provider.
 
-- [ ] Epic: Context Budget Manager
+- [x] Epic: Context Budget Manager
   - [ ] Token budgeting, history trim/summarize, minimal context mode.
   - [ ] Acceptance: Tests keep context under budget; minimal mode triggers when constrained.
 

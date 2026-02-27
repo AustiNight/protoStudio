@@ -234,6 +234,10 @@ export interface ContextBudget {
    */
   patchFormat: number;
   /**
+   * Tokens allocated to the CSS :root variables block.
+   */
+  cssVariables: number;
+  /**
    * Tokens allocated to conversation history.
    */
   conversationHistory: number;
