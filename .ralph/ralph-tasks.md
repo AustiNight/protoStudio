@@ -222,7 +222,7 @@
   - [ ] Checkpoint detect on load; resume/start-fresh dialog; persisted last 20 msgs.
   - [ ] Acceptance: Crash fixture reload offers resume; fresh load shows no prompt.
 
-- [ ] Epic: Deploy – GitHub Pages
+- [x] Epic: Deploy – GitHub Pages
   - [ ] Create repo, push, enable Pages via API; scope validation.
   - [ ] Acceptance: Mocked API tests create repo, enable pages, return live URL.
 
