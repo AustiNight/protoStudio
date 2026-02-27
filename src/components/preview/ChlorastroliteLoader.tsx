@@ -81,6 +81,15 @@ function persistEyeVariant(): void {
   }
 }
 
+export function resetChlorastroliteSession(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.removeItem(SESSION_EASTER_EGG_KEY);
+  } catch {
+    // Ignore storage failures (private mode, quota, etc.).
+  }
+}
+
 export const ChlorastroliteLoader: React.FC<{
   label?: string;
   variant?: ChlorastroliteVariant;

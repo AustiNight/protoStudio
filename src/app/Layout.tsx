@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { resetChlorastroliteSession } from '@/components/preview/ChlorastroliteLoader';
 import { PreviewPanel } from '@/components/preview/PreviewPanel';
 import type { CostRoleBreakdown } from '@/components/shared/CostTicker';
 import { HeaderBar } from '@/components/shared/HeaderBar';
+import { NewConversationDialog } from '@/components/shared/NewConversationDialog';
 import { SettingsModal } from '@/components/shared/SettingsModal';
+import { SessionCheckpoint } from '@/persistence/checkpoint';
 import type { ChatMessage } from '@/types/chat';
 import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
 
@@ -247,15 +250,20 @@ function emitBacklogReorder(fromId: string, toId: string, order: string[]): void
 
 export function Layout() {
   const [activePanel, setActivePanel] = useState<PanelKey>('chat');
-  const groupedMessages = groupChatMessages(sampleMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>(sampleMessages);
+  const groupedMessages = groupChatMessages(messages);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const isTyping = true;
+  const isTyping = messages.length > 0;
   const [isPaused, setIsPaused] = useState(false);
+  const [onDeck, setOnDeck] = useState<OnDeckCard | null>(onDeckItem);
   const [focusedItemId, setFocusedItemId] = useState<string | null>(onDeckItem.id);
   const [backlogItems, setBacklogItems] = useState<BacklogCard[]>(initialBacklogItems);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [previewResetKey, setPreviewResetKey] = useState(0);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -265,6 +273,30 @@ export function Layout() {
     });
   }, [groupedMessages.length, isTyping]);
 
+  const handleStartNewConversation = () => {
+    if (isResetting) return;
+    setIsResetDialogOpen(true);
+  };
+
+  const handleConfirmReset = async () => {
+    if (isResetting) return;
+    setIsResetting(true);
+    const checkpoint = new SessionCheckpoint();
+    await checkpoint.clear();
+    resetChlorastroliteSession();
+    setMessages([]);
+    setOnDeck(null);
+    setBacklogItems([]);
+    setFocusedItemId(null);
+    setDraggedId(null);
+    setDragOverId(null);
+    setIsPaused(false);
+    setActivePanel('chat');
+    setPreviewResetKey((prev) => prev + 1);
+    setIsResetDialogOpen(false);
+    setIsResetting(false);
+  };
+
   return (
     <div className="relative min-h-screen bg-slate-950 font-['Space_Grotesk'] text-slate-100">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_45%_at_10%_0%,rgba(16,185,129,0.28),transparent_60%)]" />
@@ -272,11 +304,19 @@ export function Layout() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_100%,rgba(15,23,42,0.9),transparent_60%)]" />
       <HeaderBar
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onNewConversation={handleStartNewConversation}
+        isResetting={isResetting}
         costTotal={sampleCostTotal}
         costRoles={sampleCostRoles}
         hasUnknownModel={sampleHasUnknownModel}
       />
       <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <NewConversationDialog
+        open={isResetDialogOpen}
+        onCancel={() => setIsResetDialogOpen(false)}
+        onConfirm={handleConfirmReset}
+        isWorking={isResetting}
+      />
 
       <main className="relative z-10 mx-auto flex min-h-screen max-w-[1800px] flex-col px-4 pb-6 pt-20">
         <div className="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-slate-800/70 bg-slate-900/60 p-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300 md:hidden">
@@ -329,61 +369,70 @@ export function Layout() {
                 </div>
                 <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
                   <div className="flex flex-col">
-                    {groupedMessages.map((grouped, index) => {
-                      const { message, position, showHeader } = grouped;
-                      const isUser = message.sender === 'user';
-                      const isSystem = message.sender === 'system';
-                      const alignment = isSystem
-                        ? 'items-center'
-                        : isUser
-                          ? 'items-end'
-                          : 'items-start';
-                      const bubbleShape = isSystem
-                        ? 'rounded-xl'
-                        : isUser
-                          ? userBubbleShape[position]
-                          : assistantBubbleShape[position];
-                      const bubbleTone = isSystem
-                        ? 'border border-slate-800/80 bg-slate-900/70 text-slate-200'
-                        : isUser
-                          ? 'bg-emerald-300 text-slate-950 shadow-[0_10px_20px_rgba(16,185,129,0.25)]'
-                          : 'bg-slate-800/90 text-slate-100 shadow-[0_10px_20px_rgba(15,23,42,0.45)]';
-                      const spacingClass =
-                        index === 0 ? 'mt-0' : showHeader ? 'mt-4' : 'mt-1';
-                      const maxWidth = isSystem ? 'max-w-[82%]' : 'max-w-[75%]';
-
-                      return (
-                        <div
-                          key={message.id}
-                          className={`flex flex-col ${alignment} ${spacingClass}`}
-                        >
-                          {showHeader && !isSystem && (
-                            <div
-                              className={`mb-1 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400 ${
-                                isUser ? 'justify-end text-right' : 'justify-start'
-                              }`}
-                            >
-                              <span className="font-['JetBrains_Mono']">
-                                {isUser ? 'You' : 'Studio'}
-                              </span>
-                              <span className="text-slate-500">
-                                {formatTimestamp(message.timestamp)}
-                              </span>
-                            </div>
-                          )}
-                          {isSystem && (
-                            <div className="mb-1 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                              System Notice
-                            </div>
-                          )}
-                          <div
-                            className={`${maxWidth} px-4 py-2 text-sm leading-relaxed ${bubbleTone} ${bubbleShape} whitespace-pre-line`}
-                          >
-                            {message.content}
-                          </div>
+                    {groupedMessages.length === 0 ? (
+                      <div className="flex flex-1 flex-col items-center justify-center gap-2 py-12 text-center text-sm text-slate-400">
+                        <div className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                          New session
                         </div>
-                      );
-                    })}
+                        <div>Describe the site you want to build to start a new preview.</div>
+                      </div>
+                    ) : (
+                      groupedMessages.map((grouped, index) => {
+                        const { message, position, showHeader } = grouped;
+                        const isUser = message.sender === 'user';
+                        const isSystem = message.sender === 'system';
+                        const alignment = isSystem
+                          ? 'items-center'
+                          : isUser
+                            ? 'items-end'
+                            : 'items-start';
+                        const bubbleShape = isSystem
+                          ? 'rounded-xl'
+                          : isUser
+                            ? userBubbleShape[position]
+                            : assistantBubbleShape[position];
+                        const bubbleTone = isSystem
+                          ? 'border border-slate-800/80 bg-slate-900/70 text-slate-200'
+                          : isUser
+                            ? 'bg-emerald-300 text-slate-950 shadow-[0_10px_20px_rgba(16,185,129,0.25)]'
+                            : 'bg-slate-800/90 text-slate-100 shadow-[0_10px_20px_rgba(15,23,42,0.45)]';
+                        const spacingClass =
+                          index === 0 ? 'mt-0' : showHeader ? 'mt-4' : 'mt-1';
+                        const maxWidth = isSystem ? 'max-w-[82%]' : 'max-w-[75%]';
+
+                        return (
+                          <div
+                            key={message.id}
+                            className={`flex flex-col ${alignment} ${spacingClass}`}
+                          >
+                            {showHeader && !isSystem && (
+                              <div
+                                className={`mb-1 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400 ${
+                                  isUser ? 'justify-end text-right' : 'justify-start'
+                                }`}
+                              >
+                                <span className="font-['JetBrains_Mono']">
+                                  {isUser ? 'You' : 'Studio'}
+                                </span>
+                                <span className="text-slate-500">
+                                  {formatTimestamp(message.timestamp)}
+                                </span>
+                              </div>
+                            )}
+                            {isSystem && (
+                              <div className="mb-1 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                                System Notice
+                              </div>
+                            )}
+                            <div
+                              className={`${maxWidth} px-4 py-2 text-sm leading-relaxed ${bubbleTone} ${bubbleShape} whitespace-pre-line`}
+                            >
+                              {message.content}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                     {isTyping && (
                       <div className="mt-4 flex flex-col items-start">
                         <div className="mb-1 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-slate-400">
@@ -415,6 +464,7 @@ export function Layout() {
             } md:block`}
           >
             <PreviewPanel
+              key={previewResetKey}
               kicker={panels[1].kicker}
               label={panels[1].label}
               description={panels[1].description}
@@ -455,62 +505,71 @@ export function Layout() {
             <div className="flex min-h-0 flex-1 flex-col gap-4">
               <p className="text-sm text-slate-300">{panels[2].description}</p>
               <div className="flex min-h-0 flex-1 flex-col gap-3">
-                <div
-                  className={`rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900/70 to-slate-950/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.45)] ${
-                    focusedItemId === onDeckItem.id
-                      ? 'ring-2 ring-emerald-300/70'
-                      : ''
-                  }`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setFocusedItemId(onDeckItem.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      setFocusedItemId(onDeckItem.id);
-                    }
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.3em] text-slate-400">
-                      On Deck
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {focusedItemId === onDeckItem.id && (
-                        <span className="rounded-full bg-emerald-300/20 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-200">
-                          Focused
+                {onDeck ? (
+                  <div
+                    className={`rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900/70 to-slate-950/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.45)] ${
+                      focusedItemId === onDeck.id ? 'ring-2 ring-emerald-300/70' : ''
+                    }`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setFocusedItemId(onDeck.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setFocusedItemId(onDeck.id);
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.3em] text-slate-400">
+                        On Deck
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {focusedItemId === onDeck.id && (
+                          <span className="rounded-full bg-emerald-300/20 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-200">
+                            Focused
+                          </span>
+                        )}
+                        <span className="rounded-full border border-slate-700/80 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300">
+                          Locked
                         </span>
-                      )}
-                      <span className="rounded-full border border-slate-700/80 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300">
-                        Locked
+                      </div>
+                    </div>
+                    <h3 className="mt-3 text-base font-semibold text-slate-100">
+                      {onDeck.title}
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-300">{onDeck.summary}</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                      <span className="rounded-full border border-slate-800/80 px-2 py-1">
+                        {onDeck.kind}
+                      </span>
+                      <span className="rounded-full border border-slate-800/80 px-2 py-1">
+                        Impact {onDeck.impact}
+                      </span>
+                      <span className="rounded-full border border-slate-800/80 px-2 py-1">
+                        Effort {onDeck.effort}
+                      </span>
+                      <span className="rounded-full border border-slate-800/80 px-2 py-1">
+                        ETA {onDeck.etaMinutes}m
                       </span>
                     </div>
+                    <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+                      <span className="font-['JetBrains_Mono'] uppercase tracking-[0.2em]">
+                        Visible
+                      </span>
+                      <span className="text-slate-200">{onDeck.visibleChange}</span>
+                    </div>
                   </div>
-                  <h3 className="mt-3 text-base font-semibold text-slate-100">
-                    {onDeckItem.title}
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-300">{onDeckItem.summary}</p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                    <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                      {onDeckItem.kind}
-                    </span>
-                    <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                      Impact {onDeckItem.impact}
-                    </span>
-                    <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                      Effort {onDeckItem.effort}
-                    </span>
-                    <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                      ETA {onDeckItem.etaMinutes}m
-                    </span>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-800/80 bg-slate-950/40 p-4 text-sm text-slate-400">
+                    <div className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.3em] text-slate-500">
+                      On Deck
+                    </div>
+                    <p className="mt-2 text-slate-300">
+                      No active work item yet. Start a conversation to populate the backlog.
+                    </p>
                   </div>
-                  <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
-                    <span className="font-['JetBrains_Mono'] uppercase tracking-[0.2em]">
-                      Visible
-                    </span>
-                    <span className="text-slate-200">{onDeckItem.visibleChange}</span>
-                  </div>
-                </div>
+                )}
 
                 <div className="flex items-center justify-between">
                   <div className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -521,115 +580,126 @@ export function Layout() {
                   </div>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  <div
-                    role="list"
-                    className={`flex flex-col gap-3 ${
-                      isPaused ? 'opacity-70' : ''
-                    }`}
-                  >
-                    {backlogItems.map((item, index) => {
-                      const isFocused = focusedItemId === item.id;
-                      const isDragTarget = dragOverId === item.id;
-                      return (
-                        <div
-                          key={item.id}
-                          role="listitem"
-                          tabIndex={0}
-                          draggable={!isPaused}
-                          aria-grabbed={draggedId === item.id}
-                          onClick={() => setFocusedItemId(item.id)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
+                  {backlogItems.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-800/80 bg-slate-950/40 p-4 text-sm text-slate-400">
+                      <div className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.3em] text-slate-500">
+                        Backlog
+                      </div>
+                      <p className="mt-2 text-slate-300">
+                        No backlog items yet. Keep chatting to generate the next batch.
+                      </p>
+                    </div>
+                  ) : (
+                    <div
+                      role="list"
+                      className={`flex flex-col gap-3 ${
+                        isPaused ? 'opacity-70' : ''
+                      }`}
+                    >
+                      {backlogItems.map((item, index) => {
+                        const isFocused = focusedItemId === item.id;
+                        const isDragTarget = dragOverId === item.id;
+                        return (
+                          <div
+                            key={item.id}
+                            role="listitem"
+                            tabIndex={0}
+                            draggable={!isPaused}
+                            aria-grabbed={draggedId === item.id}
+                            onClick={() => setFocusedItemId(item.id)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                setFocusedItemId(item.id);
+                              }
+                            }}
+                            onDragStart={(event) => {
+                              if (isPaused) return;
+                              setDraggedId(item.id);
+                              event.dataTransfer.effectAllowed = 'move';
+                              event.dataTransfer.setData('text/plain', item.id);
+                            }}
+                            onDragOver={(event) => {
+                              if (isPaused || !draggedId || draggedId === item.id) return;
                               event.preventDefault();
-                              setFocusedItemId(item.id);
-                            }
-                          }}
-                          onDragStart={(event) => {
-                            if (isPaused) return;
-                            setDraggedId(item.id);
-                            event.dataTransfer.effectAllowed = 'move';
-                            event.dataTransfer.setData('text/plain', item.id);
-                          }}
-                          onDragOver={(event) => {
-                            if (isPaused || !draggedId || draggedId === item.id) return;
-                            event.preventDefault();
-                            setDragOverId(item.id);
-                            event.dataTransfer.dropEffect = 'move';
-                          }}
-                          onDragLeave={() => {
-                            if (dragOverId === item.id) {
+                              setDragOverId(item.id);
+                              event.dataTransfer.dropEffect = 'move';
+                            }}
+                            onDragLeave={() => {
+                              if (dragOverId === item.id) {
+                                setDragOverId(null);
+                              }
+                            }}
+                            onDrop={(event) => {
+                              if (isPaused || !draggedId || draggedId === item.id) return;
+                              event.preventDefault();
+                              const fromIndex = backlogItems.findIndex(
+                                (candidate) => candidate.id === draggedId,
+                              );
+                              const toIndex = backlogItems.findIndex(
+                                (candidate) => candidate.id === item.id,
+                              );
+                              if (fromIndex < 0 || toIndex < 0) return;
+                              const reordered = reorderBacklog(backlogItems, fromIndex, toIndex);
+                              setBacklogItems(reordered);
+                              emitBacklogReorder(
+                                draggedId,
+                                item.id,
+                                reordered.map((entry) => entry.id),
+                              );
+                              setDraggedId(null);
                               setDragOverId(null);
-                            }
-                          }}
-                          onDrop={(event) => {
-                            if (isPaused || !draggedId || draggedId === item.id) return;
-                            event.preventDefault();
-                            const fromIndex = backlogItems.findIndex(
-                              (candidate) => candidate.id === draggedId,
-                            );
-                            const toIndex = backlogItems.findIndex(
-                              (candidate) => candidate.id === item.id,
-                            );
-                            if (fromIndex < 0 || toIndex < 0) return;
-                            const reordered = reorderBacklog(backlogItems, fromIndex, toIndex);
-                            setBacklogItems(reordered);
-                            emitBacklogReorder(
-                              draggedId,
-                              item.id,
-                              reordered.map((entry) => entry.id),
-                            );
-                            setDraggedId(null);
-                            setDragOverId(null);
-                          }}
-                          onDragEnd={() => {
-                            setDraggedId(null);
-                            setDragOverId(null);
-                          }}
-                          className={`rounded-2xl border border-slate-800/80 bg-slate-900/60 px-4 py-3 transition ${
-                            isFocused ? 'ring-2 ring-emerald-300/60' : ''
-                          } ${isDragTarget ? 'border-emerald-300/70' : ''} ${
-                            isPaused ? 'cursor-not-allowed' : 'cursor-grab'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                                  {item.owner}
-                                </span>
-                                {isFocused && (
-                                  <span className="rounded-full bg-emerald-300/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-200">
-                                    Focused
+                            }}
+                            onDragEnd={() => {
+                              setDraggedId(null);
+                              setDragOverId(null);
+                            }}
+                            className={`rounded-2xl border border-slate-800/80 bg-slate-900/60 px-4 py-3 transition ${
+                              isFocused ? 'ring-2 ring-emerald-300/60' : ''
+                            } ${isDragTarget ? 'border-emerald-300/70' : ''} ${
+                              isPaused ? 'cursor-not-allowed' : 'cursor-grab'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                                    {item.owner}
                                   </span>
-                                )}
+                                  {isFocused && (
+                                    <span className="rounded-full bg-emerald-300/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-200">
+                                      Focused
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className="mt-2 text-sm font-semibold text-slate-100">
+                                  {item.title}
+                                </h4>
+                                <p className="mt-1 text-xs text-slate-300">
+                                  {item.summary}
+                                </p>
                               </div>
-                              <h4 className="mt-2 text-sm font-semibold text-slate-100">
-                                {item.title}
-                              </h4>
-                              <p className="mt-1 text-xs text-slate-300">
-                                {item.summary}
-                              </p>
+                              <div className="flex flex-col items-end gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                                <span className="rounded-full border border-slate-800/80 px-2 py-1">
+                                  {item.kind}
+                                </span>
+                                <span className="rounded-full border border-slate-800/80 px-2 py-1">
+                                  Impact {item.impact}
+                                </span>
+                                <span className="rounded-full border border-slate-800/80 px-2 py-1">
+                                  Effort {item.effort}
+                                </span>
+                              </div>
                             </div>
-                            <div className="flex flex-col items-end gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                              <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                                {item.kind}
-                              </span>
-                              <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                                Impact {item.impact}
-                              </span>
-                              <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                                Effort {item.effort}
-                              </span>
+                            <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                              <span>Priority {index + 1}</span>
+                              <span>{isPaused ? 'Paused' : 'Drag ready'}</span>
                             </div>
                           </div>
-                          <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                            <span>Priority {index + 1}</span>
-                            <span>{isPaused ? 'Paused' : 'Drag ready'}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

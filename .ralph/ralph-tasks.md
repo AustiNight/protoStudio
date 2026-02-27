@@ -167,7 +167,7 @@
   - [ ] Running total, hover breakdown, unknown-model tooltip, pricing “last updated”.
   - [ ] Acceptance: Cost recomputes on mocked usage; tooltip shows breakdown + date.
 
-- [ ] Epic: New Conversation Flow
+- [x] Epic: New Conversation Flow
   - [ ] Confirm dialog; reset preserves preferences; loader reset state.
   - [ ] Acceptance: Reset clears session/backlog/VFS; preserves keys/models/tokens.
 

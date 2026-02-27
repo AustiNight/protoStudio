@@ -3,6 +3,8 @@ import { CostTicker } from './CostTicker';
 
 type HeaderBarProps = {
   onOpenSettings?: () => void;
+  onNewConversation?: () => void;
+  isResetting?: boolean;
   costTotal?: number;
   costRoles?: CostRoleBreakdown[];
   hasUnknownModel?: boolean;
@@ -10,6 +12,8 @@ type HeaderBarProps = {
 
 export function HeaderBar({
   onOpenSettings,
+  onNewConversation,
+  isResetting = false,
   costTotal = 0,
   costRoles = [],
   hasUnknownModel,
@@ -46,9 +50,11 @@ export function HeaderBar({
           </button>
           <button
             type="button"
-            className="rounded-full bg-emerald-300/90 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-950 transition hover:bg-emerald-200"
+            onClick={() => onNewConversation?.()}
+            disabled={isResetting}
+            className="rounded-full bg-emerald-300/90 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-950 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            New Conversation
+            {isResetting ? 'Resetting...' : 'New Conversation'}
           </button>
         </div>
       </div>
