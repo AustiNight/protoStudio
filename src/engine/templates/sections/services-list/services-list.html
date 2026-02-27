@@ -1,0 +1,19 @@
+<!-- PP:SECTION:services-list -->
+<section class="services-list" data-pp-section="services-list">
+  <div class="services-list__inner">
+    <header class="services-list__header">
+      <h2 class="services-list__title">{{heading}}</h2>
+      <p class="services-list__subtitle">{{subheading}}</p>
+    </header>
+    <div class="services-list__grid">
+      {{#each services}}
+      <article class="services-list__card">
+        <h3 class="services-list__card-title">{{this.title}}</h3>
+        <p class="services-list__card-body">{{this.description}}</p>
+        <p class="services-list__card-meta">{{this.price}}</p>
+      </article>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:services-list -->

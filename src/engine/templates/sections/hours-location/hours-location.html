@@ -1,0 +1,36 @@
+<!-- PP:SECTION:hours-location -->
+<section class="hours-location" data-pp-section="hours-location">
+  <div class="hours-location__inner">
+    <header class="hours-location__header">
+      <h2 class="hours-location__title">{{heading}}</h2>
+      <p class="hours-location__subtitle">{{subheading}}</p>
+    </header>
+    <div class="hours-location__grid">
+      <div class="hours-location__card">
+        <h3 class="hours-location__card-title">Hours</h3>
+        <table class="hours-location__table">
+          <tbody>
+            {{#each hours}}
+            <tr>
+              <th scope="row">{{this.day}}</th>
+              <td>{{this.time}}</td>
+            </tr>
+            {{/each}}
+          </tbody>
+        </table>
+      </div>
+      <div class="hours-location__card">
+        <h3 class="hours-location__card-title">Location</h3>
+        <p class="hours-location__address">{{address}}</p>
+        <p class="hours-location__contact">
+          <a href="tel:{{phone}}">{{phone}}</a>
+        </p>
+        <p class="hours-location__contact">
+          <a href="mailto:{{email}}">{{email}}</a>
+        </p>
+        <a class="hours-location__link" href="{{mapLink}}">Get directions</a>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:hours-location -->

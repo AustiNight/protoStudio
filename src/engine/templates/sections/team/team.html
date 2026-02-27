@@ -1,0 +1,24 @@
+<!-- PP:SECTION:team -->
+<section class="team" data-pp-section="team">
+  <div class="team__inner">
+    <header class="team__header">
+      <h2 class="team__title">{{heading}}</h2>
+      <p class="team__subtitle">{{subheading}}</p>
+    </header>
+    <div class="team__grid">
+      {{#each members}}
+      <article class="team__card">
+        <div class="team__photo">
+          <img class="team__image" src="{{this.image}}" alt="{{this.name}}" loading="lazy" />
+        </div>
+        <div class="team__content">
+          <h3 class="team__name">{{this.name}}</h3>
+          <p class="team__role">{{this.role}}</p>
+          <p class="team__bio">{{this.bio}}</p>
+        </div>
+      </article>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:team -->

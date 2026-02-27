@@ -1,0 +1,20 @@
+<!-- PP:SECTION:faq -->
+<section class="faq" data-pp-section="faq">
+  <div class="faq__inner">
+    <header class="faq__header">
+      <h2 class="faq__title">{{heading}}</h2>
+      <p class="faq__subtitle">{{subheading}}</p>
+    </header>
+    <div class="faq__list" data-faq-list>
+      {{#each items}}
+      <details class="faq__item" data-faq-item>
+        <summary class="faq__question">{{this.question}}</summary>
+        <div class="faq__answer" data-faq-answer>
+          <p>{{this.answer}}</p>
+        </div>
+      </details>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:faq -->

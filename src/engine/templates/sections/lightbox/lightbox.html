@@ -1,0 +1,50 @@
+<!-- PP:SECTION:lightbox -->
+<section class="lightbox" data-pp-section="lightbox">
+  <div class="lightbox__inner">
+    <header class="lightbox__header">
+      <h2 class="lightbox__title">{{heading}}</h2>
+      <p class="lightbox__subtitle">{{subheading}}</p>
+    </header>
+    <div class="lightbox__grid">
+      {{#each items}}
+      <button
+        class="lightbox__item"
+        type="button"
+        data-lightbox-item
+        data-lightbox-src="{{this.src}}"
+        data-lightbox-alt="{{this.alt}}"
+        data-lightbox-caption="{{this.caption}}"
+      >
+        <img class="lightbox__image" src="{{this.src}}" alt="{{this.alt}}" loading="lazy" />
+        <span class="lightbox__label">{{this.caption}}</span>
+      </button>
+      {{/each}}
+    </div>
+  </div>
+  <div class="lightbox__overlay" data-lightbox-overlay aria-hidden="true">
+    <div class="lightbox__dialog" role="dialog" aria-modal="true" aria-label="Image preview">
+      <button class="lightbox__close" type="button" data-lightbox-close>Close</button>
+      <button
+        class="lightbox__nav lightbox__nav--prev"
+        type="button"
+        data-lightbox-prev
+        aria-label="Previous image"
+      >
+        Prev
+      </button>
+      <figure class="lightbox__viewer">
+        <img class="lightbox__viewer-image" data-lightbox-image alt="" />
+        <figcaption class="lightbox__caption" data-lightbox-caption></figcaption>
+      </figure>
+      <button
+        class="lightbox__nav lightbox__nav--next"
+        type="button"
+        data-lightbox-next
+        aria-label="Next image"
+      >
+        Next
+      </button>
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:lightbox -->

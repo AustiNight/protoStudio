@@ -1,0 +1,25 @@
+<!-- PP:SECTION:pricing-table -->
+<section class="pricing-table" data-pp-section="pricing-table">
+  <div class="pricing-table__inner">
+    <header class="pricing-table__header">
+      <h2 class="pricing-table__title">{{heading}}</h2>
+      <p class="pricing-table__subtitle">{{subheading}}</p>
+    </header>
+    <div class="pricing-table__grid">
+      {{#each plans}}
+      <article class="pricing-table__card pricing-table__card--{{this.tier}}">
+        <div class="pricing-table__card-top">
+          <p class="pricing-table__plan">{{this.name}}</p>
+          <p class="pricing-table__price">{{this.price}}</p>
+          <p class="pricing-table__summary">{{this.summary}}</p>
+        </div>
+        <ul class="pricing-table__features">
+          {{{this.featuresHtml}}}
+        </ul>
+        <a class="pricing-table__cta" href="{{../ctaHref}}">{{../ctaText}}</a>
+      </article>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:pricing-table -->

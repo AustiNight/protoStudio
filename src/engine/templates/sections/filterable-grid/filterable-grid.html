@@ -1,0 +1,28 @@
+<!-- PP:SECTION:filterable-grid -->
+<section
+  class="filterable-grid"
+  data-pp-section="filterable-grid"
+  data-filter-scope="{{scope}}"
+>
+  <div class="filterable-grid__inner">
+    <header class="filterable-grid__header">
+      <h2 class="filterable-grid__title">{{heading}}</h2>
+      <p class="filterable-grid__subtitle">{{subheading}}</p>
+    </header>
+    <div class="filterable-grid__grid" data-filter-grid>
+      {{#each items}}
+      <article
+        class="filterable-grid__card"
+        data-filter-item
+        data-filter-tags="{{this.category}}"
+      >
+        <div class="filterable-grid__tag">{{this.category}}</div>
+        <h3 class="filterable-grid__card-title">{{this.title}}</h3>
+        <p class="filterable-grid__card-body">{{this.summary}}</p>
+        <a class="filterable-grid__link" href="{{this.href}}">{{../linkText}}</a>
+      </article>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:filterable-grid -->

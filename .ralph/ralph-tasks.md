@@ -115,7 +115,7 @@
   - [ ] Build about, features grid, testimonials, CTA banner sections.
   - [ ] Acceptance: Tests validate anchors and slot bindings.
 
-- [ ] Epic: Shared Sections
+- [x] Epic: Shared Sections
   - [ ] Build FAQ, pricing, category filter, filterable grid, lightbox, services list, team, hours/location, reviews embed.
   - [ ] Acceptance: Tests include dependency rules (e.g., lightbox ↔ gallery).
 

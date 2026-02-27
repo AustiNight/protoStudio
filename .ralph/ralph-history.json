@@ -940,13 +940,56 @@
         "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.",
         "Tests were created using the new types and classes, and runtime errors seem unlikely since test failures would catch null accesses. I'll mark tasks complete by updating the task file, replacing in-pro"
       ]
+    },
+    {
+      "iteration": 25,
+      "startedAt": "2026-02-27T01:03:26.262Z",
+      "endedAt": "2026-02-27T01:15:27.592Z",
+      "durationMs": 721158,
+      "agent": "codex",
+      "model": "gpt-5.2-codex",
+      "toolsUsed": {
+        "LLM": 2,
+        "total": 1,
+        "minimal": 1,
+        "dataset": 1,
+        "existing": 2,
+        "CSS": 1,
+        "scripted": 1,
+        "a": 2,
+        "on": 1,
+        "helpers": 1,
+        "tests": 1
+      },
+      "filesModified": [
+        ".ralph/ralph-last-output.txt",
+        ".ralph/ralph-tasks.md",
+        "src/engine/templates/section-library.ts",
+        ".ralph/ralph-last-output-iter-25.txt",
+        "src/engine/templates/sections/category-filter/",
+        "src/engine/templates/sections/faq/",
+        "src/engine/templates/sections/filterable-grid/",
+        "src/engine/templates/sections/hours-location/",
+        "src/engine/templates/sections/lightbox/",
+        "src/engine/templates/sections/pricing-table/",
+        "src/engine/templates/sections/reviews-embed/",
+        "src/engine/templates/sections/services-list/",
+        "src/engine/templates/sections/team/",
+        "tests/unit/engine/shared-sections.test.ts"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pass when constraints met.",
+        "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path."
+      ]
     }
   ],
-  "totalDurationMs": 9736163,
+  "totalDurationMs": 10457321,
   "struggleIndicators": {
     "repeatedErrors": {
-      "- [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 24,
-      "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.": 24,
+      "- [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 25,
+      "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.": 25,
       "Outlining full guardrail input/output types and functions covering accessibility, CSP, SRI, third-pa": 1,
       "I'm outlining a detailed test file to cover guardrail success and failure cases, plus verifying secu": 1,
       "I'm specifying various failure cases for guardrails, including missing anchors, hardcoded colors, CS": 1,

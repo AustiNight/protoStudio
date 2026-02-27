@@ -1,0 +1,20 @@
+<!-- PP:SECTION:category-filter -->
+<section class="category-filter" data-pp-section="category-filter" data-filter-scope="{{scope}}">
+  <div class="category-filter__inner">
+    <header class="category-filter__header">
+      <h2 class="category-filter__title">{{heading}}</h2>
+      <p class="category-filter__subtitle">{{subheading}}</p>
+    </header>
+    <div class="category-filter__controls" data-filter-controls>
+      <button class="category-filter__button is-active" type="button" data-filter-value="all">
+        All
+      </button>
+      {{#each categories}}
+      <button class="category-filter__button" type="button" data-filter-value="{{this.value}}">
+        {{this.label}}
+      </button>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:category-filter -->

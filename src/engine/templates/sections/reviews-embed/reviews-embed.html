@@ -1,0 +1,27 @@
+<!-- PP:SECTION:reviews-embed -->
+<section class="reviews-embed" data-pp-section="reviews-embed">
+  <div class="reviews-embed__inner">
+    <header class="reviews-embed__header">
+      <h2 class="reviews-embed__title">{{heading}}</h2>
+      <p class="reviews-embed__subtitle">{{subheading}}</p>
+    </header>
+    <div class="reviews-embed__embed">
+      {{{embedCode}}}
+    </div>
+    <div class="reviews-embed__grid">
+      {{#each reviews}}
+      <article class="reviews-embed__card">
+        <p class="reviews-embed__quote">"{{this.quote}}"</p>
+        <div class="reviews-embed__meta">
+          <strong>{{this.name}}</strong>
+          <span>{{this.source}}</span>
+        </div>
+        <div class="reviews-embed__rating" aria-label="{{this.rating}} out of 5 stars">
+          {{{this.starsHtml}}}
+        </div>
+      </article>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:reviews-embed -->

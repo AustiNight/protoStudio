@@ -1,0 +1,133 @@
+/* === PP:BLOCK:pricing-table === */
+.pricing-table {
+  padding: var(--space-section) 0;
+  background: var(--color-bg-alt);
+  color: var(--color-text);
+}
+
+.pricing-table__inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--space-section);
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.pricing-table__header {
+  display: grid;
+  gap: var(--space-sm);
+  max-width: var(--content-narrow);
+}
+
+.pricing-table__title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(1.6rem, 2.4vw, 2.25rem);
+  line-height: var(--line-height-tight);
+}
+
+.pricing-table__subtitle {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+  line-height: var(--line-height-relaxed);
+}
+
+.pricing-table__grid {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.pricing-table__card {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.pricing-table__card--featured {
+  border-color: var(--color-primary);
+}
+
+.pricing-table__card-top {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.pricing-table__plan {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.85rem;
+}
+
+.pricing-table__price {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(1.6rem, 2.6vw, 2.4rem);
+}
+
+.pricing-table__summary {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+  line-height: var(--line-height-relaxed);
+}
+
+.pricing-table__features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-xs);
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+}
+
+.pricing-table__features li {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: flex-start;
+}
+
+.pricing-table__features li::before {
+  content: '-';
+  color: var(--color-primary);
+}
+
+.pricing-table__cta {
+  align-self: flex-start;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  font-family: var(--font-body);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+}
+
+.pricing-table__cta:hover,
+.pricing-table__cta:focus {
+  background: var(--color-primary-strong);
+  border-color: var(--color-primary-strong);
+}
+
+@media (min-width: 48rem) {
+  .pricing-table__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 72rem) {
+  .pricing-table__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* === /PP:BLOCK:pricing-table === */

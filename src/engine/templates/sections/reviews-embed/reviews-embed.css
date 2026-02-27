@@ -1,0 +1,95 @@
+/* === PP:BLOCK:reviews-embed === */
+.reviews-embed {
+  padding: var(--space-section) 0;
+  background: var(--color-bg-alt);
+  color: var(--color-text);
+}
+
+.reviews-embed__inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--space-section);
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.reviews-embed__header {
+  display: grid;
+  gap: var(--space-sm);
+  max-width: var(--content-narrow);
+}
+
+.reviews-embed__title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(1.6rem, 2.4vw, 2.25rem);
+  line-height: var(--line-height-tight);
+}
+
+.reviews-embed__subtitle {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+  line-height: var(--line-height-relaxed);
+}
+
+.reviews-embed__embed {
+  border: var(--border-width) dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  padding: var(--space-md);
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+}
+
+.reviews-embed__grid {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.reviews-embed__card {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  padding: var(--space-md);
+  display: grid;
+  gap: var(--space-sm);
+  box-shadow: var(--shadow-lg);
+}
+
+.reviews-embed__quote {
+  margin: 0;
+  font-family: var(--font-body);
+  font-style: italic;
+  color: var(--color-text);
+  line-height: var(--line-height-relaxed);
+}
+
+.reviews-embed__meta {
+  display: grid;
+  gap: var(--space-xs);
+  font-family: var(--font-body);
+}
+
+.reviews-embed__meta span {
+  color: var(--color-text-muted);
+}
+
+.reviews-embed__rating {
+  color: var(--color-accent, var(--color-primary));
+  font-family: var(--font-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+@media (min-width: 48rem) {
+  .reviews-embed__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 72rem) {
+  .reviews-embed__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* === /PP:BLOCK:reviews-embed === */
