@@ -238,7 +238,7 @@
   - [ ] Host selection (zero-cost priority + features + available tokens); predeploy scans (no node_modules, Lighthouse stub, link check, vulnerability allowlist).
   - [ ] Acceptance: Tests pick correct host per matrix (GH→CF→Netlify priority) and validation blocks bad bundle.
 
-- [ ] Epic: Token Guides & Validation UI
+- [x] Epic: Token Guides & Validation UI
   - [ ] Render GitHub/Netlify/CF guides; “Test token” buttons call validators.
   - [ ] Acceptance: Invalid token shows actionable error; valid token unlocks host option.
 

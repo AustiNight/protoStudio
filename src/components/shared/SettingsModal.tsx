@@ -89,6 +89,32 @@ const TABS: Array<{ id: TabKey; label: string; description: string }> = [
 
 const LLM_PROVIDERS: ProviderName[] = ['openai', 'anthropic', 'google'];
 const DEPLOY_HOSTS: DeployHost[] = ['github', 'cloudflare', 'netlify', 'vercel'];
+const DEPLOY_HOST_OPTIONS: Array<{
+  id: DeployHost;
+  label: string;
+  hint: string;
+}> = [
+  {
+    id: 'github',
+    label: 'GitHub Pages',
+    hint: 'Requires repo + Pages permissions.',
+  },
+  {
+    id: 'cloudflare',
+    label: 'Cloudflare Pages',
+    hint: 'Requires Pages + account access.',
+  },
+  {
+    id: 'netlify',
+    label: 'Netlify',
+    hint: 'Requires deploy + site management access.',
+  },
+  {
+    id: 'vercel',
+    label: 'Vercel',
+    hint: 'Optional fallback; token must include project access.',
+  },
+];
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('keys');
@@ -526,6 +552,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 value={settings.deployTokens.github}
                 placeholder="ghp_... or github_pat_..."
                 status={tokenStatus.github}
+                actionLabel="Test token"
                 onChange={(value) => handleDeployTokenChange('github', value)}
                 onValidate={() => runTokenValidation('github')}
               />
@@ -535,6 +562,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 value={settings.deployTokens.cloudflare}
                 placeholder="Cloudflare API token"
                 status={tokenStatus.cloudflare}
+                actionLabel="Test token"
                 onChange={(value) => handleDeployTokenChange('cloudflare', value)}
                 onValidate={() => runTokenValidation('cloudflare')}
               />
@@ -544,6 +572,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 value={settings.deployTokens.netlify}
                 placeholder="Netlify personal access token"
                 status={tokenStatus.netlify}
+                actionLabel="Test token"
                 onChange={(value) => handleDeployTokenChange('netlify', value)}
                 onValidate={() => runTokenValidation('netlify')}
               />
@@ -553,9 +582,54 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 value={settings.deployTokens.vercel}
                 placeholder="vercel_..."
                 status={tokenStatus.vercel}
+                actionLabel="Test token"
                 onChange={(value) => handleDeployTokenChange('vercel', value)}
                 onValidate={() => runTokenValidation('vercel')}
               />
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {DEPLOY_HOST_OPTIONS.map((host) => {
+                const validation = tokenStatus[host.id].status;
+                const unlocked = validation === 'valid';
+                const lockedMessage =
+                  validation === 'invalid'
+                    ? 'Locked: token failed validation.'
+                    : validation === 'validating'
+                      ? 'Checking token...'
+                      : 'Locked: test the token to unlock.';
+                return (
+                  <div
+                    key={host.id}
+                    className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-100">
+                          {host.label}
+                        </h4>
+                        <p className="mt-1 text-xs text-slate-400">{host.hint}</p>
+                      </div>
+                      <span
+                        className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${
+                          unlocked
+                            ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-200'
+                            : 'border-slate-700/80 bg-slate-900/60 text-slate-400'
+                        }`}
+                      >
+                        {unlocked ? 'Unlocked' : 'Locked'}
+                      </span>
+                    </div>
+                    <p
+                      className={`mt-2 text-xs ${
+                        unlocked ? 'text-emerald-200' : 'text-slate-400'
+                      }`}
+                    >
+                      {unlocked ? 'Ready to deploy.' : lockedMessage}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -605,6 +679,7 @@ type SecretFieldProps = {
   value: string;
   placeholder: string;
   status: ValidationState;
+  actionLabel?: string;
   onChange: (value: string) => void;
   onValidate: () => void;
 };
@@ -615,6 +690,7 @@ function SecretField({
   value,
   placeholder,
   status,
+  actionLabel = 'Ping',
   onChange,
   onValidate,
 }: SecretFieldProps) {
@@ -656,7 +732,7 @@ function SecretField({
             onClick={onValidate}
             className="rounded-full bg-emerald-300/90 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-950 transition hover:bg-emerald-200"
           >
-            Ping
+            {actionLabel}
           </button>
         </div>
       </div>
@@ -870,7 +946,7 @@ function validateDeployToken(
   value: string,
 ): { ok: boolean; message: string } {
   if (!value) {
-    return { ok: false, message: 'Token is empty.' };
+    return { ok: false, message: 'Token is empty. Paste a token and click Test token.' };
   }
 
   if (host === 'github') {
@@ -879,28 +955,36 @@ function validateDeployToken(
       /^github_pat_[A-Za-z0-9_]{20,}/.test(value);
     return {
       ok: valid,
-      message: valid ? 'GitHub token looks valid.' : 'GitHub token format looks off.',
+      message: valid
+        ? 'GitHub token looks valid.'
+        : 'GitHub token format looks off. Use ghp_... or github_pat_... with repo scope.',
     };
   }
   if (host === 'cloudflare') {
     const valid = /^[A-Za-z0-9_-]{40,}/.test(value);
     return {
       ok: valid,
-      message: valid ? 'Cloudflare token looks valid.' : 'Cloudflare token format looks off.',
+      message: valid
+        ? 'Cloudflare token looks valid.'
+        : 'Cloudflare token format looks off. Create a Pages API token with account access.',
     };
   }
   if (host === 'netlify') {
     const valid = /^[A-Za-z0-9_-]{30,}/.test(value);
     return {
       ok: valid,
-      message: valid ? 'Netlify token looks valid.' : 'Netlify token format looks off.',
+      message: valid
+        ? 'Netlify token looks valid.'
+        : 'Netlify token format looks off. Generate a personal access token with deploy permissions.',
     };
   }
 
   const valid = /^(vercel|vrc)_[A-Za-z0-9_-]{10,}/.test(value);
   return {
     ok: valid,
-    message: valid ? 'Vercel token looks valid.' : 'Vercel token format looks off.',
+    message: valid
+      ? 'Vercel token looks valid.'
+      : 'Vercel token format looks off. Create a token in Vercel settings and re-test.',
   };
 }
 
