@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { calculateCost } from '../../../src/engine/llm/cost';
+
+import pricingConfigRaw from '../../../src/config/model-pricing.json';
+import { calculateCost, getPricingLastUpdated } from '../../../src/engine/llm/cost';
+import type { PricingConfig } from '../../../src/types/pricing';
+
+const pricingConfig = pricingConfigRaw as PricingConfig;
 
 describe('calculateCost', () => {
+  it('should load pricing from JSON config file', () => {
+    const rates = pricingConfig.models['gpt-4o'];
+    expect(rates).toBeDefined();
+
+    const usage = { promptTokens: 1000, completionTokens: 1000 };
+    const expected =
+      (usage.promptTokens / 1000) * rates.promptPer1K +
+      (usage.completionTokens / 1000) * rates.completionPer1K;
+
+    const result = calculateCost('gpt-4o', usage);
+
+    expect(result.cost).toBeCloseTo(expected, 6);
+    expect(getPricingLastUpdated()).toBe(pricingConfig.lastUpdated);
+  });
+
   it('should calculate correct cost for gpt-4o when usage provided', () => {
     const result = calculateCost('gpt-4o', {
       promptTokens: 1000,

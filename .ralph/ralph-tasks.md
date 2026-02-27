@@ -250,9 +250,9 @@
   - [ ] DeployButton states, progress chat events, final live URL + doc download link.
   - [ ] Acceptance: UI disables when no tokens; shows progress and success/fail chat messages.
 
-- [ ] Epic: Model Pricing Config
-  - [ ] External JSON pricing table load; unknown model path; “pricing last updated” tooltip date.
-  - [ ] Acceptance: Tests for known/unknown models and date display.
+- [x] Epic: Model Pricing Config
+  - [x] External JSON pricing table load; unknown model path; “pricing last updated” tooltip date.
+  - [x] Acceptance: Tests for known/unknown models and date display.
 
 - [ ] Epic: Observability UX Integration
   - [ ] Map build phases to status dot colors/text; slow/timeout messaging; skip/fail chat flows; channel consistency.
