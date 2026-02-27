@@ -83,7 +83,7 @@
   - [ ] Token budgeting, history trim/summarize, minimal context mode.
   - [ ] Acceptance: Tests keep context under budget; minimal mode triggers when constrained.
 
-- [ ] Epic: Narration Layer
+- [x] Epic: Narration Layer
   - [ ] Status-bar text mapping, slow-message rotation, swap/skip chat messages.
   - [ ] Acceptance: Tests map each phase to expected text; slow messaging after threshold.
 
