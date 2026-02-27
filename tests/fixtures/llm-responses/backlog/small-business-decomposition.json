@@ -1,0 +1,11 @@
+{
+  "content": "[{\"title\":\"Add services section\",\"description\":\"Insert a services section with three placeholder cards.\",\"atomType\":\"structure\",\"filesTouch\":[\"index.html\"],\"estimatedLines\":80,\"visibleChange\":\"A new Services section appears on the homepage with three cards.\",\"dependencies\":[]},{\"title\":\"Write services copy\",\"description\":\"Replace placeholder services text with business-specific copy.\",\"atomType\":\"content\",\"filesTouch\":[\"index.html\"],\"estimatedLines\":40,\"visibleChange\":\"Services cards show real copy tailored to the business.\",\"dependencies\":[\"Add services section\"]},{\"title\":\"Apply warm brand colors\",\"description\":\"Update buttons and accents to a warm palette.\",\"atomType\":\"style\",\"filesTouch\":[\"styles.css\"],\"estimatedLines\":55,\"visibleChange\":\"Buttons and accents switch to a warm color palette.\",\"dependencies\":[]}]",
+  "usage": {
+    "promptTokens": 210,
+    "completionTokens": 168
+  },
+  "model": "gpt-4o-mini",
+  "latencyMs": 1120,
+  "cost": 0.0024,
+  "unknownModel": false
+}

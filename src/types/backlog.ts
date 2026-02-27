@@ -96,3 +96,21 @@ export interface WorkItem {
    */
   visibleChange: string;
 }
+
+/**
+ * Decision returned when evaluating a backlog reorder request.
+ */
+export interface ReorderDecision {
+  /**
+   * Whether the reorder is approved.
+   */
+  approved: boolean;
+  /**
+   * Explanation for approval or denial.
+   */
+  reason: string;
+  /**
+   * Backlog ordering to apply (original if denied, reordered if approved).
+   */
+  backlog: WorkItem[];
+}

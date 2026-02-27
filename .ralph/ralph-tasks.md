@@ -179,7 +179,7 @@
   - [ ] Wire classifier → template assemble → quick customize Title/Logo/Slogan/Colors → preview ≤30s.
   - [ ] Acceptance: Integration test hits preview within SLA with mocked LLM.
 
-- [ ] Epic: PO Backlog Generation
+- [x] Epic: PO Backlog Generation
   - [ ] Apply decomposition + SEO auto-items; visibleChange/filesTouch/effort/deps set.
   - [ ] Acceptance: Fixture produces atoms all within Builder Atom limits.
 

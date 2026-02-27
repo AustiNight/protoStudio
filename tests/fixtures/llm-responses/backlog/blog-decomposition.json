@@ -1,0 +1,11 @@
+{
+  "content": "[{\"title\":\"Add blog listing page\",\"description\":\"Create a blog listing page with three placeholder posts.\",\"atomType\":\"structure\",\"filesTouch\":[\"blog.html\"],\"estimatedLines\":90,\"visibleChange\":\"A blog listing page appears with three placeholder posts.\",\"dependencies\":[]},{\"title\":\"Add blog post detail page\",\"description\":\"Create a blog post detail page with placeholder content and a back link.\",\"atomType\":\"structure\",\"filesTouch\":[\"post.html\"],\"estimatedLines\":95,\"visibleChange\":\"A blog post detail page is available with placeholder content.\",\"dependencies\":[\"Add blog listing page\"]},{\"title\":\"Add category filter UI\",\"description\":\"Add category tags and a filter UI to the blog listing.\",\"atomType\":\"behavior\",\"filesTouch\":[\"blog.html\",\"main.js\"],\"estimatedLines\":70,\"visibleChange\":\"Blog posts can be filtered by category tags.\",\"dependencies\":[\"Add blog listing page\"]},{\"title\":\"Add RSS feed output\",\"description\":\"Generate an RSS feed for the latest posts.\",\"atomType\":\"integration\",\"filesTouch\":[\"rss.xml\"],\"estimatedLines\":60,\"visibleChange\":\"An RSS feed is generated for the blog.\",\"dependencies\":[\"Add blog listing page\"]}]",
+  "usage": {
+    "promptTokens": 260,
+    "completionTokens": 190
+  },
+  "model": "gpt-4o-mini",
+  "latencyMs": 1240,
+  "cost": 0.0029,
+  "unknownModel": false
+}
