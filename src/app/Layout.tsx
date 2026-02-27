@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { PreviewPanel } from '@/components/preview/PreviewPanel';
+import type { CostRoleBreakdown } from '@/components/shared/CostTicker';
 import { HeaderBar } from '@/components/shared/HeaderBar';
 import { SettingsModal } from '@/components/shared/SettingsModal';
 import type { ChatMessage } from '@/types/chat';
@@ -153,6 +154,53 @@ const sampleMessages: ChatMessage[] = [
   },
 ];
 
+const sampleCostRoles: CostRoleBreakdown[] = [
+  {
+    role: 'chat',
+    cost: 0.18,
+    calls: 14,
+    promptTokens: 2400,
+    completionTokens: 800,
+    models: [
+      {
+        model: 'gpt-4o-mini',
+        calls: 12,
+        promptTokens: 2000,
+        completionTokens: 700,
+        cost: 0.15,
+      },
+      {
+        model: 'gpt-4o',
+        calls: 2,
+        promptTokens: 400,
+        completionTokens: 100,
+        cost: 0.03,
+      },
+    ],
+  },
+  {
+    role: 'builder',
+    cost: 0.24,
+    calls: 6,
+    promptTokens: 1200,
+    completionTokens: 600,
+    models: [
+      {
+        model: 'claude-sonnet-4-20250514',
+        calls: 6,
+        promptTokens: 1200,
+        completionTokens: 600,
+        cost: 0.24,
+      },
+    ],
+  },
+];
+
+const sampleCostTotal = sampleCostRoles.reduce((total, role) => total + role.cost, 0);
+const sampleHasUnknownModel = sampleCostRoles.some((role) =>
+  role.models.some((model) => model.unknown),
+);
+
 const timeFormatter = new Intl.DateTimeFormat('en-US', {
   hour: 'numeric',
   minute: '2-digit',
@@ -222,7 +270,12 @@ export function Layout() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_45%_at_10%_0%,rgba(16,185,129,0.28),transparent_60%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_40%_at_90%_10%,rgba(56,189,248,0.2),transparent_55%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_100%,rgba(15,23,42,0.9),transparent_60%)]" />
-      <HeaderBar onOpenSettings={() => setIsSettingsOpen(true)} />
+      <HeaderBar
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        costTotal={sampleCostTotal}
+        costRoles={sampleCostRoles}
+        hasUnknownModel={sampleHasUnknownModel}
+      />
       <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       <main className="relative z-10 mx-auto flex min-h-screen max-w-[1800px] flex-col px-4 pb-6 pt-20">

@@ -163,7 +163,7 @@
   - [ ] Tabs for LLM Keys/Models/Deploy Tokens; AES persistence; validation pings; expandable guides.
   - [ ] Acceptance: Keys/tokens stored encrypted; invalid key shows error.
 
-- [ ] Epic: Cost Ticker
+- [x] Epic: Cost Ticker
   - [ ] Running total, hover breakdown, unknown-model tooltip, pricing “last updated”.
   - [ ] Acceptance: Cost recomputes on mocked usage; tooltip shows breakdown + date.
 

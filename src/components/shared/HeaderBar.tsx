@@ -1,8 +1,19 @@
+import type { CostRoleBreakdown } from './CostTicker';
+import { CostTicker } from './CostTicker';
+
 type HeaderBarProps = {
   onOpenSettings?: () => void;
+  costTotal?: number;
+  costRoles?: CostRoleBreakdown[];
+  hasUnknownModel?: boolean;
 };
 
-export function HeaderBar({ onOpenSettings }: HeaderBarProps) {
+export function HeaderBar({
+  onOpenSettings,
+  costTotal = 0,
+  costRoles = [],
+  hasUnknownModel,
+}: HeaderBarProps) {
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-800/70 bg-slate-950/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-[1800px] items-center justify-between px-4">
@@ -20,9 +31,12 @@ export function HeaderBar({ onOpenSettings }: HeaderBarProps) {
           </div>
         </div>
         <div className="flex items-center gap-2 text-sm text-slate-200">
-          <div className="hidden items-center gap-2 rounded-full border border-slate-800/80 bg-slate-900/70 px-3 py-1 font-['JetBrains_Mono'] text-xs font-medium uppercase tracking-[0.2em] text-slate-300 sm:flex">
-            Cost $0.00
-          </div>
+          <CostTicker
+            className="hidden sm:flex"
+            totalCost={costTotal}
+            roles={costRoles}
+            hasUnknownModel={hasUnknownModel}
+          />
           <button
             type="button"
             onClick={() => onOpenSettings?.()}
