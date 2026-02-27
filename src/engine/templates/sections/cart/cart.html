@@ -1,0 +1,31 @@
+<!-- PP:SECTION:cart -->
+<section class="cart" data-pp-section="cart">
+  <div class="cart__inner">
+    <header class="cart__header">
+      <h2 class="cart__title">{{heading}}</h2>
+      <p class="cart__subtitle">{{subheading}}</p>
+    </header>
+    <button class="cart__toggle" type="button" data-cart-toggle>
+      <span>{{toggleLabel}}</span>
+      <span class="cart__count" data-cart-count>0</span>
+    </button>
+    <div class="cart__drawer" data-cart-drawer aria-hidden="true">
+      <div class="cart__drawer-header">
+        <h3 class="cart__drawer-title">{{drawerTitle}}</h3>
+        <button class="cart__close" type="button" data-cart-close>
+          Close
+        </button>
+      </div>
+      <div class="cart__items" data-cart-items></div>
+      <div class="cart__empty" data-cart-empty>{{emptyMessage}}</div>
+      <div class="cart__summary">
+        <div class="cart__total-label">Total</div>
+        <div class="cart__total" data-cart-total>$0.00</div>
+      </div>
+      <a class="cart__checkout" href="{{checkoutHref}}" data-cart-checkout>
+        {{checkoutLabel}}
+      </a>
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:cart -->

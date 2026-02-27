@@ -1,0 +1,53 @@
+/* === PP:BLOCK:calendar-embed === */
+.calendar-embed {
+  padding: var(--space-section) 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.calendar-embed__inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--space-section);
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.calendar-embed__header {
+  display: grid;
+  gap: var(--space-sm);
+  max-width: var(--content-narrow);
+}
+
+.calendar-embed__title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(1.6rem, 2.6vw, 2.3rem);
+}
+
+.calendar-embed__subtitle {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+}
+
+.calendar-embed__frame {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.calendar-embed__frame iframe {
+  width: 100%;
+  min-height: 600px;
+  border: none;
+}
+
+.calendar-embed__note {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+/* === /PP:BLOCK:calendar-embed === */

@@ -1,0 +1,24 @@
+<!-- PP:SECTION:service-menu -->
+<section class="service-menu" data-pp-section="service-menu">
+  <div class="service-menu__inner">
+    <header class="service-menu__header">
+      <h2 class="service-menu__title">{{heading}}</h2>
+      <p class="service-menu__subtitle">{{subheading}}</p>
+    </header>
+    <div class="service-menu__list">
+      {{#each services}}
+      <article class="service-menu__item">
+        <div class="service-menu__info">
+          <h3 class="service-menu__name">{{this.name}}</h3>
+          <p class="service-menu__description">{{this.description}}</p>
+        </div>
+        <div class="service-menu__meta">
+          <span class="service-menu__price">{{this.price}}</span>
+          <a class="service-menu__cta" href="{{this.href}}">{{../ctaText}}</a>
+        </div>
+      </article>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:service-menu -->

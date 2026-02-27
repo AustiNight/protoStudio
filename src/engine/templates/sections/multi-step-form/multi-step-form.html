@@ -1,0 +1,80 @@
+<!-- PP:SECTION:multi-step-form -->
+<section class="multi-step-form" data-pp-section="multi-step-form">
+  <div class="multi-step-form__inner">
+    <header class="multi-step-form__header">
+      <h2 class="multi-step-form__title">{{heading}}</h2>
+      <p class="multi-step-form__subtitle">{{subheading}}</p>
+    </header>
+    <form
+      class="multi-step-form__form"
+      action="{{formAction}}"
+      method="post"
+      data-multistep-form
+    >
+      <div class="multi-step-form__progress" data-form-progress>
+        <div class="multi-step-form__progress-step" data-step-indicator="1">1</div>
+        <div class="multi-step-form__progress-step" data-step-indicator="2">2</div>
+        <div class="multi-step-form__progress-step" data-step-indicator="3">3</div>
+      </div>
+      <div class="multi-step-form__steps">
+        <div class="multi-step-form__step" data-form-step="1">
+          <label class="multi-step-form__field">
+            <span>Full name</span>
+            <input type="text" name="name" required />
+          </label>
+          <label class="multi-step-form__field">
+            <span>Email address</span>
+            <input type="email" name="email" required />
+          </label>
+          <button class="multi-step-form__next" type="button" data-step-next>
+            Next
+          </button>
+        </div>
+        <div class="multi-step-form__step" data-form-step="2">
+          <label class="multi-step-form__field">
+            <span>Project type</span>
+            <select name="projectType" required>
+              <option value="">Select an option</option>
+              <option value="website">Website</option>
+              <option value="branding">Branding</option>
+              <option value="marketing">Marketing</option>
+            </select>
+          </label>
+          <label class="multi-step-form__field">
+            <span>Estimated budget</span>
+            <input type="text" name="budget" placeholder="$5k - $10k" required />
+          </label>
+          <div class="multi-step-form__actions">
+            <button class="multi-step-form__back" type="button" data-step-prev>
+              Back
+            </button>
+            <button class="multi-step-form__next" type="button" data-step-next>
+              Next
+            </button>
+          </div>
+        </div>
+        <div class="multi-step-form__step" data-form-step="3">
+          <label class="multi-step-form__field">
+            <span>Goals</span>
+            <textarea name="goals" rows="4" required></textarea>
+          </label>
+          <label class="multi-step-form__field">
+            <span>Timeline</span>
+            <input type="text" name="timeline" placeholder="Launch in 6 weeks" required />
+          </label>
+          <div class="multi-step-form__actions">
+            <button class="multi-step-form__back" type="button" data-step-prev>
+              Back
+            </button>
+            <button class="multi-step-form__submit" type="submit">
+              {{submitLabel}}
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="multi-step-form__status" data-form-status>{{statusText}}</div>
+      <p class="multi-step-form__notice">{{notice}}</p>
+    </form>
+  </div>
+</section>
+<!-- /PP:SECTION:multi-step-form -->

@@ -1,0 +1,36 @@
+<!-- PP:SECTION:feature-comparison -->
+<section class="feature-comparison" data-pp-section="feature-comparison">
+  <div class="feature-comparison__inner">
+    <header class="feature-comparison__header">
+      <h2 class="feature-comparison__title">{{heading}}</h2>
+      <p class="feature-comparison__subtitle">{{subheading}}</p>
+    </header>
+    <div class="feature-comparison__table-wrapper">
+      <table class="feature-comparison__table">
+        <thead>
+          <tr>
+            <th scope="col">Feature</th>
+            {{#each plans}}
+            <th scope="col">
+              <div class="feature-comparison__plan-name">{{this.name}}</div>
+              <div class="feature-comparison__plan-price">{{this.price}}</div>
+              <div class="feature-comparison__plan-note">{{this.note}}</div>
+            </th>
+            {{/each}}
+          </tr>
+        </thead>
+        <tbody>
+          {{#each rows}}
+          <tr>
+            <th scope="row">{{this.feature}}</th>
+            <td>{{{this.planOne}}}</td>
+            <td>{{{this.planTwo}}}</td>
+            <td>{{{this.planThree}}}</td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:feature-comparison -->

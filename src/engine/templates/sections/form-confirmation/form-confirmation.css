@@ -1,0 +1,74 @@
+/* === PP:BLOCK:form-confirmation === */
+.form-confirmation {
+  padding: var(--space-section) 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.form-confirmation__inner {
+  max-width: var(--content-narrow);
+  margin: 0 auto;
+  padding: 0 var(--space-section);
+  display: grid;
+  gap: var(--space-md);
+  text-align: center;
+  justify-items: center;
+}
+
+.form-confirmation__badge {
+  background: var(--color-bg-alt);
+  color: var(--color-text-muted);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+}
+
+.form-confirmation__title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+}
+
+.form-confirmation__message {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+  line-height: var(--line-height-relaxed);
+}
+
+.form-confirmation__cta {
+  text-decoration: none;
+  border: var(--border-width) solid var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary, var(--color-bg));
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.form-confirmation__details {
+  display: grid;
+  gap: var(--space-sm);
+  width: 100%;
+  border-top: var(--border-width) solid var(--color-border);
+  padding-top: var(--space-md);
+}
+
+.form-confirmation__detail {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-body);
+}
+
+.form-confirmation__detail-label {
+  color: var(--color-text-muted);
+}
+
+.form-confirmation__detail-value {
+  font-weight: var(--font-weight-semibold);
+}
+/* === /PP:BLOCK:form-confirmation === */

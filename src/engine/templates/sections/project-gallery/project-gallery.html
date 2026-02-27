@@ -1,0 +1,39 @@
+<!-- PP:SECTION:project-gallery -->
+<section
+  class="project-gallery"
+  data-pp-section="project-gallery"
+  data-filter-scope="{{scope}}"
+>
+  <div class="project-gallery__inner">
+    <header class="project-gallery__header">
+      <h2 class="project-gallery__title">{{heading}}</h2>
+      <p class="project-gallery__subtitle">{{subheading}}</p>
+    </header>
+    <div class="project-gallery__grid" data-filter-grid>
+      {{#each items}}
+      <figure
+        class="project-gallery__item"
+        data-filter-item
+        data-filter-tags="{{this.category}}"
+      >
+        <button
+          class="project-gallery__button"
+          type="button"
+          aria-label="Open {{this.title}}"
+          data-lightbox-item
+          data-lightbox-src="{{this.src}}"
+          data-lightbox-alt="{{this.alt}}"
+          data-lightbox-caption="{{this.caption}}"
+        >
+          <img src="{{this.src}}" alt="{{this.alt}}" loading="lazy" />
+        </button>
+        <figcaption class="project-gallery__caption">
+          <div class="project-gallery__caption-title">{{this.title}}</div>
+          <div class="project-gallery__caption-meta">{{this.category}}</div>
+        </figcaption>
+      </figure>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:project-gallery -->

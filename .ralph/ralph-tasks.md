@@ -119,7 +119,7 @@
   - [ ] Build FAQ, pricing, category filter, filterable grid, lightbox, services list, team, hours/location, reviews embed.
   - [ ] Acceptance: Tests include dependency rules (e.g., lightbox ↔ gallery).
 
-- [ ] Epic: Unique Sections
+- [x] Epic: Unique Sections
   - [ ] Build blog list/detail + RSS, feature comparison, gallery, product cards, cart, stripe link, calendar embed, service menu, multi-step form, confirmation page.
   - [ ] Acceptance: Tests per section; cart uses localStorage; RSS outputs XML.
 

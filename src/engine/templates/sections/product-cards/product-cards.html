@@ -1,0 +1,38 @@
+<!-- PP:SECTION:product-cards -->
+<section class="product-cards" data-pp-section="product-cards">
+  <div class="product-cards__inner">
+    <header class="product-cards__header">
+      <h2 class="product-cards__title">{{heading}}</h2>
+      <p class="product-cards__subtitle">{{subheading}}</p>
+    </header>
+    <div class="product-cards__grid">
+      {{#each products}}
+      <article class="product-cards__card" data-product-id="{{this.id}}">
+        <div class="product-cards__media">
+          <img src="{{this.image}}" alt="{{this.name}}" loading="lazy" />
+          <span class="product-cards__badge">{{this.badge}}</span>
+        </div>
+        <div class="product-cards__body">
+          <h3 class="product-cards__name">{{this.name}}</h3>
+          <p class="product-cards__description">{{this.description}}</p>
+          <div class="product-cards__meta">
+            <span class="product-cards__price">{{this.price}}</span>
+            <button
+              class="product-cards__button"
+              type="button"
+              data-cart-add
+              data-product-id="{{this.id}}"
+              data-product-name="{{this.name}}"
+              data-product-price="{{this.numericPrice}}"
+              data-product-image="{{this.image}}"
+            >
+              {{../ctaText}}
+            </button>
+          </div>
+        </div>
+      </article>
+      {{/each}}
+    </div>
+  </div>
+</section>
+<!-- /PP:SECTION:product-cards -->

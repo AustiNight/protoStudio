@@ -80,7 +80,7 @@ describe('Shared sections', () => {
     const js = readSectionAsset(section.files.js as string);
 
     expectAnchors(section, html, css);
-    expect(section.dependencies).toContain('gallery');
+    expect(section.dependencies).toContain('project-gallery');
     expect(section.dependencies).toContain('product-cards');
     expect(html).toContain('data-lightbox-overlay');
     expect(html).toContain('data-lightbox-item');

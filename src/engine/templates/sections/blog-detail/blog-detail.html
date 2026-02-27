@@ -1,0 +1,33 @@
+<!-- PP:SECTION:blog-detail -->
+<article class="blog-detail" data-pp-section="blog-detail">
+  <div class="blog-detail__inner">
+    <a class="blog-detail__back" href="{{backHref}}">{{backLabel}}</a>
+    <header class="blog-detail__header">
+      <p class="blog-detail__category">{{category}}</p>
+      <h1 class="blog-detail__title">{{title}}</h1>
+      <div class="blog-detail__byline">
+        <span>{{author}}</span>
+        <span aria-hidden="true">•</span>
+        <span>{{date}}</span>
+        <span aria-hidden="true">•</span>
+        <span>{{readTime}}</span>
+      </div>
+      <p class="blog-detail__excerpt">{{excerpt}}</p>
+    </header>
+    <figure class="blog-detail__hero">
+      <img src="{{heroImage}}" alt="{{heroAlt}}" loading="lazy" />
+      <figcaption class="blog-detail__caption">{{heroCaption}}</figcaption>
+    </figure>
+    <div class="blog-detail__content">
+      {{{contentHtml}}}
+    </div>
+    <footer class="blog-detail__footer">
+      <div class="blog-detail__tags">
+        {{#each tags}}
+        <span class="blog-detail__tag">{{this}}</span>
+        {{/each}}
+      </div>
+    </footer>
+  </div>
+</article>
+<!-- /PP:SECTION:blog-detail -->

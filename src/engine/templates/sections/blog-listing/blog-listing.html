@@ -1,0 +1,24 @@
+<!-- PP:SECTION:blog-listing -->
+<section class="blog-listing" data-pp-section="blog-listing" data-posts-per-page="{{postsPerPage}}">
+  <div class="blog-listing__inner">
+    <header class="blog-listing__header">
+      <div class="blog-listing__eyebrow">{{eyebrow}}</div>
+      <h2 class="blog-listing__title">{{heading}}</h2>
+      <p class="blog-listing__subtitle">{{subheading}}</p>
+    </header>
+    <div class="blog-listing__grid" data-blog-list aria-live="polite"></div>
+    <div class="blog-listing__pagination" aria-label="Blog pagination">
+      <button class="blog-listing__page-button" type="button" data-blog-prev>
+        Previous
+      </button>
+      <span class="blog-listing__page-status" data-blog-page>Page 1 of 1</span>
+      <button class="blog-listing__page-button" type="button" data-blog-next>
+        Next
+      </button>
+    </div>
+  </div>
+  <script type="application/json" data-blog-posts>
+    {{{postsJson}}}
+  </script>
+</section>
+<!-- /PP:SECTION:blog-listing -->
