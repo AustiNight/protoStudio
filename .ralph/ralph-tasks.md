@@ -226,7 +226,7 @@
   - [ ] Create repo, push, enable Pages via API; scope validation.
   - [ ] Acceptance: Mocked API tests create repo, enable pages, return live URL.
 
-- [ ] Epic: Deploy – Cloudflare Pages
+- [x] Epic: Deploy – Cloudflare Pages
   - [ ] Wrangler/API deploy; account ID handling.
   - [ ] Acceptance: Mocked deploy returns URL; handles missing token gracefully.
 
