@@ -202,7 +202,7 @@
   - [ ] Manifest + affected/adjacent sections + patch instructions per atom.
   - [ ] Acceptance: Context excludes unrelated sections; matches budget thresholds.
 
-- [ ] Epic: Builder Loop
+- [x] Epic: Builder Loop
   - [ ] On Deck → LLM → patch → validate → continuity → swap; retry + breaker.
   - [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.
 
