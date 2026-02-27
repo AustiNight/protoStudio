@@ -26,19 +26,18 @@ export const createSessionStore = () =>
     ...initialState,
     createSession: (session) =>
       set((state) => {
+        if (state.session) {
+          return {
+            archivedSessions: [],
+          };
+        }
         const activeSession: Session = {
           ...session,
           status: 'active',
         };
-        const archivedSessions = state.session
-          ? archiveInto(state.archivedSessions, {
-              ...state.session,
-              status: 'archived',
-            })
-          : state.archivedSessions;
         return {
           session: activeSession,
-          archivedSessions,
+          archivedSessions: [],
         };
       }),
     setSession: (session) =>
@@ -50,13 +49,9 @@ export const createSessionStore = () =>
         if (!state.session || state.session.id !== sessionId) {
           return {};
         }
-        const archivedSessions = archiveInto(state.archivedSessions, {
-          ...state.session,
-          status: 'archived',
-        });
         return {
           session: null,
-          archivedSessions,
+          archivedSessions: [],
         };
       }),
     resetSession: () => {
@@ -72,7 +67,7 @@ export const createSessionStore = () =>
 
       set((state) => ({
         session: null,
-        archivedSessions: state.archivedSessions,
+        archivedSessions: [],
       }));
     },
     resetStore: () =>
@@ -90,8 +85,3 @@ export const selectIsSessionActive = (state: SessionStoreState) =>
   state.session?.status === 'active';
 export const selectArchivedSessions = (state: SessionStoreState) =>
   state.archivedSessions;
-
-function archiveInto(sessions: Session[], session: Session): Session[] {
-  const filtered = sessions.filter((entry) => entry.id !== session.id);
-  return [...filtered, session];
-}

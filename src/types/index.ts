@@ -9,6 +9,7 @@ export * from './persistence';
 export * from './pricing';
 export * from './result';
 export * from './session';
+export * from './seo';
 export * from './telemetry';
 export * from './template';
 export * from './vfs';

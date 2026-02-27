@@ -10,6 +10,7 @@ import {
   PreviewSecurityHeaders,
   PreviewSecurityInput,
 } from '../../types/guardrails';
+import { isAllowedImageSource } from '../content/imagery';
 
 const HOST_PRIORITY: HostId[] = [
   'github_pages',
@@ -62,6 +63,8 @@ export function runGuardrails(input: GuardrailInput): GuardrailReport {
   violations.push(...checkAnchors(input.html, input.css, input.js));
   violations.push(...checkCssVarUsage(input.css));
   violations.push(...checkAccessibilityBasics(input.html));
+  violations.push(...checkImageUploadUi(input.html));
+  violations.push(...checkImageSources(input.html, input.css));
   violations.push(...checkHostPriority(input.deploy));
   violations.push(...checkAtomMetrics(input.atom));
   violations.push(...checkPreviewSecurity(input.preview));
@@ -366,6 +369,69 @@ function checkAccessibilityBasics(html: string): GuardrailViolation[] {
       });
       break;
     }
+  }
+
+  return violations;
+}
+
+function checkImageUploadUi(html: string): GuardrailViolation[] {
+  const violations: GuardrailViolation[] = [];
+  const fileInputRegex = /<input\b[^>]*\btype\s*=\s*(["']?)file\1/i;
+  const multipartFormRegex =
+    /<form\b[^>]*\benctype\s*=\s*(["']?)multipart\/form-data\1/i;
+
+  if (fileInputRegex.test(html) || multipartFormRegex.test(html)) {
+    violations.push({
+      id: 'content_image_upload',
+      message: 'Image upload UI is not allowed in generated sites.',
+      severity: 'error',
+    });
+  }
+
+  return violations;
+}
+
+function checkImageSources(html: string, css: string): GuardrailViolation[] {
+  const violations: GuardrailViolation[] = [];
+  const invalidSources: string[] = [];
+
+  const imgRegex = /<img\b[^>]*>/gi;
+  const imgTags = html.match(imgRegex) || [];
+  for (const tag of imgTags) {
+    const srcMatch =
+      tag.match(/\bsrc\s*=\s*(["'])(.*?)\1/i) ||
+      tag.match(/\bsrc\s*=\s*([^\\s>]+)/i);
+    const src = srcMatch ? srcMatch[2] ?? srcMatch[1] : '';
+    const trimmed = src?.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (!isAllowedImageSource(trimmed)) {
+      invalidSources.push(trimmed);
+    }
+  }
+
+  const urlRegex = /url\(\s*(["']?)(.*?)\1\s*\)/gi;
+  let match: RegExpExecArray | null = null;
+  while ((match = urlRegex.exec(css)) !== null) {
+    const value = match[2]?.trim() ?? '';
+    if (!value) {
+      continue;
+    }
+    if (value.startsWith('var(') || value.startsWith('#')) {
+      continue;
+    }
+    if (!isAllowedImageSource(value)) {
+      invalidSources.push(value);
+    }
+  }
+
+  if (invalidSources.length > 0) {
+    violations.push({
+      id: 'content_image_source',
+      message: `Disallowed image source detected (${invalidSources[0]}). Use SVG, gradients, or Unsplash.`,
+      severity: 'error',
+    });
   }
 
   return violations;

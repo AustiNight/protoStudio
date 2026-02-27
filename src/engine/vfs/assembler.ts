@@ -8,6 +8,7 @@ import type {
 } from '../../types/template';
 import type { ColorPalette, FontSelection, VfsMetadata } from '../../types/vfs';
 
+import { sanitizeImageFields, sanitizeImageSource } from '../content/imagery';
 import { sectionLibrary, SectionLibrary } from '../templates/section-library';
 import { VirtualFileSystem } from './vfs';
 
@@ -270,7 +271,11 @@ function buildSlotValues(
   for (const slot of slots) {
     const override = customization?.slotOverrides?.[slot.id];
     if (override !== undefined) {
-      values.set(slot.id, override);
+      if (slot.type === 'image' && typeof override === 'string') {
+        values.set(slot.id, sanitizeImageSource(override));
+      } else {
+        values.set(slot.id, override);
+      }
       continue;
     }
 
@@ -280,7 +285,11 @@ function buildSlotValues(
     } else if (Array.isArray(defaultValue)) {
       values.set(slot.id, [...defaultValue]);
     } else {
-      values.set(slot.id, defaultValue);
+      if (slot.type === 'image') {
+        values.set(slot.id, sanitizeImageSource(defaultValue));
+      } else {
+        values.set(slot.id, defaultValue);
+      }
     }
   }
 
@@ -406,6 +415,8 @@ function applyDerivedFields(
     const rating = record.rating ?? '';
     record.starsHtml = renderStarsHtml(rating);
   }
+
+  sanitizeImageFields(record);
 
   return record;
 }

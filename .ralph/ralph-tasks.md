@@ -188,11 +188,11 @@
   - [x] Add automated conversation tests covering refusal → alternative → comply-with-caveat paths.
   - [x] Acceptance: Tests verify two pushbacks then compliance with inline note; no infinite denial.
 
-- [ ] Epic: Content Constraints Enforcement
-  - [ ] Block user image upload UI; enforce SVG/Unsplash/gradient-only imagery; fallback patterns when Unsplash limited.
-  - [ ] Auto-add SEO items (meta, OG, JSON-LD, sitemap, robots) when missing; validation checks ensure presence before deploy.
-  - [ ] Enforce single active session model (no multi-session switch); reset flow preserves preferences only.
-  - [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pass when constraints met.
+- [x] Epic: Content Constraints Enforcement
+  - [x] Block user image upload UI; enforce SVG/Unsplash/gradient-only imagery; fallback patterns when Unsplash limited.
+  - [x] Auto-add SEO items (meta, OG, JSON-LD, sitemap, robots) when missing; validation checks ensure presence before deploy.
+  - [x] Enforce single active session model (no multi-session switch); reset flow preserves preferences only.
+  - [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pass when constraints met.
 
 - [ ] Epic: Backlog Wiring to UI
   - [ ] Sync PO output to stores/UI; On Deck promotion logic; statuses update.

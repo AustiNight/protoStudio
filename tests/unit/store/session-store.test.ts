@@ -118,10 +118,26 @@ describe('session-store', () => {
     useSessionStore.getState().resetSession();
 
     expect(useSessionStore.getState().session).toBeNull();
+    expect(useSessionStore.getState().archivedSessions).toHaveLength(0);
     expect(useChatStore.getState().messages).toHaveLength(0);
     expect(useBacklogStore.getState().items).toHaveLength(0);
     expect(useBuildStore.getState().buildState.phase).toBe('idle');
     expect(useBuildStore.getState().isPaused).toBe(false);
     expect(useTelemetryStore.getState().events).toHaveLength(0);
+  });
+
+  it('should prevent opening a second active session', () => {
+    const session = buildSession();
+    const secondSession: Session = {
+      ...session,
+      id: 'session-2',
+    };
+
+    useSessionStore.getState().createSession(session);
+    useSessionStore.getState().createSession(secondSession);
+
+    const stored = useSessionStore.getState().session;
+    expect(stored?.id).toBe(session.id);
+    expect(useSessionStore.getState().archivedSessions).toHaveLength(0);
   });
 });

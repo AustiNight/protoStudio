@@ -14,7 +14,7 @@ const baseHtml = `<!doctype html>
 <body>
   <!-- PP:SECTION:hero -->
   <section class="hero" data-pp-section="hero">
-    <img src="hero.jpg" alt="Hero image" />
+    <img src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=800&q=80" alt="Hero image" />
     <h1>Hero</h1>
   </section>
   <!-- /PP:SECTION:hero -->
@@ -166,6 +166,29 @@ describe('guardrails', () => {
     const report = runGuardrails(input);
     expect(report.pass).toBe(false);
     expect(report.violations.some((v) => v.id === 'a11y_img_alt')).toBe(true);
+  });
+
+  it('should block image upload UI', () => {
+    const input = buildBaseInput();
+    input.html = `${input.html}\n<form enctype=\"multipart/form-data\"><input type=\"file\" accept=\"image/*\" /></form>`;
+    const report = runGuardrails(input);
+    expect(report.pass).toBe(false);
+    expect(report.violations.some((v) => v.id === 'content_image_upload')).toBe(
+      true,
+    );
+  });
+
+  it('should reject non-Unsplash image sources', () => {
+    const input = buildBaseInput();
+    input.html = input.html.replace(
+      'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=800&q=80',
+      'https://example.com/hero.jpg',
+    );
+    const report = runGuardrails(input);
+    expect(report.pass).toBe(false);
+    expect(report.violations.some((v) => v.id === 'content_image_source')).toBe(
+      true,
+    );
   });
 
   it('should block swap and recommend retry or skip', () => {
