@@ -230,7 +230,7 @@
   - [ ] Wrangler/API deploy; account ID handling.
   - [ ] Acceptance: Mocked deploy returns URL; handles missing token gracefully.
 
-- [ ] Epic: Deploy – Netlify
+- [x] Epic: Deploy – Netlify
   - [ ] Netlify API deploy flow.
   - [ ] Acceptance: Mocked deploy returns URL; handles invalid token error path.
 
