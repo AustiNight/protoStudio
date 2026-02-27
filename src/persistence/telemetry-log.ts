@@ -1,9 +1,19 @@
 import type { AppError, ErrorCategory, Result } from '../types/result';
-import type { TelemetryEvent } from '../types/telemetry';
+import { validateTelemetryEvent, type TelemetryEvent } from '../types/telemetry';
 import { getStudioDb } from './db';
 
 export class TelemetryLog {
   async append(event: TelemetryEvent): Promise<Result<void, AppError>> {
+    const validationError = validateTelemetryEvent(event);
+    if (validationError) {
+      return err(
+        'user_action',
+        'Invalid telemetry event payload.',
+        'telemetry_validation_failed',
+        validationError.message,
+      );
+    }
+
     const dbResult = await getStudioDb();
     if (!dbResult.ok) {
       return dbResult;

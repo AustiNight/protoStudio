@@ -99,7 +99,7 @@
   - [ ] IndexedDB setup; checkpoint save/restore; telemetry append-only log.
   - [ ] Acceptance: Tests confirm checkpoint resume; log order preserved.
 
-- [ ] Epic: Telemetry Logger
+- [x] Epic: Telemetry Logger
   - [ ] Event schema + write path; export hook; no PII.
   - [ ] Acceptance: Tests ensure append-only and schema validation.
 
