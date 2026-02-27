@@ -1863,13 +1863,45 @@
         "src/store/settings-store.ts:267:function getErrorMessage(error: unknown): string {",
         "lastError: buildError,"
       ]
+    },
+    {
+      "iteration": 50,
+      "startedAt": "2026-02-27T04:08:53.594Z",
+      "endedAt": "2026-02-27T04:16:14.711Z",
+      "durationMs": 440842,
+      "agent": "codex",
+      "model": "gpt-5.2-codex",
+      "toolsUsed": {
+        "LLM": 2,
+        "total": 1,
+        "on": 4,
+        "checkpoint": 1,
+        "activeSessionId": 2,
+        "due": 1
+      },
+      "filesModified": [
+        ".ralph/ralph-last-output.txt",
+        ".ralph/ralph-tasks.md",
+        "src/app/Layout.tsx",
+        ".ralph/ralph-last-output-iter-50.txt",
+        "src/components/shared/SessionRecoveryDialog.tsx"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pass when constraints met.",
+        "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.",
+        "setLastError: (error: string | null) => void;",
+        "lastError: buildError,",
+        "I weighed calling `resetWorkspace` on recovery load failure but decided against it to avoid redundant resets; the current approach leaves a blank UI which is acceptable. I confirmed `SessionRecoveryDi"
+      ]
     }
   ],
-  "totalDurationMs": 20825655,
+  "totalDurationMs": 21266497,
   "struggleIndicators": {
     "repeatedErrors": {
       "- [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 43,
-      "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.": 49,
+      "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.": 50,
       "Outlining full guardrail input/output types and functions covering accessibility, CSP, SRI, third-pa": 1,
       "I'm outlining a detailed test file to cover guardrail success and failure cases, plus verifying secu": 1,
       "I'm specifying various failure cases for guardrails, including missing anchors, hardcoded colors, CS": 1,
@@ -1988,7 +2020,7 @@
       "Implemented SwapManager and iframe bridge with accompanying tests. Attempted running tests via `npm ": 1,
       "1. `npm run lint` failed: `eslint` not found in the environment.": 1,
       "function getEncryptionMessage(error: unknown): string {": 1,
-      "setLastError: (error: string | null) => void;": 5,
+      "setLastError: (error: string | null) => void;": 6,
       "setLastError: (error) =>": 1,
       "lastError: getErrorMessage(error),": 1,
       "lastError: '\"'No stored settings found.',": 1,
@@ -2008,7 +2040,7 @@
       "-  - [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; ": 1,
       "+  - [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; ": 1,
       "Summary: Added imagery policy enforcement in `src/engine/content/imagery.ts`, SEO validation checks ": 1,
-      "- [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 6,
+      "- [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 7,
       "Confirmed backlog reorder only affects backlog items, avoiding conflicts with onDeck. Noted potentia": 1,
       "- `npm run test:unit -- tests/unit/engine/context.test.ts` (failed: `vitest` not found).": 1,
       "Fixed a bug with context assembly token usage by removing an undefined backlog summary, added a unit": 1,
@@ -2023,7 +2055,8 @@
       "+      lastError: buildError,": 1,
       "src/store/settings-store.ts:67:          lastError: getErrorMessage(error),": 1,
       "src/store/settings-store.ts:267:function getErrorMessage(error: unknown): string {": 1,
-      "lastError: buildError,": 1
+      "lastError: buildError,": 2,
+      "I weighed calling `resetWorkspace` on recovery load failure but decided against it to avoid redundan": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

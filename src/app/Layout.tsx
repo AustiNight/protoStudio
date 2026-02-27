@@ -5,6 +5,7 @@ import { PreviewPanel } from '@/components/preview/PreviewPanel';
 import type { CostRoleBreakdown } from '@/components/shared/CostTicker';
 import { HeaderBar } from '@/components/shared/HeaderBar';
 import { NewConversationDialog } from '@/components/shared/NewConversationDialog';
+import { SessionRecoveryDialog } from '@/components/shared/SessionRecoveryDialog';
 import { SettingsModal } from '@/components/shared/SettingsModal';
 import {
   getErrorChatMessage,
@@ -19,6 +20,7 @@ import { useChatStore } from '@/store/chat-store';
 import type { ChatMessage } from '@/types/chat';
 import type { AtomType, Effort, WorkItem, WorkItemStatus } from '@/types/backlog';
 import type { BuildPhase } from '@/types/build';
+import type { RecoveryState } from '@/types/persistence';
 import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
 
 type PanelKey = 'chat' | 'preview' | 'backlog';
@@ -267,6 +269,11 @@ function emitBacklogReorder(fromId: string, toId: string, order: string[]): void
 
 export function Layout() {
   const [activePanel, setActivePanel] = useState<PanelKey>('chat');
+  const [activeSessionId, setActiveSessionId] = useState(sampleSessionId);
+  const [recoveryState, setRecoveryState] = useState<RecoveryState | null>(null);
+  const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
+  const [isRecoveryLoading, setIsRecoveryLoading] = useState(false);
+  const [recoveryChecked, setRecoveryChecked] = useState(false);
   const messages = useChatStore((state) => state.messages);
   const addMessage = useChatStore((state) => state.addMessage);
   const setMessages = useChatStore((state) => state.setMessages);
@@ -360,6 +367,27 @@ export function Layout() {
   );
 
   useEffect(() => {
+    let isMounted = true;
+    const checkpoint = new SessionCheckpoint();
+
+    void (async () => {
+      const detectResult = await checkpoint.detectRecovery();
+      if (!isMounted) {
+        return;
+      }
+      if (detectResult.ok && detectResult.value) {
+        setRecoveryState(detectResult.value);
+        setIsRecoveryOpen(true);
+      }
+      setRecoveryChecked(true);
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (revertTimerRef.current) {
         window.clearTimeout(revertTimerRef.current);
@@ -438,11 +466,17 @@ export function Layout() {
     if (seededMessagesRef.current) {
       return;
     }
+    if (!recoveryChecked) {
+      return;
+    }
+    if (recoveryState) {
+      return;
+    }
     seededMessagesRef.current = true;
     if (messages.length === 0) {
       setMessages(sampleMessages);
     }
-  }, [messages.length, setMessages]);
+  }, [messages.length, recoveryChecked, recoveryState, setMessages]);
 
   useEffect(() => {
     const atomId = buildAtom?.id ?? null;
@@ -460,7 +494,7 @@ export function Layout() {
     if (buildPhase === 'swapping' && buildAtom) {
       addFocusedMessage(
         buildNarrationMessage(
-          sampleSessionId,
+          activeSessionId,
           'chat_ai',
           getSwapChatMessage(buildAtom),
           buildAtom.id,
@@ -472,7 +506,7 @@ export function Layout() {
       const nextAtom = onDeckItem && onDeckItem.id !== buildAtom.id ? onDeckItem : null;
       addFocusedMessage(
         buildNarrationMessage(
-          sampleSessionId,
+          activeSessionId,
           'chat_ai',
           getSkipChatMessage(buildAtom, nextAtom),
           buildAtom.id,
@@ -484,7 +518,7 @@ export function Layout() {
       const errorMessage = buildError ?? 'Unexpected build error.';
       addFocusedMessage(
         buildNarrationMessage(
-          sampleSessionId,
+          activeSessionId,
           'chat_ai',
           getErrorChatMessage(errorMessage, ''),
           atomId,
@@ -497,7 +531,14 @@ export function Layout() {
       atomId,
       lastError: buildError,
     };
-  }, [addFocusedMessage, buildAtom, buildError, buildPhase, onDeckItem]);
+  }, [
+    activeSessionId,
+    addFocusedMessage,
+    buildAtom,
+    buildError,
+    buildPhase,
+    onDeckItem,
+  ]);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -512,23 +553,84 @@ export function Layout() {
     setIsResetDialogOpen(true);
   };
 
-  const handleConfirmReset = async () => {
-    if (isResetting) return;
-    setIsResetting(true);
+  const resetTransientUi = () => {
+    if (revertTimerRef.current) {
+      window.clearTimeout(revertTimerRef.current);
+      revertTimerRef.current = null;
+    }
+    if (deniedTimerRef.current) {
+      window.clearTimeout(deniedTimerRef.current);
+      deniedTimerRef.current = null;
+    }
+    setDraggedId(null);
+    setDragOverId(null);
+    setPendingReorder(null);
+    setQueueOrderOverride(null);
+    setDeniedItemId(null);
+    setRevertPulse(false);
+    setShowCompleted(false);
+    setAutoFocusOnDeck(true);
+    setActivePanel('chat');
+  };
+
+  const resetWorkspace = async () => {
     const checkpoint = new SessionCheckpoint();
     await checkpoint.clear();
     resetChlorastroliteSession();
     clearMessages();
     clearBacklog();
     resetBuild();
-    setDraggedId(null);
-    setDragOverId(null);
-    setShowCompleted(false);
-    setAutoFocusOnDeck(true);
-    setActivePanel('chat');
+    resetTransientUi();
+    setActiveSessionId(sampleSessionId);
     setPreviewResetKey((prev) => prev + 1);
+    seededMessagesRef.current = true;
+  };
+
+  const handleConfirmReset = async () => {
+    if (isResetting) return;
+    setIsResetting(true);
+    await resetWorkspace();
     setIsResetDialogOpen(false);
     setIsResetting(false);
+  };
+
+  const handleResumeRecovery = async () => {
+    if (isRecoveryLoading) return;
+    setIsRecoveryLoading(true);
+    const checkpoint = new SessionCheckpoint();
+    const loadResult = await checkpoint.load();
+
+    if (!loadResult.ok || !loadResult.value) {
+      await checkpoint.clear();
+      setRecoveryState(null);
+      setIsRecoveryOpen(false);
+      setIsRecoveryLoading(false);
+      setRecoveryChecked(true);
+      seededMessagesRef.current = true;
+      return;
+    }
+
+    const { session, backlog, conversation } = loadResult.value;
+    setActiveSessionId(session.id);
+    setMessages(conversation);
+    setBacklogItems(backlog);
+    resetBuild();
+    resetTransientUi();
+    setRecoveryState(null);
+    setIsRecoveryOpen(false);
+    setIsRecoveryLoading(false);
+    setRecoveryChecked(true);
+    seededMessagesRef.current = true;
+  };
+
+  const handleStartFreshRecovery = async () => {
+    if (isRecoveryLoading) return;
+    setIsRecoveryLoading(true);
+    await resetWorkspace();
+    setRecoveryState(null);
+    setIsRecoveryOpen(false);
+    setIsRecoveryLoading(false);
+    setRecoveryChecked(true);
   };
 
   return (
@@ -545,6 +647,13 @@ export function Layout() {
         hasUnknownModel={sampleHasUnknownModel}
       />
       <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <SessionRecoveryDialog
+        open={isRecoveryOpen}
+        recovery={recoveryState}
+        onResume={handleResumeRecovery}
+        onStartFresh={handleStartFreshRecovery}
+        isWorking={isRecoveryLoading}
+      />
       <NewConversationDialog
         open={isResetDialogOpen}
         onCancel={() => setIsResetDialogOpen(false)}
@@ -959,7 +1068,7 @@ export function Layout() {
                                     }
                                     addFocusedMessage(
                                       buildNarrationMessage(
-                                        sampleSessionId,
+                                        activeSessionId,
                                         'chat_ai',
                                         `Reorder denied: ${decision.reason} Keeping the current queue.`,
                                         fromItem?.id,
@@ -985,7 +1094,7 @@ export function Layout() {
                                       fromQueueIndex < toQueueIndex ? 'after' : 'before';
                                     addFocusedMessage(
                                       buildNarrationMessage(
-                                        sampleSessionId,
+                                        activeSessionId,
                                         'chat_ai',
                                         `Reorder approved. "${fromItem.title}" now sits ${direction} "${toItem.title}".`,
                                         fromItem.id,
@@ -1001,7 +1110,7 @@ export function Layout() {
                                   }
                                   addFocusedMessage(
                                     buildNarrationMessage(
-                                      sampleSessionId,
+                                      activeSessionId,
                                       'chat_ai',
                                       'Reorder denied due to a review error. Keeping the current queue.',
                                       fromItem?.id,

@@ -218,7 +218,7 @@
   - [ ] Click backlog item → chat context tag + hint; builder unaffected mid-build.
   - [ ] Acceptance: Focused item highlighted; messages carry backlog item metadata.
 
-- [ ] Epic: Session Recovery
+- [x] Epic: Session Recovery
   - [ ] Checkpoint detect on load; resume/start-fresh dialog; persisted last 20 msgs.
   - [ ] Acceptance: Crash fixture reload offers resume; fresh load shows no prompt.
 
