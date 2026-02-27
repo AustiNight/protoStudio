@@ -91,7 +91,7 @@
   - [ ] Template vs scratch JSON with confidence gate + clarifying question rule; fixtures.
   - [ ] Acceptance: Tests classify template/scratch/ambiguous per fixtures.
 
-- [ ] Epic: Encryption
+- [x] Epic: Encryption
   - [ ] AES-256 encrypt/decrypt wrapper for keys/tokens; validation errors.
   - [ ] Acceptance: Tests pass roundtrip; invalid key rejected.
 
