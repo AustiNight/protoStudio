@@ -1,0 +1,35 @@
+{
+  "id": "faq",
+  "name": "FAQ",
+  "description": "Frequently asked questions in an accordion.",
+  "category": "shared",
+  "dependencies": [],
+  "conflicts": [],
+  "slots": [
+    {
+      "id": "items",
+      "label": "FAQ Items",
+      "type": "list",
+      "required": true,
+      "maxItems": 6,
+      "defaultValue": [
+        "What services do you offer?",
+        "How long does a project take?"
+      ]
+    }
+  ],
+  "files": {
+    "html": "faq/faq.html",
+    "css": "faq/faq.css",
+    "js": "faq/faq.ts"
+  },
+  "anchors": {
+    "sectionId": "faq",
+    "cssBlockId": "faq",
+    "jsFuncIds": ["faq-init"]
+  },
+  "position": {
+    "zone": "main",
+    "before": ["contact"]
+  }
+}

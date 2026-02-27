@@ -1,0 +1,41 @@
+{
+  "id": "hero",
+  "name": "Hero",
+  "description": "Primary introduction with headline and call to action.",
+  "category": "universal",
+  "dependencies": [],
+  "conflicts": [],
+  "slots": [
+    {
+      "id": "headline",
+      "label": "Headline",
+      "type": "text",
+      "required": true,
+      "defaultValue": "Welcome to our studio"
+    },
+    {
+      "id": "cta",
+      "label": "CTA",
+      "type": "link",
+      "required": false,
+      "defaultValue": "Start here"
+    }
+  ],
+  "files": {
+    "html": "hero/hero.html",
+    "css": "hero/hero.css",
+    "js": "hero/hero.ts"
+  },
+  "anchors": {
+    "sectionId": "hero",
+    "cssBlockId": "hero",
+    "jsFuncIds": ["hero-init"]
+  },
+  "seo": {
+    "injectBaseMeta": false
+  },
+  "position": {
+    "zone": "main",
+    "after": ["nav"]
+  }
+}

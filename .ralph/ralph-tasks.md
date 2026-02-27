@@ -103,7 +103,7 @@
   - [ ] Event schema + write path; export hook; no PII.
   - [ ] Acceptance: Tests ensure append-only and schema validation.
 
-- [ ] Epic: Section Library Schema
+- [x] Epic: Section Library Schema
   - [ ] Validate SectionDefinition/Slot; fixtures for universal/near/shared/unique sections.
   - [ ] Acceptance: Schema tests pass; invalid fixtures rejected.
 

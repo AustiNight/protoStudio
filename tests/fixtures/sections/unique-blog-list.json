@@ -1,0 +1,39 @@
+{
+  "id": "blog-list",
+  "name": "Blog List",
+  "description": "Listing of recent blog posts with thumbnails.",
+  "category": "unique",
+  "dependencies": [],
+  "conflicts": ["product-cards"],
+  "slots": [
+    {
+      "id": "heading",
+      "label": "Heading",
+      "type": "text",
+      "required": true,
+      "defaultValue": "Latest posts"
+    },
+    {
+      "id": "items",
+      "label": "Post Items",
+      "type": "list",
+      "required": true,
+      "maxItems": 9,
+      "defaultValue": ["Post One", "Post Two"]
+    }
+  ],
+  "files": {
+    "html": "blog-list/blog-list.html",
+    "css": "blog-list/blog-list.css",
+    "js": "blog-list/blog-list.ts"
+  },
+  "anchors": {
+    "sectionId": "blog-list",
+    "cssBlockId": "blog-list",
+    "jsFuncIds": ["blog-list-init"]
+  },
+  "position": {
+    "zone": "main",
+    "after": ["hero"]
+  }
+}

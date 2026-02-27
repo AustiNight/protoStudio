@@ -147,6 +147,34 @@ export interface SectionDefinition {
 }
 
 /**
+ * Validation issue reported for a section schema check.
+ */
+export interface SectionValidationIssue {
+  /**
+   * Path to the invalid field.
+   */
+  path: string;
+  /**
+   * Description of the validation error.
+   */
+  message: string;
+}
+
+/**
+ * Result of validating a section definition.
+ */
+export interface SectionValidationResult {
+  /**
+   * Whether the section definition is valid.
+   */
+  valid: boolean;
+  /**
+   * List of validation issues discovered.
+   */
+  issues: SectionValidationIssue[];
+}
+
+/**
  * Per-page template configuration.
  */
 export interface TemplatePageConfig {

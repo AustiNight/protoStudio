@@ -1,0 +1,36 @@
+{
+  "id": "about",
+  "name": "About",
+  "description": "Company story and mission overview.",
+  "category": "near-universal",
+  "dependencies": [],
+  "conflicts": [],
+  "slots": [
+    {
+      "id": "body",
+      "label": "Body",
+      "type": "richtext",
+      "required": true,
+      "defaultValue": "We build thoughtful digital products."
+    },
+    {
+      "id": "image",
+      "label": "Feature Image",
+      "type": "image",
+      "required": false,
+      "defaultValue": "about-image"
+    }
+  ],
+  "files": {
+    "html": "about/about.html",
+    "css": "about/about.css"
+  },
+  "anchors": {
+    "sectionId": "about",
+    "cssBlockId": "about"
+  },
+  "position": {
+    "zone": "main",
+    "after": ["hero"]
+  }
+}

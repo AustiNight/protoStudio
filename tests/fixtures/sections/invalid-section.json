@@ -1,0 +1,28 @@
+{
+  "id": "",
+  "description": "Missing name and invalid schema values.",
+  "category": "invalid-category",
+  "dependencies": "hero",
+  "conflicts": ["invalid", "invalid"],
+  "slots": [
+    {
+      "id": "",
+      "label": "",
+      "type": "unknown",
+      "required": "yes",
+      "maxItems": -1,
+      "defaultValue": ["bad"]
+    }
+  ],
+  "files": {
+    "html": "",
+    "css": 12
+  },
+  "anchors": {
+    "sectionId": 7,
+    "cssBlockId": ""
+  },
+  "seo": {
+    "injectBaseMeta": "false"
+  }
+}
