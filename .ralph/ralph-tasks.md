@@ -194,9 +194,9 @@
   - [x] Enforce single active session model (no multi-session switch); reset flow preserves preferences only.
   - [x] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pass when constraints met.
 
-- [ ] Epic: Backlog Wiring to UI
-  - [ ] Sync PO output to stores/UI; On Deck promotion logic; statuses update.
-  - [ ] Acceptance: On Deck always present/locked; completed items collapse.
+- [x] Epic: Backlog Wiring to UI
+  - [x] Sync PO output to stores/UI; On Deck promotion logic; statuses update.
+  - [x] Acceptance: On Deck always present/locked; completed items collapse.
 
 - [ ] Epic: Builder Context Assembly
   - [ ] Manifest + affected/adjacent sections + patch instructions per atom.

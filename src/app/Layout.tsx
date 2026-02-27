@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { resetChlorastroliteSession } from '@/components/preview/ChlorastroliteLoader';
 import { PreviewPanel } from '@/components/preview/PreviewPanel';
@@ -7,29 +7,13 @@ import { HeaderBar } from '@/components/shared/HeaderBar';
 import { NewConversationDialog } from '@/components/shared/NewConversationDialog';
 import { SettingsModal } from '@/components/shared/SettingsModal';
 import { SessionCheckpoint } from '@/persistence/checkpoint';
+import { useBacklogStore } from '@/store/backlog-store';
+import { useBuildStore } from '@/store/build-store';
 import type { ChatMessage } from '@/types/chat';
+import type { AtomType, Effort, WorkItem, WorkItemStatus } from '@/types/backlog';
 import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
 
 type PanelKey = 'chat' | 'preview' | 'backlog';
-
-type BacklogKind = 'Content' | 'Style' | 'Structure' | 'Behavior';
-type BacklogImpact = 'Low' | 'Medium' | 'High';
-type BacklogEffort = 'S' | 'M' | 'L';
-
-type BacklogCard = {
-  id: string;
-  title: string;
-  summary: string;
-  kind: BacklogKind;
-  impact: BacklogImpact;
-  effort: BacklogEffort;
-  owner: string;
-};
-
-type OnDeckCard = BacklogCard & {
-  etaMinutes: number;
-  visibleChange: string;
-};
 
 const panels: Array<{
   id: PanelKey;
@@ -62,56 +46,6 @@ const panelShell =
 
 const sampleSessionId = 'session-demo';
 const baseTimestamp = new Date('2025-02-01T18:30:00Z').getTime();
-const onDeckItem: OnDeckCard = {
-  id: 'deck-hero-cta',
-  title: 'Refine hero CTA and add class callout',
-  summary: 'Tighten the hero copy and add a subtle waitlist badge.',
-  kind: 'Content',
-  impact: 'High',
-  effort: 'S',
-  owner: 'PO',
-  etaMinutes: 12,
-  visibleChange: 'Hero CTA + waitlist badge',
-};
-const initialBacklogItems: BacklogCard[] = [
-  {
-    id: 'bk-1',
-    title: 'Add class schedule section',
-    summary: 'List upcoming pottery classes with dates and seats.',
-    kind: 'Structure',
-    impact: 'High',
-    effort: 'M',
-    owner: 'Builder',
-  },
-  {
-    id: 'bk-2',
-    title: 'Warm neutral palette refresh',
-    summary: 'Shift backgrounds to clay and sandstone tones.',
-    kind: 'Style',
-    impact: 'Medium',
-    effort: 'S',
-    owner: 'Design',
-  },
-  {
-    id: 'bk-3',
-    title: 'Testimonials carousel',
-    summary: 'Add 3 customer quotes with subtle motion.',
-    kind: 'Behavior',
-    impact: 'Medium',
-    effort: 'M',
-    owner: 'Builder',
-  },
-  {
-    id: 'bk-4',
-    title: 'Studio location micro-copy',
-    summary: 'Clarify parking and transit options in the footer.',
-    kind: 'Content',
-    impact: 'Low',
-    effort: 'S',
-    owner: 'PO',
-  },
-];
-
 const sampleMessages: ChatMessage[] = [
   {
     id: 'm1',
@@ -228,11 +162,7 @@ function formatTimestamp(timestamp: number): string {
   return timeFormatter.format(new Date(timestamp));
 }
 
-function reorderBacklog(
-  items: BacklogCard[],
-  fromIndex: number,
-  toIndex: number,
-): BacklogCard[] {
+function reorderBacklog(items: WorkItem[], fromIndex: number, toIndex: number): WorkItem[] {
   const next = [...items];
   const [moved] = next.splice(fromIndex, 1);
   next.splice(toIndex, 0, moved);
@@ -254,16 +184,65 @@ export function Layout() {
   const groupedMessages = groupChatMessages(messages);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const isTyping = messages.length > 0;
-  const [isPaused, setIsPaused] = useState(false);
-  const [onDeck, setOnDeck] = useState<OnDeckCard | null>(onDeckItem);
-  const [focusedItemId, setFocusedItemId] = useState<string | null>(onDeckItem.id);
-  const [backlogItems, setBacklogItems] = useState<BacklogCard[]>(initialBacklogItems);
+  const backlogItems = useBacklogStore((state) => state.items);
+  const onDeckItem = useBacklogStore((state) =>
+    state.onDeckId ? state.items.find((item) => item.id === state.onDeckId) ?? null : null,
+  );
+  const focusedItemId = useBacklogStore((state) => state.focusedItemId);
+  const focusItem = useBacklogStore((state) => state.focusItem);
+  const promoteNext = useBacklogStore((state) => state.promoteNext);
+  const reorderItems = useBacklogStore((state) => state.reorderItems);
+  const clearBacklog = useBacklogStore((state) => state.clearBacklog);
+  const isPaused = useBuildStore((state) => state.isPaused);
+  const togglePause = useBuildStore((state) => state.togglePause);
+  const resetBuild = useBuildStore((state) => state.resetBuild);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [showCompleted, setShowCompleted] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [previewResetKey, setPreviewResetKey] = useState(0);
+
+  const queueItems = useMemo(
+    () =>
+      [...backlogItems]
+        .filter((item) => item.status !== 'done' && item.id !== onDeckItem?.id)
+        .sort((a, b) => a.order - b.order),
+    [backlogItems, onDeckItem?.id],
+  );
+  const completedItems = useMemo(
+    () => backlogItems.filter((item) => item.status === 'done'),
+    [backlogItems],
+  );
+  const hasBacklog = useMemo(
+    () => backlogItems.some((item) => item.status === 'backlog'),
+    [backlogItems],
+  );
+  const hasFocusedItem = useMemo(() => {
+    if (!focusedItemId) {
+      return false;
+    }
+    return backlogItems.some((item) => item.id === focusedItemId);
+  }, [backlogItems, focusedItemId]);
+
+  useEffect(() => {
+    if (!onDeckItem && hasBacklog) {
+      promoteNext();
+    }
+  }, [hasBacklog, onDeckItem, promoteNext]);
+
+  useEffect(() => {
+    if (onDeckItem?.status === 'done') {
+      promoteNext();
+    }
+  }, [onDeckItem?.status, promoteNext]);
+
+  useEffect(() => {
+    if (onDeckItem && (!focusedItemId || !hasFocusedItem)) {
+      focusItem(onDeckItem.id);
+    }
+  }, [focusItem, focusedItemId, hasFocusedItem, onDeckItem]);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -285,12 +264,11 @@ export function Layout() {
     await checkpoint.clear();
     resetChlorastroliteSession();
     setMessages([]);
-    setOnDeck(null);
-    setBacklogItems([]);
-    setFocusedItemId(null);
+    clearBacklog();
+    resetBuild();
     setDraggedId(null);
     setDragOverId(null);
-    setIsPaused(false);
+    setShowCompleted(false);
     setActivePanel('chat');
     setPreviewResetKey((prev) => prev + 1);
     setIsResetDialogOpen(false);
@@ -495,7 +473,7 @@ export function Layout() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => setIsPaused((prev) => !prev)}
+                  onClick={togglePause}
                   className="rounded-full border border-slate-800/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300 transition hover:border-emerald-300/70 hover:text-emerald-200"
                 >
                   {isPaused ? 'Resume' : 'Pause'}
@@ -505,18 +483,20 @@ export function Layout() {
             <div className="flex min-h-0 flex-1 flex-col gap-4">
               <p className="text-sm text-slate-300">{panels[2].description}</p>
               <div className="flex min-h-0 flex-1 flex-col gap-3">
-                {onDeck ? (
+                {onDeckItem ? (
                   <div
                     className={`rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900/70 to-slate-950/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.45)] ${
-                      focusedItemId === onDeck.id ? 'ring-2 ring-emerald-300/70' : ''
+                      focusedItemId === onDeckItem.id
+                        ? 'ring-2 ring-emerald-300/70'
+                        : ''
                     }`}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setFocusedItemId(onDeck.id)}
+                    onClick={() => focusItem(onDeckItem.id)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault();
-                        setFocusedItemId(onDeck.id);
+                        focusItem(onDeckItem.id);
                       }
                     }}
                   >
@@ -525,39 +505,50 @@ export function Layout() {
                         On Deck
                       </div>
                       <div className="flex items-center gap-2">
-                        {focusedItemId === onDeck.id && (
+                        {focusedItemId === onDeckItem.id && (
                           <span className="rounded-full bg-emerald-300/20 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-200">
                             Focused
                           </span>
                         )}
+                        <span
+                          className={`rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${statusTone(
+                            onDeckItem.status,
+                          )}`}
+                        >
+                          {formatStatus(onDeckItem.status)}
+                        </span>
                         <span className="rounded-full border border-slate-700/80 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300">
                           Locked
                         </span>
                       </div>
                     </div>
                     <h3 className="mt-3 text-base font-semibold text-slate-100">
-                      {onDeck.title}
+                      {onDeckItem.title}
                     </h3>
-                    <p className="mt-1 text-sm text-slate-300">{onDeck.summary}</p>
+                    <p className="mt-1 text-sm text-slate-300">
+                      {onDeckItem.description}
+                    </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
                       <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                        {onDeck.kind}
+                        {formatAtomType(onDeckItem.atomType)}
                       </span>
                       <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                        Impact {onDeck.impact}
+                        Impact {impactFromLines(onDeckItem.estimatedLines)}
                       </span>
                       <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                        Effort {onDeck.effort}
+                        Effort {onDeckItem.effort}
                       </span>
                       <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                        ETA {onDeck.etaMinutes}m
+                        ETA {estimateEta(onDeckItem.effort, onDeckItem.estimatedLines)}m
                       </span>
                     </div>
                     <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
                       <span className="font-['JetBrains_Mono'] uppercase tracking-[0.2em]">
                         Visible
                       </span>
-                      <span className="text-slate-200">{onDeck.visibleChange}</span>
+                      <span className="text-slate-200">
+                        {onDeckItem.visibleChange}
+                      </span>
                     </div>
                   </div>
                 ) : (
@@ -580,7 +571,7 @@ export function Layout() {
                   </div>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  {backlogItems.length === 0 ? (
+                  {queueItems.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-slate-800/80 bg-slate-950/40 p-4 text-sm text-slate-400">
                       <div className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.3em] text-slate-500">
                         Backlog
@@ -596,25 +587,26 @@ export function Layout() {
                         isPaused ? 'opacity-70' : ''
                       }`}
                     >
-                      {backlogItems.map((item, index) => {
+                      {queueItems.map((item, index) => {
                         const isFocused = focusedItemId === item.id;
                         const isDragTarget = dragOverId === item.id;
+                        const isDraggable = !isPaused && item.status === 'backlog';
                         return (
                           <div
                             key={item.id}
                             role="listitem"
                             tabIndex={0}
-                            draggable={!isPaused}
-                            aria-grabbed={draggedId === item.id}
-                            onClick={() => setFocusedItemId(item.id)}
+                            draggable={isDraggable}
+                            aria-grabbed={isDraggable && draggedId === item.id}
+                            onClick={() => focusItem(item.id)}
                             onKeyDown={(event) => {
                               if (event.key === 'Enter' || event.key === ' ') {
                                 event.preventDefault();
-                                setFocusedItemId(item.id);
+                                focusItem(item.id);
                               }
                             }}
                             onDragStart={(event) => {
-                              if (isPaused) return;
+                              if (!isDraggable) return;
                               setDraggedId(item.id);
                               event.dataTransfer.effectAllowed = 'move';
                               event.dataTransfer.setData('text/plain', item.id);
@@ -640,8 +632,12 @@ export function Layout() {
                                 (candidate) => candidate.id === item.id,
                               );
                               if (fromIndex < 0 || toIndex < 0) return;
-                              const reordered = reorderBacklog(backlogItems, fromIndex, toIndex);
-                              setBacklogItems(reordered);
+                              const reordered = reorderBacklog(
+                                backlogItems,
+                                fromIndex,
+                                toIndex,
+                              );
+                              reorderItems(fromIndex, toIndex);
                               emitBacklogReorder(
                                 draggedId,
                                 item.id,
@@ -657,14 +653,18 @@ export function Layout() {
                             className={`rounded-2xl border border-slate-800/80 bg-slate-900/60 px-4 py-3 transition ${
                               isFocused ? 'ring-2 ring-emerald-300/60' : ''
                             } ${isDragTarget ? 'border-emerald-300/70' : ''} ${
-                              isPaused ? 'cursor-not-allowed' : 'cursor-grab'
+                              isDraggable ? 'cursor-grab' : 'cursor-not-allowed'
                             }`}
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <div className="flex items-center gap-2">
-                                  <span className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                                    {item.owner}
+                                  <span
+                                    className={`rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${statusTone(
+                                      item.status,
+                                    )}`}
+                                  >
+                                    {formatStatus(item.status)}
                                   </span>
                                   {isFocused && (
                                     <span className="rounded-full bg-emerald-300/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-200">
@@ -676,15 +676,15 @@ export function Layout() {
                                   {item.title}
                                 </h4>
                                 <p className="mt-1 text-xs text-slate-300">
-                                  {item.summary}
+                                  {item.description}
                                 </p>
                               </div>
                               <div className="flex flex-col items-end gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
                                 <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                                  {item.kind}
+                                  {formatAtomType(item.atomType)}
                                 </span>
                                 <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                                  Impact {item.impact}
+                                  Impact {impactFromLines(item.estimatedLines)}
                                 </span>
                                 <span className="rounded-full border border-slate-800/80 px-2 py-1">
                                   Effort {item.effort}
@@ -693,7 +693,13 @@ export function Layout() {
                             </div>
                             <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-slate-500">
                               <span>Priority {index + 1}</span>
-                              <span>{isPaused ? 'Paused' : 'Drag ready'}</span>
+                              <span>
+                                {isPaused
+                                  ? 'Paused'
+                                  : item.status === 'backlog'
+                                    ? 'Drag ready'
+                                    : formatStatus(item.status)}
+                              </span>
                             </div>
                           </div>
                         );
@@ -701,6 +707,40 @@ export function Layout() {
                     </div>
                   )}
                 </div>
+                {completedItems.length > 0 && (
+                  <div className="rounded-2xl border border-slate-800/80 bg-slate-950/40 p-4 text-sm text-slate-300">
+                    <button
+                      type="button"
+                      onClick={() => setShowCompleted((prev) => !prev)}
+                      className="flex w-full items-center justify-between text-left font-['JetBrains_Mono'] text-xs uppercase tracking-[0.3em] text-slate-400"
+                    >
+                      <span>Completed</span>
+                      <span>{completedItems.length}</span>
+                    </button>
+                    {showCompleted && (
+                      <div className="mt-3 flex flex-col gap-2">
+                        {completedItems.map((item) => (
+                          <div
+                            key={item.id}
+                            className="rounded-xl border border-slate-800/70 bg-slate-900/60 px-3 py-2 text-xs text-slate-300"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-slate-100">
+                                {item.title}
+                              </span>
+                              <span className="rounded-full border border-slate-700/80 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                                {formatAtomType(item.atomType)}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-slate-400">
+                              {item.visibleChange}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -708,4 +748,69 @@ export function Layout() {
       </main>
     </div>
   );
+}
+
+function formatAtomType(atomType: AtomType): string {
+  switch (atomType) {
+    case 'structure':
+      return 'Structure';
+    case 'content':
+      return 'Content';
+    case 'style':
+      return 'Style';
+    case 'behavior':
+      return 'Behavior';
+    case 'integration':
+      return 'Integration';
+    default:
+      return 'Unknown';
+  }
+}
+
+function impactFromLines(estimatedLines: number): 'Low' | 'Medium' | 'High' {
+  if (estimatedLines >= 100) {
+    return 'High';
+  }
+  if (estimatedLines >= 50) {
+    return 'Medium';
+  }
+  return 'Low';
+}
+
+function estimateEta(effort: Effort, estimatedLines: number): number {
+  const base = effort === 'L' ? 40 : effort === 'M' ? 25 : 12;
+  const lineFactor = Math.min(18, Math.max(0, Math.round(estimatedLines / 8)));
+  return Math.max(8, base + lineFactor);
+}
+
+function formatStatus(status: WorkItemStatus): string {
+  switch (status) {
+    case 'backlog':
+      return 'Backlog';
+    case 'on_deck':
+      return 'On deck';
+    case 'in_progress':
+      return 'In progress';
+    case 'blocked':
+      return 'Blocked';
+    case 'done':
+      return 'Done';
+    default:
+      return 'Unknown';
+  }
+}
+
+function statusTone(status: WorkItemStatus): string {
+  switch (status) {
+    case 'on_deck':
+      return 'bg-emerald-300/20 text-emerald-200';
+    case 'in_progress':
+      return 'bg-amber-300/15 text-amber-200';
+    case 'blocked':
+      return 'bg-rose-400/15 text-rose-200';
+    case 'done':
+      return 'bg-slate-800/70 text-slate-300';
+    default:
+      return 'bg-slate-800/80 text-slate-300';
+  }
 }
