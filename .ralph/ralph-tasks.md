@@ -135,7 +135,7 @@
   - [ ] Blog, SaaS, Simple Store, Bookings, Form-to-Email configs.
   - [ ] Acceptance: Tests pass assembly; unique feature flags honored.
 
-- [ ] Epic: UI Layout Shell
+- [x] Epic: UI Layout Shell
   - [ ] Three-panel responsive layout + HeaderBar with buttons placeholders.
   - [ ] Acceptance: Layout adapts desktop/tablet/mobile; panels sized 30/45/25%.
 
