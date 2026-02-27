@@ -3,6 +3,7 @@ export * from './build';
 export * from './chat';
 export * from './deploy';
 export * from './guardrails';
+export * from './llm';
 export * from './patch';
 export * from './pricing';
 export * from './result';

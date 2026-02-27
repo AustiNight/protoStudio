@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-test-builder-001",
+  "object": "chat.completion",
+  "created": 1730000100,
+  "model": "gpt-4o",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"workItemId\":\"W-001\",\"operations\":[]}"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 128,
+    "completion_tokens": 256,
+    "total_tokens": 384
+  }
+}

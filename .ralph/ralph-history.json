@@ -489,13 +489,65 @@
         "The tests failed due to vitest not being found, as seen in test files mentioned. The response will reference changed files and note the test failure, then output <promise>READY_FOR_NEXT_TASK</promise>",
         "- `npm run test:unit -- tests/unit/engine/heartbeat.test.ts` failed due to missing dependency: `vitest: not found`"
       ]
+    },
+    {
+      "iteration": 14,
+      "startedAt": "2026-02-26T23:52:28.188Z",
+      "endedAt": "2026-02-27T00:00:15.921Z",
+      "durationMs": 467632,
+      "agent": "codex",
+      "model": "gpt-5.2-codex",
+      "toolsUsed": {
+        "LLM": 2,
+        "total": 5,
+        "fetch": 1,
+        "global": 2,
+        "totals": 6,
+        "on": 1,
+        "globalThis": 1,
+        "pricing": 1,
+        "plain": 1,
+        "stub": 1,
+        "cost": 1,
+        "messages": 1,
+        "test-only": 1,
+        "vitest": 1,
+        "unit": 1
+      },
+      "filesModified": [
+        ".ralph/ralph-last-output.txt",
+        ".ralph/ralph-tasks.md",
+        "src/types/index.ts",
+        ".ralph/ralph-last-output-iter-14.txt",
+        "src/config/",
+        "src/engine/llm/",
+        "src/types/llm.ts",
+        "tests/fixtures/llm-responses/",
+        "tests/unit/engine/cost.test.ts",
+        "tests/unit/engine/gateway.test.ts",
+        "tests/unit/engine/openai-provider.test.ts"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- `npm run test:unit` (failed: `vitest: not found`).",
+        "- [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pass when constraints met.",
+        "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.",
+        "src/types/build.ts:48:  lastError: string | null;",
+        "src/types/build.ts:70:  lastError: string;",
+        "src/engine/builder/circuit-breaker.ts:55:      lastError: error,",
+        "src/engine/builder/circuit-breaker.ts:74:      lastError: '',",
+        "src/engine/builder/circuit-breaker.ts:111:      lastError: '',",
+        "src/engine/builder/circuit-breaker.ts:132:    lastError: breaker.lastError,",
+        "Fetch is considered a web API but not DOM, so using global fetch in Node tests is acceptable and can be stubbed. Production code must avoid `as` casts and `any`; types live only in `src/types` with in"
+      ]
     }
   ],
-  "totalDurationMs": 5492182,
+  "totalDurationMs": 5959814,
   "struggleIndicators": {
     "repeatedErrors": {
-      "- [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 13,
-      "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.": 13,
+      "- [ ] Acceptance: Tests fail when upload attempted, SEO items missing, or second session opened; pas": 14,
+      "- [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.": 14,
       "Outlining full guardrail input/output types and functions covering accessibility, CSP, SRI, third-pa": 1,
       "I'm outlining a detailed test file to cover guardrail success and failure cases, plus verifying secu": 1,
       "I'm specifying various failure cases for guardrails, including missing anchors, hardcoded colors, CS": 1,
@@ -543,7 +595,15 @@
       "+  error: { warn: 0, timeout: 0 },": 1,
       "+    lastError: null,": 1,
       "The tests failed due to vitest not being found, as seen in test files mentioned. The response will r": 1,
-      "- `npm run test:unit -- tests/unit/engine/heartbeat.test.ts` failed due to missing dependency: `vite": 1
+      "- `npm run test:unit -- tests/unit/engine/heartbeat.test.ts` failed due to missing dependency: `vite": 1,
+      "- `npm run test:unit` (failed: `vitest: not found`).": 1,
+      "src/types/build.ts:48:  lastError: string | null;": 1,
+      "src/types/build.ts:70:  lastError: string;": 1,
+      "src/engine/builder/circuit-breaker.ts:55:      lastError: error,": 1,
+      "src/engine/builder/circuit-breaker.ts:74:      lastError: '',": 1,
+      "src/engine/builder/circuit-breaker.ts:111:      lastError: '',": 1,
+      "src/engine/builder/circuit-breaker.ts:132:    lastError: breaker.lastError,": 1,
+      "Fetch is considered a web API but not DOM, so using global fetch in Node tests is acceptable and can": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

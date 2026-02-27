@@ -71,7 +71,7 @@
   - [x] Phase timers with warn/timeout hooks for build phases.
   - [x] Acceptance: Tests emit warn/timeout at thresholds; idle phases ignored.
 
-- [ ] Epic: LLM Gateway (OpenAI)
+- [x] Epic: LLM Gateway (OpenAI)
   - [ ] Provider abstraction, cost calc, telemetry hook; error mapping; unknown model fallback.
   - [ ] Acceptance: Tests cover routing, cost math, unknown model returns “Cost: unknown”.
 
