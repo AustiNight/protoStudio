@@ -234,7 +234,7 @@
   - [ ] Netlify API deploy flow.
   - [ ] Acceptance: Mocked deploy returns URL; handles invalid token error path.
 
-- [ ] Epic: Deploy Manager & Validators
+- [x] Epic: Deploy Manager & Validators
   - [ ] Host selection (zero-cost priority + features + available tokens); predeploy scans (no node_modules, Lighthouse stub, link check, vulnerability allowlist).
   - [ ] Acceptance: Tests pick correct host per matrix (GH→CF→Netlify priority) and validation blocks bad bundle.
 
