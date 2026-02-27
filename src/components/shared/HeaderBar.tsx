@@ -1,4 +1,8 @@
-export function HeaderBar() {
+type HeaderBarProps = {
+  onOpenSettings?: () => void;
+};
+
+export function HeaderBar({ onOpenSettings }: HeaderBarProps) {
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-800/70 bg-slate-950/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-[1800px] items-center justify-between px-4">
@@ -21,6 +25,7 @@ export function HeaderBar() {
           </div>
           <button
             type="button"
+            onClick={() => onOpenSettings?.()}
             className="rounded-full border border-slate-800/80 bg-slate-900/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-emerald-300/60 hover:text-emerald-200"
           >
             Settings

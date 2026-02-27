@@ -159,7 +159,7 @@
   - [ ] On Deck locked card, drag/drop backlog list, focus highlight, pause/resume.
   - [ ] Acceptance: UI reflects lock, pause badge; drag reorder events emitted.
 
-- [ ] Epic: Settings Modal
+- [x] Epic: Settings Modal
   - [ ] Tabs for LLM Keys/Models/Deploy Tokens; AES persistence; validation pings; expandable guides.
   - [ ] Acceptance: Keys/tokens stored encrypted; invalid key shows error.
 

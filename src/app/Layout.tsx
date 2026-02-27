@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { PreviewPanel } from '@/components/preview/PreviewPanel';
 import { HeaderBar } from '@/components/shared/HeaderBar';
+import { SettingsModal } from '@/components/shared/SettingsModal';
 import type { ChatMessage } from '@/types/chat';
 import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
 
@@ -206,6 +207,7 @@ export function Layout() {
   const [backlogItems, setBacklogItems] = useState<BacklogCard[]>(initialBacklogItems);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -220,7 +222,8 @@ export function Layout() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_45%_at_10%_0%,rgba(16,185,129,0.28),transparent_60%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_40%_at_90%_10%,rgba(56,189,248,0.2),transparent_55%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_100%,rgba(15,23,42,0.9),transparent_60%)]" />
-      <HeaderBar />
+      <HeaderBar onOpenSettings={() => setIsSettingsOpen(true)} />
+      <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       <main className="relative z-10 mx-auto flex min-h-screen max-w-[1800px] flex-col px-4 pb-6 pt-20">
         <div className="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-slate-800/70 bg-slate-900/60 p-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300 md:hidden">
