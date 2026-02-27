@@ -1,0 +1,55 @@
+/* === PP:BLOCK:footer === */
+.footer {
+  background: var(--color-bg-alt);
+  color: var(--color-text);
+  padding: var(--space-section) 0;
+}
+
+.footer__inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--space-section);
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.footer__brand {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.footer__copy {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+}
+
+.footer__social {
+  list-style: none;
+  display: flex;
+  gap: var(--space-sm);
+  padding: 0;
+  margin: 0;
+}
+
+.footer__social a {
+  color: var(--color-text);
+  text-decoration: none;
+  font-family: var(--font-body);
+}
+
+.footer__columns {
+  display: grid;
+  gap: var(--space-md);
+}
+
+@media (min-width: 48rem) {
+  .footer__inner {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  }
+
+  .footer__columns {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* === /PP:BLOCK:footer === */

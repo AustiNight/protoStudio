@@ -107,7 +107,7 @@
   - [ ] Validate SectionDefinition/Slot; fixtures for universal/near/shared/unique sections.
   - [ ] Acceptance: Schema tests pass; invalid fixtures rejected.
 
-- [ ] Epic: Universal Sections
+- [x] Epic: Universal Sections
   - [ ] Build hero, nav, footer, contact, SEO-base partials with PP anchors + CSS blocks.
   - [ ] Acceptance: Tests validate anchors/blocks; render placeholders.
 

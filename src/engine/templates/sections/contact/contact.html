@@ -1,0 +1,24 @@
+<!-- PP:SECTION:contact -->
+<section class="contact" data-pp-section="contact">
+  <div class="contact__inner">
+    <div class="contact__details">
+      <h2 class="contact__title">Contact</h2>
+      <p class="contact__address">{{address}}</p>
+      <div
+        class="contact__map"
+        data-map-container
+        data-map-lat="{{lat}}"
+        data-map-lng="{{lng}}"
+        aria-label="Map"
+      ></div>
+    </div>
+    <form class="contact__form" action="{{formAction}}" method="post" data-contact-form>
+      <div class="contact__fields">
+        {{fields}}
+      </div>
+      <button class="contact__submit" type="submit">Send message</button>
+      <p class="contact__status" data-form-status aria-live="polite"></p>
+    </form>
+  </div>
+</section>
+<!-- /PP:SECTION:contact -->
