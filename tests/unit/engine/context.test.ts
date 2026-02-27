@@ -138,6 +138,56 @@ describe('ContextManager', () => {
     ).toBe(true);
   });
 
+  it('should exclude unrelated sections from context', async () => {
+    const manager = buildManager();
+    const vfs = new VirtualFileSystem({
+      metadata: {
+        title: 'Test Site',
+        description: 'Test description',
+        colors: {
+          primary: '#000000',
+          secondary: '#111111',
+          accent: '#222222',
+          bg: '#ffffff',
+          text: '#111111',
+        },
+        fonts: {
+          headingFont: 'Arial',
+          bodyFont: 'Arial',
+        },
+      },
+    });
+    const html = `<!doctype html>
+<html lang="en">
+<head><title>Test</title></head>
+<body>
+  <!-- PP:SECTION:hero -->
+  <section class="hero" data-pp-section="hero">Hero content</section>
+  <!-- /PP:SECTION:hero -->
+  <!-- PP:SECTION:services -->
+  <section class="services" data-pp-section="services">Services content</section>
+  <!-- /PP:SECTION:services -->
+  <!-- PP:SECTION:testimonials -->
+  <section class="testimonials" data-pp-section="testimonials">Testimonials content</section>
+  <!-- /PP:SECTION:testimonials -->
+  <!-- PP:SECTION:footer -->
+  <footer class="footer" data-pp-section="footer">Footer content</footer>
+  <!-- /PP:SECTION:footer -->
+</body>
+</html>`;
+    await vfs.addFile('index.html', html);
+    await vfs.addFile('styles.css', baseCss);
+
+    const context = manager.assembleBuildContext(buildWorkItem(), vfs, []);
+    const affectedNames = context.affectedSections.map((section) => section.name);
+    const adjacentNames = context.adjacentSections.map((section) => section.name);
+
+    expect(affectedNames).toEqual(['services']);
+    expect(adjacentNames).toContain('hero');
+    expect(adjacentNames).toContain('testimonials');
+    expect(adjacentNames).not.toContain('footer');
+  });
+
   it('should trim conversation when budget is tight', async () => {
     const manager = buildManager({ builder: { maxTokens: 400 } });
     const vfs = await buildVfs();

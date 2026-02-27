@@ -198,7 +198,7 @@
   - [x] Sync PO output to stores/UI; On Deck promotion logic; statuses update.
   - [x] Acceptance: On Deck always present/locked; completed items collapse.
 
-- [ ] Epic: Builder Context Assembly
+- [x] Epic: Builder Context Assembly
   - [ ] Manifest + affected/adjacent sections + patch instructions per atom.
   - [ ] Acceptance: Context excludes unrelated sections; matches budget thresholds.
 

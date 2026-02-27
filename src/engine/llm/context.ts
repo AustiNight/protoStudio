@@ -187,7 +187,7 @@ export class ContextManager {
       conversationTokens,
     });
 
-    let used = sumBudgetTokens(budget) + this.estimateTokens(backlogSummary);
+    let used = sumBudgetTokens(budget);
 
     if (mode === 'minimal' || used > available) {
       const minimal = this.assembleMinimalBuildContext({
