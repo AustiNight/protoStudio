@@ -143,7 +143,7 @@
   - [ ] iMessage bubbles, typing indicator, message grouping, auto-scroll.
   - [ ] Acceptance: Visual check; unit snapshot/test for grouping logic.
 
-- [ ] Epic: ChlorastroliteLoader
+- [x] Epic: ChlorastroliteLoader
   - [ ] Gem/eye variants, dynamic label state machine, secret trigger hook.
   - [ ] Acceptance: Renders both variants; label progression mapped to stages.
 
