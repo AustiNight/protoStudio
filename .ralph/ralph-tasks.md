@@ -274,7 +274,7 @@
   - [ ] Playwright: drag reorder (approve/deny), focus-chat, pause/resume.
   - [ ] Acceptance: Test asserts UI + chat behaviors per OBSERVABILITY_UX.
 
-- [ ] Epic: E2E – Deploy Tokens
+- [x] Epic: E2E – Deploy Tokens
   - [ ] Playwright: paste tokens, validation errors, host gating.
   - [ ] Acceptance: Invalid tokens block deploy; valid tokens enable host selection.
 
