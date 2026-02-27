@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import '@/app/index.css';
+import '@/app/test-hooks';
 import { App } from '@/app/App';
 
 const root = document.getElementById('root');

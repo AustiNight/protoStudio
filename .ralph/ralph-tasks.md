@@ -266,7 +266,7 @@
   - [x] Capture metrics per PRD §4.5; export hook; ensure local-only storage.
   - [x] Acceptance: Logged events match schema; export produces JSON bundle.
 
-- [ ] Epic: E2E – Template Flow
+- [x] Epic: E2E – Template Flow
   - [ ] Playwright: first message → preview → 3 swaps → deploy (mocked).
   - [ ] Acceptance: Test passes with mocked LLM/deploy; preview swaps visible.
 

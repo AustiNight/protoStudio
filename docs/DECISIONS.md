@@ -37,6 +37,14 @@ unblocks store implementation and keeps state logic lightweight.
 **Alternatives:** Redux Toolkit, Jotai, React Context (see D-001).
 **Bundle impact:** Small client footprint (few KB gz).
 
+### D-005 | 2026-02-27 | Add Playwright for E2E testing
+**Decision:** Add `@playwright/test` as a dev dependency for end-to-end browser tests.
+**Rationale:** E2E coverage is required for critical flows (template build, swaps, deploy)
+and Playwright provides reliable, cross-browser automation with Vite-friendly setup.
+**Alternatives:** Cypress (heavier runner, less flexible for multi-browser), WebdriverIO
+more setup overhead, Puppeteer (no built-in test runner).
+**Bundle impact:** Dev-only dependency (no production bundle impact).
+
 (new entries appended here by agents)
 
 ---
