@@ -175,7 +175,7 @@
   - [ ] Session/chat/backlog/build/settings/telemetry stores with derived selectors.
   - [ ] Acceptance: Unit tests on actions ensure immutability and state transitions.
 
-- [ ] Epic: LLM First-Message Path
+- [x] Epic: LLM First-Message Path
   - [ ] Wire classifier → template assemble → quick customize Title/Logo/Slogan/Colors → preview ≤30s.
   - [ ] Acceptance: Integration test hits preview within SLA with mocked LLM.
 
