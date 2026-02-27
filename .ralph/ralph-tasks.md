@@ -87,7 +87,7 @@
   - [ ] Status-bar text mapping, slow-message rotation, swap/skip chat messages.
   - [ ] Acceptance: Tests map each phase to expected text; slow messaging after threshold.
 
-- [ ] Epic: First-Message Classifier
+- [x] Epic: First-Message Classifier
   - [ ] Template vs scratch JSON with confidence gate + clarifying question rule; fixtures.
   - [ ] Acceptance: Tests classify template/scratch/ambiguous per fixtures.
 

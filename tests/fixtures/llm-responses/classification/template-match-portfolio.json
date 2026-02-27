@@ -1,0 +1,11 @@
+{
+  "content": "{\"path\":\"template\",\"templateId\":\"portfolio\",\"confidence\":0.88,\"reasoning\":\"A photography portfolio fits the portfolio template best.\",\"suggestedCustomization\":{\"title\":\"Lensline Studio\",\"slogan\":\"Photography that feels cinematic\",\"primaryColor\":\"#1f2937\",\"industry\":\"Photography\"}}",
+  "usage": {
+    "promptTokens": 108,
+    "completionTokens": 38
+  },
+  "model": "gpt-4o-mini",
+  "latencyMs": 910,
+  "cost": 0.0008,
+  "unknownModel": false
+}

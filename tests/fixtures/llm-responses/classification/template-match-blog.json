@@ -1,0 +1,11 @@
+{
+  "content": "{\"path\":\"template\",\"templateId\":\"blog\",\"confidence\":0.81,\"reasoning\":\"A personal writing site is best served by the blog template.\",\"suggestedCustomization\":{\"title\":\"Field Notes\",\"slogan\":\"Essays on craft and curiosity\",\"primaryColor\":\"#7c3aed\",\"industry\":\"Writing\"}}",
+  "usage": {
+    "promptTokens": 105,
+    "completionTokens": 34
+  },
+  "model": "gpt-4o-mini",
+  "latencyMs": 900,
+  "cost": 0.0007,
+  "unknownModel": false
+}

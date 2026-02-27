@@ -1,0 +1,11 @@
+{
+  "content": "{\"path\":\"scratch\",\"confidence\":0.86,\"reasoning\":\"A custom zodiac greeting card maker does not align with any template.\"}",
+  "usage": {
+    "promptTokens": 98,
+    "completionTokens": 22
+  },
+  "model": "gpt-4o-mini",
+  "latencyMs": 860,
+  "cost": 0.0006,
+  "unknownModel": false
+}

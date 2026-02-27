@@ -1,0 +1,11 @@
+{
+  "content": "{\"path\":\"template\",\"templateId\":\"small-business\",\"confidence\":0.83,\"reasoning\":\"A local cafe website aligns with the small-business template.\",\"suggestedCustomization\":{\"title\":\"Harbor & Pine Cafe\",\"slogan\":\"Neighborhood coffee and pastries\",\"primaryColor\":\"#0f766e\",\"industry\":\"Cafe\"}}",
+  "usage": {
+    "promptTokens": 112,
+    "completionTokens": 36
+  },
+  "model": "gpt-4o-mini",
+  "latencyMs": 940,
+  "cost": 0.0008,
+  "unknownModel": false
+}

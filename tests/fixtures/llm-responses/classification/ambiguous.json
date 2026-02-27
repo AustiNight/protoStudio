@@ -1,0 +1,11 @@
+{
+  "content": "{\"mode\":\"ambiguous\",\"confidence\":0.52,\"reasoning\":\"The request is too vague to choose a template.\",\"question\":\"What type of site do you want (portfolio, business, blog, or store)?\"}",
+  "usage": {
+    "promptTokens": 76,
+    "completionTokens": 20
+  },
+  "model": "gpt-4o-mini",
+  "latencyMs": 820,
+  "cost": 0.0005,
+  "unknownModel": false
+}

@@ -1,0 +1,11 @@
+{
+  "content": "{\"path\":\"template\",\"templateId\":\"marketing\",\"confidence\":0.92,\"reasoning\":\"User wants a SaaS landing page, which aligns with the marketing template.\",\"suggestedCustomization\":{\"title\":\"Skyline SaaS\",\"slogan\":\"Launch faster with a unified platform\",\"primaryColor\":\"#2563eb\",\"industry\":\"SaaS\"}}",
+  "usage": {
+    "promptTokens": 120,
+    "completionTokens": 42
+  },
+  "model": "gpt-4o-mini",
+  "latencyMs": 980,
+  "cost": 0.0009,
+  "unknownModel": false
+}
