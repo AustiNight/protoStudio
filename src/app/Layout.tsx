@@ -258,6 +258,22 @@ function applyQueueOrder(items: WorkItem[], queueOrder: string[]): WorkItem[] {
   return nextItems.map((item, index) => ({ ...item, order: index + 1 }));
 }
 
+function pickNextBacklogItem(items: WorkItem[], excludeId: string | null): WorkItem | null {
+  let next: WorkItem | null = null;
+  for (const item of items) {
+    if (item.status !== 'backlog') {
+      continue;
+    }
+    if (excludeId && item.id === excludeId) {
+      continue;
+    }
+    if (!next || item.order < next.order) {
+      next = item;
+    }
+  }
+  return next;
+}
+
 function emitBacklogReorder(fromId: string, toId: string, order: string[]): void {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(
@@ -291,6 +307,8 @@ export function Layout() {
   const focusItem = useBacklogStore((state) => state.focusItem);
   const promoteNext = useBacklogStore((state) => state.promoteNext);
   const setBacklogItems = useBacklogStore((state) => state.setItems);
+  const updateBacklogItem = useBacklogStore((state) => state.updateItem);
+  const moveBacklogItemToEnd = useBacklogStore((state) => state.moveToEnd);
   const clearBacklog = useBacklogStore((state) => state.clearBacklog);
   const isPaused = useBuildStore((state) => state.isPaused);
   const buildPhase = useBuildStore((state) => state.buildState.phase);
@@ -457,6 +475,55 @@ export function Layout() {
   }, [onDeckItem?.status, promoteNext]);
 
   useEffect(() => {
+    if (!buildAtom) {
+      return;
+    }
+    const current = backlogItems.find((item) => item.id === buildAtom.id);
+    if (!current) {
+      return;
+    }
+
+    if (buildPhase === 'error') {
+      if (current.status !== 'blocked') {
+        updateBacklogItem(current.id, { status: 'blocked' });
+      }
+      return;
+    }
+
+    if (buildPhase === 'skipping') {
+      if (current.status !== 'backlog') {
+        updateBacklogItem(current.id, { status: 'backlog' });
+      }
+      if (backlogItems[backlogItems.length - 1]?.id !== current.id) {
+        moveBacklogItemToEnd(current.id);
+      }
+      if (onDeckItem?.id === current.id) {
+        promoteNext();
+      }
+      return;
+    }
+
+    if (buildPhase === 'swapping') {
+      if (current.status !== 'done') {
+        updateBacklogItem(current.id, { status: 'done' });
+      }
+      return;
+    }
+
+    if (buildPhase !== 'idle' && current.status !== 'in_progress') {
+      updateBacklogItem(current.id, { status: 'in_progress' });
+    }
+  }, [
+    backlogItems,
+    buildAtom,
+    buildPhase,
+    moveBacklogItemToEnd,
+    onDeckItem?.id,
+    promoteNext,
+    updateBacklogItem,
+  ]);
+
+  useEffect(() => {
     if (onDeckItem && (!focusedItemId || !hasFocusedItem) && autoFocusOnDeck) {
       focusItem(onDeckItem.id);
     }
@@ -503,7 +570,10 @@ export function Layout() {
     }
 
     if (buildPhase === 'skipping' && buildAtom) {
-      const nextAtom = onDeckItem && onDeckItem.id !== buildAtom.id ? onDeckItem : null;
+      const nextAtom =
+        onDeckItem && onDeckItem.id !== buildAtom.id
+          ? onDeckItem
+          : pickNextBacklogItem(backlogItems, buildAtom.id);
       addFocusedMessage(
         buildNarrationMessage(
           activeSessionId,
@@ -537,6 +607,7 @@ export function Layout() {
     buildAtom,
     buildError,
     buildPhase,
+    backlogItems,
     onDeckItem,
   ]);
 

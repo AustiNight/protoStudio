@@ -13,6 +13,8 @@ export interface BacklogStoreState {
   setOnDeck: (itemId: string | null) => void;
   promoteNext: () => void;
   updateItemStatus: (itemId: string, status: WorkItemStatus) => void;
+  updateItem: (itemId: string, update: Partial<WorkItem>) => void;
+  moveToEnd: (itemId: string) => void;
   focusItem: (itemId: string | null) => void;
   clearBacklog: () => void;
   resetStore: () => void;
@@ -137,6 +139,35 @@ export const createBacklogStore = () =>
           };
         }),
       })),
+    updateItem: (itemId, update) =>
+      set((state) => ({
+        items: state.items.map((item) => {
+          if (item.id !== itemId) {
+            return item;
+          }
+          const next = { ...item, ...update };
+          if (Object.prototype.hasOwnProperty.call(update, 'status')) {
+            next.completedAt = update.status === 'done' ? Date.now() : undefined;
+          }
+          return next;
+        }),
+      })),
+    moveToEnd: (itemId) =>
+      set((state) => {
+        const index = state.items.findIndex((item) => item.id === itemId);
+        if (index < 0) {
+          return {};
+        }
+        const nextItems = [...state.items];
+        const [moved] = nextItems.splice(index, 1);
+        if (!moved) {
+          return {};
+        }
+        nextItems.push(moved);
+        return {
+          items: normalizeOrder(nextItems),
+        };
+      }),
     focusItem: (itemId) =>
       set(() => ({
         focusedItemId: itemId,

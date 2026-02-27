@@ -254,7 +254,7 @@
   - [x] External JSON pricing table load; unknown model path; “pricing last updated” tooltip date.
   - [x] Acceptance: Tests for known/unknown models and date display.
 
-- [ ] Epic: Observability UX Integration
+- [x] Epic: Observability UX Integration
   - [ ] Map build phases to status dot colors/text; slow/timeout messaging; skip/fail chat flows; channel consistency.
   - [ ] Acceptance: UI shows amber on warn, red on error; skip emits chat; status/backlog channels consistent.
 

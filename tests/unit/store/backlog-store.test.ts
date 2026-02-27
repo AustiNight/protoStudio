@@ -71,4 +71,32 @@ describe('backlog-store', () => {
     const promoted = items.find((item) => item.id === 'item-2');
     expect(promoted?.status).toBe('on_deck');
   });
+
+  it('should update item fields and set completedAt when done', () => {
+    const item = buildItem('item-1', 'backlog');
+    useBacklogStore.getState().addItem(item);
+
+    useBacklogStore.getState().updateItem('item-1', {
+      status: 'done',
+      title: 'Updated Item',
+    });
+
+    const updated = useBacklogStore.getState().items.find((entry) => entry.id === 'item-1');
+    expect(updated?.status).toBe('done');
+    expect(updated?.title).toBe('Updated Item');
+    expect(updated?.completedAt).toBeDefined();
+  });
+
+  it('should move item to the end of the backlog', () => {
+    const first = buildItem('item-1', 'backlog');
+    const second = buildItem('item-2', 'backlog');
+    const third = buildItem('item-3', 'backlog');
+
+    useBacklogStore.getState().addItems([first, second, third]);
+    useBacklogStore.getState().moveToEnd('item-1');
+
+    const items = useBacklogStore.getState().items;
+    expect(items.map((item) => item.id)).toEqual(['item-2', 'item-3', 'item-1']);
+    expect(items.map((item) => item.order)).toEqual([1, 2, 3]);
+  });
 });
