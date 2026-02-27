@@ -1,7 +1,7 @@
 {
-  "id": "marketing",
-  "label": "Marketing",
-  "description": "High-converting SaaS landing pages.",
+  "id": "bookings",
+  "label": "Bookings",
+  "description": "Service bookings with menus and embedded calendars.",
   "pages": {
     "index.html": {
       "sections": [
@@ -9,9 +9,15 @@
         "nav",
         "hero",
         "about",
+        "services-list",
         "features-grid",
-        "pricing-table",
+        "team",
         "testimonials",
+        "pricing-table",
+        "faq",
+        "service-menu",
+        "calendar-embed",
+        "hours-location",
         "cta-banner",
         "contact",
         "footer"
@@ -23,16 +29,16 @@
     "mapEmbed": true,
     "lightbox": false,
     "cart": false,
-    "calendarEmbed": false,
+    "calendarEmbed": true,
     "blogEngine": false,
     "multiStepForm": false
   },
   "defaultTheme": {
-    "primary": "#2563eb",
-    "secondary": "#1e40af",
+    "primary": "#4338ca",
+    "secondary": "#312e81",
     "accent": "#f59e0b",
     "bg": "#ffffff",
-    "text": "#0f172a",
+    "text": "#111827",
     "headingFont": "Inter",
     "bodyFont": "Inter"
   }

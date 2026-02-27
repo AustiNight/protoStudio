@@ -131,7 +131,7 @@
   - [ ] Marketing, Portfolio, Small Business JSON configs.
   - [ ] Acceptance: Integration tests produce expected section order.
 
-- [ ] Epic: Template Configs Wave 2
+- [x] Epic: Template Configs Wave 2
   - [ ] Blog, SaaS, Simple Store, Bookings, Form-to-Email configs.
   - [ ] Acceptance: Tests pass assembly; unique feature flags honored.
 

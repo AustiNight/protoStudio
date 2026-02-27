@@ -1,7 +1,7 @@
 {
-  "id": "portfolio",
-  "label": "Portfolio",
-  "description": "A visual portfolio for studios, creators, and teams.",
+  "id": "simple-store",
+  "label": "Simple Store",
+  "description": "A lightweight store with products, cart, and checkout.",
   "pages": {
     "index.html": {
       "sections": [
@@ -9,12 +9,20 @@
         "nav",
         "hero",
         "about",
+        "features-grid",
         "category-filter",
         "filterable-grid",
-        "project-gallery",
         "product-cards",
+        "cart",
+        "stripe-checkout",
+        "project-gallery",
         "lightbox",
+        "pricing-table",
         "testimonials",
+        "reviews-embed",
+        "faq",
+        "hours-location",
+        "cta-banner",
         "contact",
         "footer"
       ]
@@ -24,17 +32,17 @@
     "formToEmail": true,
     "mapEmbed": true,
     "lightbox": true,
-    "cart": false,
+    "cart": true,
     "calendarEmbed": false,
     "blogEngine": false,
     "multiStepForm": false
   },
   "defaultTheme": {
-    "primary": "#111827",
-    "secondary": "#4b5563",
-    "accent": "#e11d48",
-    "bg": "#f8fafc",
-    "text": "#0f172a",
+    "primary": "#16a34a",
+    "secondary": "#166534",
+    "accent": "#f97316",
+    "bg": "#ffffff",
+    "text": "#1f2937",
     "headingFont": "Inter",
     "bodyFont": "Inter"
   }

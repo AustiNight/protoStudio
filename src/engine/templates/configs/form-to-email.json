@@ -1,0 +1,43 @@
+{
+  "id": "form-to-email",
+  "label": "Form to Email",
+  "description": "Multi-step lead capture with a confirmation page.",
+  "pages": {
+    "index.html": {
+      "sections": [
+        "seo-base",
+        "nav",
+        "hero",
+        "multi-step-form",
+        "cta-banner",
+        "footer"
+      ]
+    },
+    "confirmation.html": {
+      "sections": [
+        "seo-base",
+        "nav",
+        "form-confirmation",
+        "footer"
+      ]
+    }
+  },
+  "features": {
+    "formToEmail": true,
+    "mapEmbed": false,
+    "lightbox": false,
+    "cart": false,
+    "calendarEmbed": false,
+    "blogEngine": false,
+    "multiStepForm": true
+  },
+  "defaultTheme": {
+    "primary": "#ea580c",
+    "secondary": "#9a3412",
+    "accent": "#14b8a6",
+    "bg": "#ffffff",
+    "text": "#111827",
+    "headingFont": "Inter",
+    "bodyFont": "Inter"
+  }
+}

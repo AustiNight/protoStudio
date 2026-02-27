@@ -1,0 +1,53 @@
+{
+  "id": "blog",
+  "label": "Blog",
+  "description": "A writing-first blog with posts, categories, and RSS.",
+  "pages": {
+    "index.html": {
+      "sections": [
+        "seo-base",
+        "nav",
+        "hero",
+        "about",
+        "category-filter",
+        "filterable-grid",
+        "blog-listing",
+        "contact",
+        "footer"
+      ]
+    },
+    "post.html": {
+      "sections": [
+        "seo-base",
+        "nav",
+        "blog-detail",
+        "contact",
+        "footer"
+      ]
+    },
+    "rss.html": {
+      "sections": [
+        "seo-base",
+        "rss"
+      ]
+    }
+  },
+  "features": {
+    "formToEmail": true,
+    "mapEmbed": true,
+    "lightbox": false,
+    "cart": false,
+    "calendarEmbed": false,
+    "blogEngine": true,
+    "multiStepForm": false
+  },
+  "defaultTheme": {
+    "primary": "#7c3aed",
+    "secondary": "#5b21b6",
+    "accent": "#f59e0b",
+    "bg": "#ffffff",
+    "text": "#111827",
+    "headingFont": "Inter",
+    "bodyFont": "Inter"
+  }
+}
