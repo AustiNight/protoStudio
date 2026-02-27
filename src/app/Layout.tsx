@@ -6,11 +6,18 @@ import type { CostRoleBreakdown } from '@/components/shared/CostTicker';
 import { HeaderBar } from '@/components/shared/HeaderBar';
 import { NewConversationDialog } from '@/components/shared/NewConversationDialog';
 import { SettingsModal } from '@/components/shared/SettingsModal';
+import {
+  getErrorChatMessage,
+  getSkipChatMessage,
+  getSwapChatMessage,
+} from '@/engine/chat/narration';
 import { SessionCheckpoint } from '@/persistence/checkpoint';
 import { useBacklogStore } from '@/store/backlog-store';
 import { useBuildStore } from '@/store/build-store';
+import { useChatStore } from '@/store/chat-store';
 import type { ChatMessage } from '@/types/chat';
 import type { AtomType, Effort, WorkItem, WorkItemStatus } from '@/types/backlog';
+import type { BuildPhase } from '@/types/build';
 import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
 
 type PanelKey = 'chat' | 'preview' | 'backlog';
@@ -162,6 +169,32 @@ function formatTimestamp(timestamp: number): string {
   return timeFormatter.format(new Date(timestamp));
 }
 
+type NarrationCheckpoint = {
+  phase: BuildPhase;
+  atomId: string | null;
+  lastError: string | null;
+};
+
+let messageCounter = 0;
+
+function buildNarrationMessage(
+  sessionId: string,
+  sender: ChatMessage['sender'],
+  content: string,
+  backlogItemId?: string | null,
+): ChatMessage {
+  const timestamp = Date.now();
+  messageCounter += 1;
+  return {
+    id: `msg-${timestamp}-${messageCounter}`,
+    sessionId,
+    timestamp,
+    sender,
+    content,
+    metadata: backlogItemId ? { backlogItemId } : undefined,
+  };
+}
+
 function reorderBacklog(items: WorkItem[], fromIndex: number, toIndex: number): WorkItem[] {
   const next = [...items];
   const [moved] = next.splice(fromIndex, 1);
@@ -180,9 +213,14 @@ function emitBacklogReorder(fromId: string, toId: string, order: string[]): void
 
 export function Layout() {
   const [activePanel, setActivePanel] = useState<PanelKey>('chat');
-  const [messages, setMessages] = useState<ChatMessage[]>(sampleMessages);
+  const messages = useChatStore((state) => state.messages);
+  const addMessage = useChatStore((state) => state.addMessage);
+  const setMessages = useChatStore((state) => state.setMessages);
+  const clearMessages = useChatStore((state) => state.clearMessages);
   const groupedMessages = groupChatMessages(messages);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const seededMessagesRef = useRef(false);
+  const narrationRef = useRef<NarrationCheckpoint | null>(null);
   const isTyping = messages.length > 0;
   const backlogItems = useBacklogStore((state) => state.items);
   const onDeckItem = useBacklogStore((state) =>
@@ -194,6 +232,9 @@ export function Layout() {
   const reorderItems = useBacklogStore((state) => state.reorderItems);
   const clearBacklog = useBacklogStore((state) => state.clearBacklog);
   const isPaused = useBuildStore((state) => state.isPaused);
+  const buildPhase = useBuildStore((state) => state.buildState.phase);
+  const buildAtom = useBuildStore((state) => state.buildState.currentAtom);
+  const buildError = useBuildStore((state) => state.buildState.lastError);
   const togglePause = useBuildStore((state) => state.togglePause);
   const resetBuild = useBuildStore((state) => state.resetBuild);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -245,6 +286,71 @@ export function Layout() {
   }, [focusItem, focusedItemId, hasFocusedItem, onDeckItem]);
 
   useEffect(() => {
+    if (seededMessagesRef.current) {
+      return;
+    }
+    seededMessagesRef.current = true;
+    if (messages.length === 0) {
+      setMessages(sampleMessages);
+    }
+  }, [messages.length, setMessages]);
+
+  useEffect(() => {
+    const atomId = buildAtom?.id ?? null;
+    const lastCheckpoint = narrationRef.current;
+
+    if (
+      lastCheckpoint &&
+      lastCheckpoint.phase === buildPhase &&
+      lastCheckpoint.atomId === atomId &&
+      lastCheckpoint.lastError === buildError
+    ) {
+      return;
+    }
+
+    if (buildPhase === 'swapping' && buildAtom) {
+      addMessage(
+        buildNarrationMessage(
+          sampleSessionId,
+          'chat_ai',
+          getSwapChatMessage(buildAtom),
+          buildAtom.id,
+        ),
+      );
+    }
+
+    if (buildPhase === 'skipping' && buildAtom) {
+      const nextAtom = onDeckItem && onDeckItem.id !== buildAtom.id ? onDeckItem : null;
+      addMessage(
+        buildNarrationMessage(
+          sampleSessionId,
+          'chat_ai',
+          getSkipChatMessage(buildAtom, nextAtom),
+          buildAtom.id,
+        ),
+      );
+    }
+
+    if (buildPhase === 'error') {
+      const errorMessage = buildError ?? 'Unexpected build error.';
+      addMessage(
+        buildNarrationMessage(
+          sampleSessionId,
+          'chat_ai',
+          getErrorChatMessage(errorMessage, ''),
+          atomId,
+        ),
+      );
+    }
+
+    narrationRef.current = {
+      phase: buildPhase,
+      atomId,
+      lastError: buildError,
+    };
+  }, [addMessage, buildAtom, buildError, buildPhase, onDeckItem]);
+
+  useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
     requestAnimationFrame(() => {
@@ -263,7 +369,7 @@ export function Layout() {
     const checkpoint = new SessionCheckpoint();
     await checkpoint.clear();
     resetChlorastroliteSession();
-    setMessages([]);
+    clearMessages();
     clearBacklog();
     resetBuild();
     setDraggedId(null);

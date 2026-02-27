@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { StatusBar } from './StatusBar';
+
 type PreviewSlot = 'blue' | 'green';
 type ValidationState = 'pending' | 'validating' | 'passed';
 type ViewportMode = 'desktop' | 'tablet' | 'mobile';
@@ -307,17 +309,6 @@ function buildPreviewDoc(options: {
 </html>`;
 }
 
-const STATUS_COPY: Record<ValidationState, string> = {
-  pending: 'Guardrails pending. Run validation before swapping.',
-  validating: 'Validating preview guardrails and continuity checks...',
-  passed: 'Guardrails passed. Swap is unlocked.',
-};
-
-const STATUS_DOT: Record<ValidationState, string> = {
-  pending: 'bg-slate-500',
-  validating: 'bg-amber-300',
-  passed: 'bg-emerald-300',
-};
 
 export function PreviewPanel({ kicker, label, description }: PreviewPanelProps) {
   const [activeSlot, setActiveSlot] = useState<PreviewSlot>('blue');
@@ -366,11 +357,6 @@ export function PreviewPanel({ kicker, label, description }: PreviewPanelProps) 
     }, SWAP_DURATION_MS);
   };
 
-  const statusText = isSwapping
-    ? `Swapping to ${incomingSlot} slot...`
-    : STATUS_COPY[validationState];
-  const statusDot = isSwapping ? 'bg-emerald-300' : STATUS_DOT[validationState];
-
   const viewportWidth = VIEWPORT_OPTIONS.find((option) => option.id === viewport)?.width ?? '100%';
   const frameStyle = {
     width: viewportWidth,
@@ -403,15 +389,7 @@ export function PreviewPanel({ kicker, label, description }: PreviewPanelProps) 
 
         <div className="rounded-2xl border border-slate-800/80 bg-slate-950/50 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className={`h-2.5 w-2.5 rounded-full ${statusDot}`} />
-              <div>
-                <div className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.3em] text-slate-400">
-                  Preview status
-                </div>
-                <div className="text-sm text-slate-200">{statusText}</div>
-              </div>
-            </div>
+            <StatusBar />
             <div className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-slate-400">
               <span>Active {activeSlot}</span>
               <span>Next {incomingSlot}</span>

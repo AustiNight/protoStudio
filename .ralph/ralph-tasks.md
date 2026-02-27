@@ -206,7 +206,7 @@
   - [ ] On Deck → LLM → patch → validate → continuity → swap; retry + breaker.
   - [ ] Acceptance: Integration test passes successful build and retry-fail-skip path.
 
-- [ ] Epic: Narration Wiring
+- [x] Epic: Narration Wiring
   - [ ] Status bar + chat messages driven from build state; slow/timeout transitions.
   - [ ] Acceptance: UI messages match OBSERVABILITY_UX mapping for each phase.
 
