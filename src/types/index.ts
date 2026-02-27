@@ -5,6 +5,7 @@ export * from './deploy';
 export * from './guardrails';
 export * from './llm';
 export * from './patch';
+export * from './persistence';
 export * from './pricing';
 export * from './result';
 export * from './session';

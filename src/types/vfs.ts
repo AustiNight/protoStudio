@@ -105,6 +105,28 @@ export interface VirtualFileSystem {
 }
 
 /**
+ * Serialized VFS snapshot for persistence.
+ */
+export interface VfsSnapshot {
+  /**
+   * Ordered list of files captured in the snapshot.
+   */
+  files: VirtualFile[];
+  /**
+   * Version number captured at snapshot time.
+   */
+  version: number;
+  /**
+   * Optional template id for template-based sessions.
+   */
+  templateId?: string;
+  /**
+   * Metadata describing the site's theme and SEO.
+   */
+  metadata: VfsMetadata;
+}
+
+/**
  * Summary of a single HTML page in the VFS.
  */
 export interface SiteManifestPage {

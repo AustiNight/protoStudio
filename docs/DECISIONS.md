@@ -20,6 +20,16 @@ concerns with frequent updates).
 same config as build tool.
 **Alternatives:** Jest (slower, needs transforms for ESM).
 
+### D-003 | 2026-02-27 | Add idb + fake-indexeddb for IndexedDB persistence
+**Decision:** Add `idb` as a runtime dependency and `fake-indexeddb` as a dev dependency
+for IndexedDB persistence and deterministic unit tests.
+**Rationale:** `idb` provides a typed, promise-based IndexedDB wrapper; `fake-indexeddb`
+enables reliable Node test coverage for persistence logic.
+**Alternatives:** Manual IndexedDB wrapper (more boilerplate), skip persistence tests
+(higher regression risk).
+**Bundle impact:** Small client footprint (few KB gz for `idb`); `fake-indexeddb` is
+dev-only (no production bundle impact).
+
 (new entries appended here by agents)
 
 ---

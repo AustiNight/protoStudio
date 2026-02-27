@@ -95,7 +95,7 @@
   - [ ] AES-256 encrypt/decrypt wrapper for keys/tokens; validation errors.
   - [ ] Acceptance: Tests pass roundtrip; invalid key rejected.
 
-- [ ] Epic: Persistence
+- [x] Epic: Persistence
   - [ ] IndexedDB setup; checkpoint save/restore; telemetry append-only log.
   - [ ] Acceptance: Tests confirm checkpoint resume; log order preserved.
 
