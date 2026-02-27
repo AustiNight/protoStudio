@@ -9,3 +9,27 @@
     @apply bg-slate-950 text-slate-100;
   }
 }
+
+@layer utilities {
+  @keyframes backlog-revert {
+    0% {
+      transform: translateY(0);
+    }
+    25% {
+      transform: translateY(-4px);
+    }
+    50% {
+      transform: translateY(4px);
+    }
+    75% {
+      transform: translateY(-2px);
+    }
+    100% {
+      transform: translateY(0);
+    }
+  }
+
+  .animate-backlog-revert {
+    animation: backlog-revert 320ms ease-in-out;
+  }
+}

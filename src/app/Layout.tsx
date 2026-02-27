@@ -11,6 +11,7 @@ import {
   getSkipChatMessage,
   getSwapChatMessage,
 } from '@/engine/chat/narration';
+import { evaluateReorder } from '@/engine/chat/po-logic';
 import { SessionCheckpoint } from '@/persistence/checkpoint';
 import { useBacklogStore } from '@/store/backlog-store';
 import { useBuildStore } from '@/store/build-store';
@@ -175,6 +176,13 @@ type NarrationCheckpoint = {
   lastError: string | null;
 };
 
+type PendingReorder = {
+  fromId: string;
+  toId: string;
+  originalOrder: string[];
+  nextOrder: string[];
+};
+
 let messageCounter = 0;
 
 function buildNarrationMessage(
@@ -195,11 +203,57 @@ function buildNarrationMessage(
   };
 }
 
-function reorderBacklog(items: WorkItem[], fromIndex: number, toIndex: number): WorkItem[] {
+function reorderArray<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   const next = [...items];
   const [moved] = next.splice(fromIndex, 1);
+  if (!moved) {
+    return next;
+  }
   next.splice(toIndex, 0, moved);
   return next;
+}
+
+function applyQueueOrder(items: WorkItem[], queueOrder: string[]): WorkItem[] {
+  if (queueOrder.length === 0) {
+    return items.map((item, index) => ({ ...item, order: index + 1 }));
+  }
+
+  const queueSet = new Set(queueOrder);
+  const queueItems = items.filter((item) => queueSet.has(item.id));
+  if (queueItems.length === 0) {
+    return items.map((item, index) => ({ ...item, order: index + 1 }));
+  }
+
+  const queueById = new Map(queueItems.map((item) => [item.id, item]));
+  const used = new Set<string>();
+  const orderedQueue: WorkItem[] = [];
+
+  for (const id of queueOrder) {
+    const item = queueById.get(id);
+    if (!item || used.has(id)) {
+      continue;
+    }
+    orderedQueue.push(item);
+    used.add(id);
+  }
+
+  for (const item of queueItems) {
+    if (!used.has(item.id)) {
+      orderedQueue.push(item);
+    }
+  }
+
+  let queueIndex = 0;
+  const nextItems = items.map((item) => {
+    if (!queueSet.has(item.id)) {
+      return item;
+    }
+    const replacement = orderedQueue[queueIndex] ?? item;
+    queueIndex += 1;
+    return replacement;
+  });
+
+  return nextItems.map((item, index) => ({ ...item, order: index + 1 }));
 }
 
 function emitBacklogReorder(fromId: string, toId: string, order: string[]): void {
@@ -229,7 +283,7 @@ export function Layout() {
   const focusedItemId = useBacklogStore((state) => state.focusedItemId);
   const focusItem = useBacklogStore((state) => state.focusItem);
   const promoteNext = useBacklogStore((state) => state.promoteNext);
-  const reorderItems = useBacklogStore((state) => state.reorderItems);
+  const setBacklogItems = useBacklogStore((state) => state.setItems);
   const clearBacklog = useBacklogStore((state) => state.clearBacklog);
   const isPaused = useBuildStore((state) => state.isPaused);
   const buildPhase = useBuildStore((state) => state.buildState.phase);
@@ -239,19 +293,82 @@ export function Layout() {
   const resetBuild = useBuildStore((state) => state.resetBuild);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [pendingReorder, setPendingReorder] = useState<PendingReorder | null>(null);
+  const [queueOrderOverride, setQueueOrderOverride] = useState<string[] | null>(null);
+  const [revertPulse, setRevertPulse] = useState(false);
+  const [deniedItemId, setDeniedItemId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [previewResetKey, setPreviewResetKey] = useState(0);
+  const revertTimerRef = useRef<number | null>(null);
+  const deniedTimerRef = useRef<number | null>(null);
+  const isReorderPending = pendingReorder !== null;
 
-  const queueItems = useMemo(
-    () =>
-      [...backlogItems]
-        .filter((item) => item.status !== 'done' && item.id !== onDeckItem?.id)
-        .sort((a, b) => a.order - b.order),
-    [backlogItems, onDeckItem?.id],
-  );
+  const triggerRevertPulse = () => {
+    if (revertTimerRef.current) {
+      window.clearTimeout(revertTimerRef.current);
+    }
+    setRevertPulse(true);
+    revertTimerRef.current = window.setTimeout(() => {
+      setRevertPulse(false);
+      revertTimerRef.current = null;
+    }, 360);
+  };
+
+  const triggerDeniedHighlight = (itemId: string) => {
+    if (deniedTimerRef.current) {
+      window.clearTimeout(deniedTimerRef.current);
+    }
+    setDeniedItemId(itemId);
+    deniedTimerRef.current = window.setTimeout(() => {
+      setDeniedItemId(null);
+      deniedTimerRef.current = null;
+    }, 1200);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (revertTimerRef.current) {
+        window.clearTimeout(revertTimerRef.current);
+      }
+      if (deniedTimerRef.current) {
+        window.clearTimeout(deniedTimerRef.current);
+      }
+    };
+  }, []);
+
+  const queueItems = useMemo(() => {
+    const baseQueue = [...backlogItems]
+      .filter((item) => item.status !== 'done' && item.id !== onDeckItem?.id)
+      .sort((a, b) => a.order - b.order);
+
+    if (!queueOrderOverride || queueOrderOverride.length === 0) {
+      return baseQueue;
+    }
+
+    const byId = new Map(baseQueue.map((item) => [item.id, item]));
+    const used = new Set<string>();
+    const ordered: WorkItem[] = [];
+
+    for (const id of queueOrderOverride) {
+      const item = byId.get(id);
+      if (!item || used.has(id)) {
+        continue;
+      }
+      ordered.push(item);
+      used.add(id);
+    }
+
+    for (const item of baseQueue) {
+      if (!used.has(item.id)) {
+        ordered.push(item);
+      }
+    }
+
+    return ordered;
+  }, [backlogItems, onDeckItem?.id, queueOrderOverride]);
   const completedItems = useMemo(
     () => backlogItems.filter((item) => item.status === 'done'),
     [backlogItems],
@@ -673,7 +790,7 @@ export function Layout() {
                     Backlog Queue
                   </div>
                   <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                    Drag to reorder
+                    {isReorderPending ? 'Reviewing reorder' : 'Drag to reorder'}
                   </div>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -691,12 +808,14 @@ export function Layout() {
                       role="list"
                       className={`flex flex-col gap-3 ${
                         isPaused ? 'opacity-70' : ''
-                      }`}
+                      } ${revertPulse ? 'animate-backlog-revert' : ''}`}
                     >
-                      {queueItems.map((item, index) => {
+                      {queueItems.map((item) => {
                         const isFocused = focusedItemId === item.id;
                         const isDragTarget = dragOverId === item.id;
-                        const isDraggable = !isPaused && item.status === 'backlog';
+                        const isDraggable =
+                          !isPaused && !isReorderPending && item.status === 'backlog';
+                        const isDenied = deniedItemId === item.id;
                         return (
                           <div
                             key={item.id}
@@ -718,7 +837,14 @@ export function Layout() {
                               event.dataTransfer.setData('text/plain', item.id);
                             }}
                             onDragOver={(event) => {
-                              if (isPaused || !draggedId || draggedId === item.id) return;
+                              if (
+                                isPaused ||
+                                isReorderPending ||
+                                !draggedId ||
+                                draggedId === item.id
+                              ) {
+                                return;
+                              }
                               event.preventDefault();
                               setDragOverId(item.id);
                               event.dataTransfer.dropEffect = 'move';
@@ -729,28 +855,110 @@ export function Layout() {
                               }
                             }}
                             onDrop={(event) => {
-                              if (isPaused || !draggedId || draggedId === item.id) return;
+                              if (
+                                isPaused ||
+                                isReorderPending ||
+                                !draggedId ||
+                                draggedId === item.id
+                              ) {
+                                return;
+                              }
                               event.preventDefault();
-                              const fromIndex = backlogItems.findIndex(
-                                (candidate) => candidate.id === draggedId,
+
+                              const currentQueueIds = queueItems.map((entry) => entry.id);
+                              const fromQueueIndex = currentQueueIds.findIndex(
+                                (id) => id === draggedId,
                               );
-                              const toIndex = backlogItems.findIndex(
-                                (candidate) => candidate.id === item.id,
+                              const toQueueIndex = currentQueueIds.findIndex(
+                                (id) => id === item.id,
                               );
-                              if (fromIndex < 0 || toIndex < 0) return;
-                              const reordered = reorderBacklog(
-                                backlogItems,
-                                fromIndex,
-                                toIndex,
+                              if (fromQueueIndex < 0 || toQueueIndex < 0) return;
+
+                              const nextQueueOrder = reorderArray(
+                                currentQueueIds,
+                                fromQueueIndex,
+                                toQueueIndex,
                               );
-                              reorderItems(fromIndex, toIndex);
-                              emitBacklogReorder(
-                                draggedId,
-                                item.id,
-                                reordered.map((entry) => entry.id),
-                              );
+                              const fromItem = queueItems[fromQueueIndex];
+                              const toItem = queueItems[toQueueIndex];
+
+                              setQueueOrderOverride(nextQueueOrder);
+                              setPendingReorder({
+                                fromId: draggedId,
+                                toId: item.id,
+                                originalOrder: currentQueueIds,
+                                nextOrder: nextQueueOrder,
+                              });
                               setDraggedId(null);
                               setDragOverId(null);
+
+                              void (async () => {
+                                try {
+                                  const decision = await evaluateReorder(
+                                    fromQueueIndex,
+                                    toQueueIndex,
+                                    queueItems,
+                                  );
+
+                                  if (!decision.approved) {
+                                    setQueueOrderOverride(null);
+                                    setPendingReorder(null);
+                                    triggerRevertPulse();
+                                    if (fromItem) {
+                                      triggerDeniedHighlight(fromItem.id);
+                                    }
+                                    addMessage(
+                                      buildNarrationMessage(
+                                        sampleSessionId,
+                                        'chat_ai',
+                                        `Reorder denied: ${decision.reason} Keeping the current queue.`,
+                                        fromItem?.id,
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  const nextItems = applyQueueOrder(
+                                    backlogItems,
+                                    nextQueueOrder,
+                                  );
+                                  setBacklogItems(nextItems);
+                                  setQueueOrderOverride(null);
+                                  setPendingReorder(null);
+                                  emitBacklogReorder(
+                                    draggedId,
+                                    item.id,
+                                    nextQueueOrder,
+                                  );
+                                  if (fromItem && toItem) {
+                                    const direction =
+                                      fromQueueIndex < toQueueIndex ? 'after' : 'before';
+                                    addMessage(
+                                      buildNarrationMessage(
+                                        sampleSessionId,
+                                        'chat_ai',
+                                        `Reorder approved. "${fromItem.title}" now sits ${direction} "${toItem.title}".`,
+                                        fromItem.id,
+                                      ),
+                                    );
+                                  }
+                                } catch (error) {
+                                  setQueueOrderOverride(null);
+                                  setPendingReorder(null);
+                                  triggerRevertPulse();
+                                  if (fromItem) {
+                                    triggerDeniedHighlight(fromItem.id);
+                                  }
+                                  addMessage(
+                                    buildNarrationMessage(
+                                      sampleSessionId,
+                                      'chat_ai',
+                                      'Reorder denied due to a review error. Keeping the current queue.',
+                                      fromItem?.id,
+                                    ),
+                                  );
+                                }
+                              })();
                             }}
                             onDragEnd={() => {
                               setDraggedId(null);
@@ -758,8 +966,14 @@ export function Layout() {
                             }}
                             className={`rounded-2xl border border-slate-800/80 bg-slate-900/60 px-4 py-3 transition ${
                               isFocused ? 'ring-2 ring-emerald-300/60' : ''
-                            } ${isDragTarget ? 'border-emerald-300/70' : ''} ${
-                              isDraggable ? 'cursor-grab' : 'cursor-not-allowed'
+                            } ${isDenied ? 'ring-2 ring-rose-400/70' : ''} ${
+                              isDragTarget ? 'border-emerald-300/70' : ''
+                            } ${
+                              isDraggable
+                                ? 'cursor-grab'
+                                : isReorderPending
+                                  ? 'cursor-wait'
+                                  : 'cursor-not-allowed'
                             }`}
                           >
                             <div className="flex items-start justify-between gap-3">

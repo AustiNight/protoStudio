@@ -210,9 +210,9 @@
   - [ ] Status bar + chat messages driven from build state; slow/timeout transitions.
   - [ ] Acceptance: UI messages match OBSERVABILITY_UX mapping for each phase.
 
-- [ ] Epic: Reorder Arbitration
-  - [ ] Drag/drop → PO approve/deny with revert animation.
-  - [ ] Acceptance: Approved reorder persists; denied reorder animates revert + chat rationale.
+- [x] Epic: Reorder Arbitration
+  - [x] Drag/drop → PO approve/deny with revert animation.
+  - [x] Acceptance: Approved reorder persists; denied reorder animates revert + chat rationale.
 
 - [ ] Epic: Focus-Chat Mode
   - [ ] Click backlog item → chat context tag + hint; builder unaffected mid-build.
