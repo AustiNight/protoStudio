@@ -1,0 +1,37 @@
+{
+  "id": "portfolio",
+  "label": "Portfolio",
+  "description": "A visual portfolio for studios, creators, and teams.",
+  "pages": {
+    "index.html": {
+      "sections": [
+        "seo-base",
+        "nav",
+        "hero",
+        "about",
+        "project-gallery",
+        "testimonials",
+        "contact",
+        "footer"
+      ]
+    }
+  },
+  "features": {
+    "formToEmail": true,
+    "mapEmbed": true,
+    "lightbox": false,
+    "cart": false,
+    "calendarEmbed": false,
+    "blogEngine": false,
+    "multiStepForm": false
+  },
+  "defaultTheme": {
+    "primary": "#111827",
+    "secondary": "#4b5563",
+    "accent": "#e11d48",
+    "bg": "#f8fafc",
+    "text": "#0f172a",
+    "headingFont": "Inter",
+    "bodyFont": "Inter"
+  }
+}

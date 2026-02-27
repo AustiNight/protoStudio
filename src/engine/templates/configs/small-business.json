@@ -1,0 +1,43 @@
+{
+  "id": "small-business",
+  "label": "Small Business",
+  "description": "Services, team, and reviews for local businesses.",
+  "pages": {
+    "index.html": {
+      "sections": [
+        "seo-base",
+        "nav",
+        "hero",
+        "services-list",
+        "features-grid",
+        "about",
+        "testimonials",
+        "faq",
+        "team",
+        "hours-location",
+        "reviews-embed",
+        "cta-banner",
+        "contact",
+        "footer"
+      ]
+    }
+  },
+  "features": {
+    "formToEmail": true,
+    "mapEmbed": true,
+    "lightbox": false,
+    "cart": false,
+    "calendarEmbed": false,
+    "blogEngine": false,
+    "multiStepForm": false
+  },
+  "defaultTheme": {
+    "primary": "#0f766e",
+    "secondary": "#115e59",
+    "accent": "#f97316",
+    "bg": "#ffffff",
+    "text": "#1f2937",
+    "headingFont": "Inter",
+    "bodyFont": "Inter"
+  }
+}

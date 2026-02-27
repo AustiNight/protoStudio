@@ -1,0 +1,39 @@
+{
+  "id": "marketing",
+  "label": "Marketing",
+  "description": "High-converting SaaS landing pages.",
+  "pages": {
+    "index.html": {
+      "sections": [
+        "seo-base",
+        "nav",
+        "hero",
+        "features-grid",
+        "pricing-table",
+        "testimonials",
+        "faq",
+        "cta-banner",
+        "contact",
+        "footer"
+      ]
+    }
+  },
+  "features": {
+    "formToEmail": true,
+    "mapEmbed": true,
+    "lightbox": false,
+    "cart": false,
+    "calendarEmbed": false,
+    "blogEngine": false,
+    "multiStepForm": false
+  },
+  "defaultTheme": {
+    "primary": "#2563eb",
+    "secondary": "#1e40af",
+    "accent": "#f59e0b",
+    "bg": "#ffffff",
+    "text": "#0f172a",
+    "headingFont": "Inter",
+    "bodyFont": "Inter"
+  }
+}

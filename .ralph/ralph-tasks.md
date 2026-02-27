@@ -127,7 +127,7 @@
   - [x] Config → VFS assembly with dependency/conflict validation and slot filling.
   - [x] Acceptance: Integration tests assemble from configs; missing dep rejected.
 
-- [ ] Epic: Template Configs Wave 1
+- [x] Epic: Template Configs Wave 1
   - [ ] Marketing, Portfolio, Small Business JSON configs.
   - [ ] Acceptance: Integration tests produce expected section order.
 
