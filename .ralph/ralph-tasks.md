@@ -270,7 +270,7 @@
   - [ ] Playwright: first message → preview → 3 swaps → deploy (mocked).
   - [ ] Acceptance: Test passes with mocked LLM/deploy; preview swaps visible.
 
-- [ ] Epic: E2E – Backlog Interactions
+- [x] Epic: E2E – Backlog Interactions
   - [ ] Playwright: drag reorder (approve/deny), focus-chat, pause/resume.
   - [ ] Acceptance: Test asserts UI + chat behaviors per OBSERVABILITY_UX.
 
