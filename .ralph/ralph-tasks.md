@@ -147,7 +147,7 @@
   - [ ] Gem/eye variants, dynamic label state machine, secret trigger hook.
   - [ ] Acceptance: Renders both variants; label progression mapped to stages.
 
-- [ ] Epic: Preview Panel & Blue/Green Swap
+- [x] Epic: Preview Panel & Blue/Green Swap
   - [ ] Iframes with srcdoc injection, responsive toggles, status bar.
   - [ ] Acceptance: Swap animation occurs only after validation; inactive frame hidden.
 

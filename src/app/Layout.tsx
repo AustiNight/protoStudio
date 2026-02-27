@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { PreviewPanel } from '@/components/preview/PreviewPanel';
 import { HeaderBar } from '@/components/shared/HeaderBar';
 import type { ChatMessage } from '@/types/chat';
 import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
@@ -264,25 +265,11 @@ export function Layout() {
               activePanel === 'preview' ? 'block' : 'hidden'
             } md:block`}
           >
-            <header className="flex items-center justify-between">
-              <div>
-                <p className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.3em] text-slate-400">
-                  {panels[1].kicker}
-                </p>
-                <h2 className="text-xl font-semibold tracking-tight">{panels[1].label}</h2>
-              </div>
-              <span className="rounded-full border border-slate-800/80 px-3 py-1 font-['JetBrains_Mono'] text-xs uppercase tracking-[0.2em] text-slate-300">
-                Blue Slot
-              </span>
-            </header>
-            <div className="flex flex-1 flex-col gap-4">
-              <p className="text-sm text-slate-300">{panels[1].description}</p>
-              <div className="flex flex-1 items-center justify-center rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900/40 via-slate-900/20 to-slate-950/70">
-                <div className="font-['JetBrains_Mono'] text-center text-xs uppercase tracking-[0.3em] text-slate-500">
-                  Preview iframe placeholder
-                </div>
-              </div>
-            </div>
+            <PreviewPanel
+              kicker={panels[1].kicker}
+              label={panels[1].label}
+              description={panels[1].description}
+            />
           </section>
 
           <section
