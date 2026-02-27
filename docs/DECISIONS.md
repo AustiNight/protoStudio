@@ -30,6 +30,13 @@ enables reliable Node test coverage for persistence logic.
 **Bundle impact:** Small client footprint (few KB gz for `idb`); `fake-indexeddb` is
 dev-only (no production bundle impact).
 
+### D-004 | 2026-02-27 | Add Zustand dependency
+**Decision:** Add `zustand` as a runtime dependency for the `store/` layer.
+**Rationale:** D-001 selected Zustand for state management; adding the dependency
+unblocks store implementation and keeps state logic lightweight.
+**Alternatives:** Redux Toolkit, Jotai, React Context (see D-001).
+**Bundle impact:** Small client footprint (few KB gz).
+
 (new entries appended here by agents)
 
 ---

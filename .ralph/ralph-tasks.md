@@ -171,7 +171,7 @@
   - [ ] Confirm dialog; reset preserves preferences; loader reset state.
   - [ ] Acceptance: Reset clears session/backlog/VFS; preserves keys/models/tokens.
 
-- [ ] Epic: Zustand Stores
+- [x] Epic: Zustand Stores
   - [ ] Session/chat/backlog/build/settings/telemetry stores with derived selectors.
   - [ ] Acceptance: Unit tests on actions ensure immutability and state transitions.
 
