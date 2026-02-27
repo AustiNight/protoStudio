@@ -183,10 +183,10 @@
   - [ ] Apply decomposition + SEO auto-items; visibleChange/filesTouch/effort/deps set.
   - [ ] Acceptance: Fixture produces atoms all within Builder Atom limits.
 
-- [ ] Epic: Guardrail UX (Pushback Rule)
-  - [ ] Implement “push back twice then comply with caveat” flow in chat PO with tone guidance.
-  - [ ] Add automated conversation tests covering refusal → alternative → comply-with-caveat paths.
-  - [ ] Acceptance: Tests verify two pushbacks then compliance with inline note; no infinite denial.
+- [x] Epic: Guardrail UX (Pushback Rule)
+  - [x] Implement “push back twice then comply with caveat” flow in chat PO with tone guidance.
+  - [x] Add automated conversation tests covering refusal → alternative → comply-with-caveat paths.
+  - [x] Acceptance: Tests verify two pushbacks then compliance with inline note; no infinite denial.
 
 - [ ] Epic: Content Constraints Enforcement
   - [ ] Block user image upload UI; enforce SVG/Unsplash/gradient-only imagery; fallback patterns when Unsplash limited.

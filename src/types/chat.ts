@@ -4,6 +4,29 @@
 export type MessageSender = 'user' | 'chat_ai' | 'system';
 
 /**
+ * Guardrail response metadata for pushback tracking.
+ */
+export type GuardrailChatAction = 'pushback' | 'comply';
+
+/**
+ * Guardrail metadata attached to a chat response.
+ */
+export interface GuardrailChatMetadata {
+  /**
+   * Guardrail identifier that triggered the response.
+   */
+  id: string;
+  /**
+   * Action taken for the guardrail response.
+   */
+  action: GuardrailChatAction;
+  /**
+   * Attempt count for the guardrail response.
+   */
+  attempt: number;
+}
+
+/**
  * Optional metadata attached to a chat message.
  */
 export interface ChatMessageMetadata {
@@ -19,6 +42,10 @@ export interface ChatMessageMetadata {
    * Related backlog item id, if any.
    */
   backlogItemId?: string;
+  /**
+   * Guardrail metadata for pushback/compliance tracking.
+   */
+  guardrail?: GuardrailChatMetadata;
 }
 
 /**
