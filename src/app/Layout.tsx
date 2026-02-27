@@ -828,6 +828,7 @@ export function Layout() {
               kicker={panels[1].kicker}
               label={panels[1].label}
               description={panels[1].description}
+              sessionId={activeSessionId}
             />
           </section>
 

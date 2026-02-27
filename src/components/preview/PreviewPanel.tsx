@@ -1,15 +1,37 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { getMilestoneChatMessage } from '@/engine/chat/narration';
+import { deploySite, type Deployers } from '@/engine/deploy/deploy-manager';
+import {
+  generateDocumentationPacket,
+  type DocumentationPacket,
+} from '@/engine/deploy/doc-generator';
+import { VirtualFileSystem } from '@/engine/vfs/vfs';
+import { useChatStore } from '@/store/chat-store';
+import { useSettingsStore } from '@/store/settings-store';
+import type { ChatMessage } from '@/types/chat';
+import type { DeployHost, Deployment } from '@/types/deploy';
+import type { VfsMetadata } from '@/types/vfs';
+
+import { DeployButton } from './DeployButton';
 import { StatusBar } from './StatusBar';
 
 type PreviewSlot = 'blue' | 'green';
 type ValidationState = 'pending' | 'validating' | 'passed';
 type ViewportMode = 'desktop' | 'tablet' | 'mobile';
+type DeployState = 'idle' | 'deploying' | 'success' | 'error';
+
+type DeploySummary = {
+  deployment: Deployment;
+  docsUrl: string | null;
+  docsFileName: string | null;
+};
 
 type PreviewPanelProps = {
   kicker: string;
   label: string;
   description: string;
+  sessionId: string;
 };
 
 type ViewportOption = {
@@ -23,6 +45,13 @@ const VIEWPORT_OPTIONS: ViewportOption[] = [
   { id: 'tablet', label: 'Tablet', width: '860px' },
   { id: 'mobile', label: 'Mobile', width: '420px' },
 ];
+
+const HOST_LABELS: Record<DeployHost, string> = {
+  github_pages: 'GitHub Pages',
+  cloudflare_pages: 'Cloudflare Pages',
+  netlify: 'Netlify',
+  vercel: 'Vercel',
+};
 
 const SWAP_DURATION_MS = 700;
 const VALIDATION_DURATION_MS = 1200;
@@ -51,6 +80,152 @@ const PREVIEW_DOCS: Record<PreviewSlot, string> = {
     metric: '8 drop-in slots daily · Portland, OR',
   }),
 };
+
+const DEMO_METADATA = {
+  title: 'Juniper Clay Studio',
+  description: 'Warm, sunlit pottery classes with kiln access and open studio nights.',
+  colors: {
+    primary: '#E57C4B',
+    secondary: '#F4E7DB',
+    accent: '#4AA089',
+    bg: '#FBF7F2',
+    text: '#1F2937',
+  },
+  fonts: {
+    headingFont: 'Georgia, serif',
+    bodyFont: 'Georgia, serif',
+  },
+} satisfies VfsMetadata;
+
+function buildChatMessage(
+  sessionId: string,
+  sender: ChatMessage['sender'],
+  content: string,
+): ChatMessage {
+  const timestamp = Date.now();
+  const id =
+    typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `msg-${timestamp}-${Math.random().toString(36).slice(2, 8)}`;
+  return {
+    id,
+    sessionId,
+    timestamp,
+    sender,
+    content,
+  };
+}
+
+async function buildDemoVfs(html: string): Promise<VirtualFileSystem> {
+  const vfs = new VirtualFileSystem({
+    metadata: DEMO_METADATA,
+    templateId: 'demo',
+  });
+  await vfs.addFile('index.html', html);
+  return vfs;
+}
+
+function estimateVfsSize(vfs: VirtualFileSystem): number {
+  let total = 0;
+  for (const file of vfs.files.values()) {
+    total += measureBytes(file.content);
+  }
+  return total;
+}
+
+function measureBytes(value: string): number {
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(value).length;
+  }
+  return value.length;
+}
+
+function buildDocsDownload(
+  packet: DocumentationPacket,
+): { url: string; filename: string } | null {
+  if (typeof URL?.createObjectURL !== 'function') {
+    return null;
+  }
+  const payload = JSON.stringify(
+    {
+      root: packet.root,
+      branding: packet.branding,
+      files: packet.files,
+      assets: packet.assets,
+      screenshots: packet.screenshots,
+      pdf: packet.pdf,
+      generatedAt: packet.generatedAt,
+    },
+    null,
+    2,
+  );
+  const blob = new Blob([payload], { type: 'application/json' });
+  return {
+    url: URL.createObjectURL(blob),
+    filename: `${packet.root}.json`,
+  };
+}
+
+function buildDeploymentId(): string {
+  return `deploy-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+}
+
+function buildMockDeployment(input: {
+  host: DeployHost;
+  url: string;
+  vfs: VirtualFileSystem;
+  sessionId: string;
+  repoUrl?: string;
+}): Deployment {
+  return {
+    id: buildDeploymentId(),
+    sessionId: input.sessionId,
+    host: input.host,
+    url: input.url,
+    repoUrl: input.repoUrl,
+    deployedAt: Date.now(),
+    siteSize: estimateVfsSize(input.vfs),
+    fileCount: input.vfs.files.size,
+    status: 'live',
+  };
+}
+
+function buildMockDeployers(): Partial<Deployers> {
+  return {
+    github_pages: async (options) => ({
+      ok: true,
+      value: buildMockDeployment({
+        host: 'github_pages',
+        url: `https://${options.repoName}.github.io/${options.repoName}`,
+        repoUrl: `https://github.com/${options.repoName}`,
+        vfs: options.vfs,
+        sessionId: options.sessionId,
+      }),
+    }),
+    cloudflare_pages: async (options) => ({
+      ok: true,
+      value: buildMockDeployment({
+        host: 'cloudflare_pages',
+        url: `https://${options.projectName}.pages.dev`,
+        vfs: options.vfs,
+        sessionId: options.sessionId,
+      }),
+    }),
+    netlify: async (options) => ({
+      ok: true,
+      value: buildMockDeployment({
+        host: 'netlify',
+        url: `https://${options.siteName}.netlify.app`,
+        vfs: options.vfs,
+        sessionId: options.sessionId,
+      }),
+    }),
+  };
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function buildPreviewDoc(options: {
   accentHue: number;
@@ -310,14 +485,69 @@ function buildPreviewDoc(options: {
 }
 
 
-export function PreviewPanel({ kicker, label, description }: PreviewPanelProps) {
+export function PreviewPanel({
+  kicker,
+  label,
+  description,
+  sessionId,
+}: PreviewPanelProps) {
   const [activeSlot, setActiveSlot] = useState<PreviewSlot>('blue');
   const [validationState, setValidationState] = useState<ValidationState>('pending');
   const [isSwapping, setIsSwapping] = useState(false);
   const [viewport, setViewport] = useState<ViewportMode>('desktop');
+  const [deployState, setDeployState] = useState<DeployState>('idle');
+  const [deploySummary, setDeploySummary] = useState<DeploySummary | null>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
+  const addMessage = useChatStore((state) => state.addMessage);
+  const deployTokens = useSettingsStore((state) => state.settings.deployTokens);
 
   const validationTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const swapTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+
+  const hasDeployTokens = useMemo(
+    () => Object.values(deployTokens).some((token) => token.trim().length > 0),
+    [deployTokens],
+  );
+  const canDeploy = hasDeployTokens && deployState !== 'deploying';
+  const deployHostConfig = useMemo(() => {
+    if (deployTokens.cloudflare?.trim()) {
+      return { cloudflare: { accountId: 'demo-account' } };
+    }
+    return undefined;
+  }, [deployTokens.cloudflare]);
+  const deployDisabledReason = hasDeployTokens
+    ? 'Deploy to the best zero-cost host.'
+    : 'Configure a deploy token in Settings to enable deployment.';
+  const deployStateLabel =
+    deployState === 'deploying'
+      ? 'Deploying'
+      : deployState === 'success'
+        ? 'Deployed'
+        : deployState === 'error'
+          ? 'Deploy failed'
+          : 'Ready';
+
+  useEffect(() => {
+    return () => {
+      if (deploySummary?.docsUrl) {
+        URL.revokeObjectURL(deploySummary.docsUrl);
+      }
+    };
+  }, [deploySummary?.docsUrl]);
+
+  const emitSystemMessage = useCallback(
+    (content: string) => {
+      addMessage(buildChatMessage(sessionId, 'system', content));
+    },
+    [addMessage, sessionId],
+  );
+
+  const emitStudioMessage = useCallback(
+    (content: string) => {
+      addMessage(buildChatMessage(sessionId, 'chat_ai', content));
+    },
+    [addMessage, sessionId],
+  );
 
   const incomingSlot: PreviewSlot = activeSlot === 'blue' ? 'green' : 'blue';
   const canSwap = validationState === 'passed' && !isSwapping;
@@ -356,6 +586,80 @@ export function PreviewPanel({ kicker, label, description }: PreviewPanelProps) 
       setValidationState('pending');
     }, SWAP_DURATION_MS);
   };
+
+  const handleDeploy = useCallback(async () => {
+    if (!canDeploy) return;
+    setDeployState('deploying');
+    setDeployError(null);
+    setDeploySummary((prev) => {
+      if (prev?.docsUrl) {
+        URL.revokeObjectURL(prev.docsUrl);
+      }
+      return null;
+    });
+
+    emitSystemMessage('Deploy started. Running pre-deploy checks...');
+
+    try {
+      const vfs = await buildDemoVfs(PREVIEW_DOCS[activeSlot]);
+      await delay(400);
+      emitSystemMessage('Validating deploy bundle...');
+
+      const deployResult = await deploySite({
+        vfs,
+        sessionId,
+        tokens: {
+          github: deployTokens.github,
+          cloudflare: deployTokens.cloudflare,
+          netlify: deployTokens.netlify,
+          vercel: deployTokens.vercel,
+        },
+        hostConfig: deployHostConfig,
+        deployers: buildMockDeployers(),
+      });
+
+      if (!deployResult.ok) {
+        const message = deployResult.error.message ?? 'Deploy failed.';
+        emitSystemMessage(`Deploy failed: ${message}`);
+        setDeployState('error');
+        setDeployError(message);
+        return;
+      }
+
+      const deployment = deployResult.value;
+      emitSystemMessage(
+        `Deploy complete on ${HOST_LABELS[deployment.host]}. Generating documentation packet...`,
+      );
+      const packet = await generateDocumentationPacket({
+        vfs,
+        deploymentUrl: deployment.url,
+      });
+      const download = buildDocsDownload(packet);
+      setDeploySummary({
+        deployment,
+        docsUrl: download?.url ?? null,
+        docsFileName: download?.filename ?? null,
+      });
+      emitStudioMessage(getMilestoneChatMessage('deployed', { url: deployment.url }));
+      setDeployState('success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Deploy failed.';
+      emitSystemMessage(`Deploy failed: ${message}`);
+      setDeployState('error');
+      setDeployError(message);
+    }
+  }, [
+    activeSlot,
+    canDeploy,
+    deployHostConfig,
+    deployTokens.cloudflare,
+    deployTokens.github,
+    deployTokens.netlify,
+    deployTokens.vercel,
+    emitStudioMessage,
+    emitSystemMessage,
+    sessionId,
+  ]);
 
   const viewportWidth = VIEWPORT_OPTIONS.find((option) => option.id === viewport)?.width ?? '100%';
   const frameStyle = {
@@ -415,7 +719,7 @@ export function PreviewPanel({ kicker, label, description }: PreviewPanelProps) 
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handleValidate}
@@ -432,7 +736,72 @@ export function PreviewPanel({ kicker, label, description }: PreviewPanelProps) 
             >
               {isSwapping ? 'Swapping' : 'Swap'}
             </button>
+            <DeployButton
+              disabled={!hasDeployTokens}
+              isDeploying={deployState === 'deploying'}
+              hasDeployed={deployState === 'success'}
+              hasError={deployState === 'error'}
+              onClick={handleDeploy}
+              disabledReason={deployDisabledReason}
+            />
           </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/40 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs uppercase tracking-[0.2em] text-slate-400">
+            <div className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.3em] text-slate-500">
+              Deploy Status
+            </div>
+            <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300">
+              {deployStateLabel}
+            </div>
+          </div>
+          {deployState === 'idle' && (
+            <p className="mt-2 text-sm text-slate-300">
+              Deploy when ready to publish the latest preview to a zero-cost host.
+            </p>
+          )}
+          {deployState === 'deploying' && (
+            <p className="mt-2 text-sm text-slate-200">
+              Deploying your site. Watch the chat for progress updates.
+            </p>
+          )}
+          {deployState === 'error' && (
+            <p className="mt-2 text-sm text-rose-200">
+              {deployError ?? 'Deploy failed. Check settings and try again.'}
+            </p>
+          )}
+          {deployState === 'success' && deploySummary && (
+            <div className="mt-2 flex flex-col gap-2 text-sm text-slate-200">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-slate-400">Live URL</span>
+                <a
+                  href={deploySummary.deployment.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.2em] text-emerald-200 hover:text-emerald-100"
+                >
+                  {deploySummary.deployment.url}
+                </a>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-slate-400">Documentation packet</span>
+                {deploySummary.docsUrl ? (
+                  <a
+                    href={deploySummary.docsUrl}
+                    download={deploySummary.docsFileName ?? 'documentation.json'}
+                    className="rounded-full border border-slate-700/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-200 transition hover:border-emerald-300/70 hover:text-emerald-200"
+                  >
+                    Download Docs
+                  </a>
+                ) : (
+                  <span className="text-xs text-slate-500">
+                    Documentation not available.
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="relative flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900/40 via-slate-900/30 to-slate-950/80 p-4">

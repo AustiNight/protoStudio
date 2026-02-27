@@ -246,7 +246,7 @@
   - [ ] Branded Markdown bundle + PDF render; logo/colors/fonts from site; screenshots capture hook.
   - [ ] Acceptance: Generated packet contains all 7 sections and assets; renders without broken links.
 
-- [ ] Epic: Deploy UI Wiring
+- [x] Epic: Deploy UI Wiring
   - [ ] DeployButton states, progress chat events, final live URL + doc download link.
   - [ ] Acceptance: UI disables when no tokens; shows progress and success/fail chat messages.
 
