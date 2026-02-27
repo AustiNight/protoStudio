@@ -139,7 +139,7 @@
   - [ ] Three-panel responsive layout + HeaderBar with buttons placeholders.
   - [ ] Acceptance: Layout adapts desktop/tablet/mobile; panels sized 30/45/25%.
 
-- [ ] Epic: Chat Panel
+- [x] Epic: Chat Panel
   - [ ] iMessage bubbles, typing indicator, message grouping, auto-scroll.
   - [ ] Acceptance: Visual check; unit snapshot/test for grouping logic.
 

@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { HeaderBar } from '@/components/shared/HeaderBar';
+import type { ChatMessage } from '@/types/chat';
+import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
 
 type PanelKey = 'chat' | 'preview' | 'backlog';
 
@@ -33,8 +35,91 @@ const panels: Array<{
 const panelShell =
   'relative flex h-full min-h-[420px] flex-col gap-4 rounded-3xl border border-slate-800/70 bg-slate-900/60 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)] backdrop-blur';
 
+const sampleSessionId = 'session-demo';
+const baseTimestamp = new Date('2025-02-01T18:30:00Z').getTime();
+
+const sampleMessages: ChatMessage[] = [
+  {
+    id: 'm1',
+    sessionId: sampleSessionId,
+    timestamp: baseTimestamp,
+    sender: 'user',
+    content: 'We need a launch page for a ceramics studio in Portland.',
+  },
+  {
+    id: 'm2',
+    sessionId: sampleSessionId,
+    timestamp: baseTimestamp + 45_000,
+    sender: 'user',
+    content: 'Lean on warm neutrals and show upcoming classes.',
+  },
+  {
+    id: 'm3',
+    sessionId: sampleSessionId,
+    timestamp: baseTimestamp + 120_000,
+    sender: 'chat_ai',
+    content: 'Got it. Building a calm, tactile layout with classes up front.',
+  },
+  {
+    id: 'm4',
+    sessionId: sampleSessionId,
+    timestamp: baseTimestamp + 165_000,
+    sender: 'chat_ai',
+    content: 'Do you want a waitlist form or direct booking buttons?',
+  },
+  {
+    id: 'm5',
+    sessionId: sampleSessionId,
+    timestamp: baseTimestamp + 240_000,
+    sender: 'user',
+    content: 'Add a waitlist form for now. We will add booking later.',
+  },
+  {
+    id: 'm6',
+    sessionId: sampleSessionId,
+    timestamp: baseTimestamp + 360_000,
+    sender: 'system',
+    content: 'Preview build queued. ETA 24 seconds.',
+  },
+];
+
+const timeFormatter = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric',
+  minute: '2-digit',
+  timeZone: 'UTC',
+});
+
+const userBubbleShape: Record<GroupPosition, string> = {
+  single: 'rounded-2xl',
+  start: 'rounded-2xl rounded-br-md',
+  middle: 'rounded-2xl rounded-tr-md rounded-br-md',
+  end: 'rounded-2xl rounded-tr-md',
+};
+
+const assistantBubbleShape: Record<GroupPosition, string> = {
+  single: 'rounded-2xl',
+  start: 'rounded-2xl rounded-bl-md',
+  middle: 'rounded-2xl rounded-tl-md rounded-bl-md',
+  end: 'rounded-2xl rounded-tl-md',
+};
+
+function formatTimestamp(timestamp: number): string {
+  return timeFormatter.format(new Date(timestamp));
+}
+
 export function Layout() {
   const [activePanel, setActivePanel] = useState<PanelKey>('chat');
+  const groupedMessages = groupChatMessages(sampleMessages);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const isTyping = true;
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    requestAnimationFrame(() => {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    });
+  }, [groupedMessages.length, isTyping]);
 
   return (
     <div className="relative min-h-screen bg-slate-950 font-['Space_Grotesk'] text-slate-100">
@@ -80,10 +165,95 @@ export function Layout() {
                 Live
               </span>
             </header>
-            <div className="flex flex-1 flex-col justify-between gap-4">
+            <div className="flex min-h-0 flex-1 flex-col gap-4">
               <p className="text-sm text-slate-300">{panels[0].description}</p>
-              <div className="rounded-2xl border border-dashed border-slate-700/80 bg-slate-900/40 p-4 font-['JetBrains_Mono'] text-xs uppercase tracking-[0.25em] text-slate-500">
-                Message stream placeholder
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950/50">
+                <div className="flex items-center justify-between border-b border-slate-800/80 px-4 py-3">
+                  <div className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                    Live Conversation
+                  </div>
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-slate-400">
+                    <span className="h-2 w-2 rounded-full bg-emerald-300/90 shadow-[0_0_10px_rgba(16,185,129,0.6)]" />
+                    Active
+                  </div>
+                </div>
+                <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+                  <div className="flex flex-col">
+                    {groupedMessages.map((grouped, index) => {
+                      const { message, position, showHeader } = grouped;
+                      const isUser = message.sender === 'user';
+                      const isSystem = message.sender === 'system';
+                      const alignment = isSystem
+                        ? 'items-center'
+                        : isUser
+                          ? 'items-end'
+                          : 'items-start';
+                      const bubbleShape = isSystem
+                        ? 'rounded-xl'
+                        : isUser
+                          ? userBubbleShape[position]
+                          : assistantBubbleShape[position];
+                      const bubbleTone = isSystem
+                        ? 'border border-slate-800/80 bg-slate-900/70 text-slate-200'
+                        : isUser
+                          ? 'bg-emerald-300 text-slate-950 shadow-[0_10px_20px_rgba(16,185,129,0.25)]'
+                          : 'bg-slate-800/90 text-slate-100 shadow-[0_10px_20px_rgba(15,23,42,0.45)]';
+                      const spacingClass =
+                        index === 0 ? 'mt-0' : showHeader ? 'mt-4' : 'mt-1';
+                      const maxWidth = isSystem ? 'max-w-[82%]' : 'max-w-[75%]';
+
+                      return (
+                        <div
+                          key={message.id}
+                          className={`flex flex-col ${alignment} ${spacingClass}`}
+                        >
+                          {showHeader && !isSystem && (
+                            <div
+                              className={`mb-1 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400 ${
+                                isUser ? 'justify-end text-right' : 'justify-start'
+                              }`}
+                            >
+                              <span className="font-['JetBrains_Mono']">
+                                {isUser ? 'You' : 'Studio'}
+                              </span>
+                              <span className="text-slate-500">
+                                {formatTimestamp(message.timestamp)}
+                              </span>
+                            </div>
+                          )}
+                          {isSystem && (
+                            <div className="mb-1 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                              System Notice
+                            </div>
+                          )}
+                          <div
+                            className={`${maxWidth} px-4 py-2 text-sm leading-relaxed ${bubbleTone} ${bubbleShape} whitespace-pre-line`}
+                          >
+                            {message.content}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {isTyping && (
+                      <div className="mt-4 flex flex-col items-start">
+                        <div className="mb-1 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                          Studio
+                        </div>
+                        <div className="flex items-center gap-2 rounded-2xl bg-slate-800/90 px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.45)]">
+                          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.2s]" />
+                          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.1s]" />
+                          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="border-t border-slate-800/80 px-4 py-3">
+                  <div className="flex items-center gap-3 rounded-2xl border border-slate-800/70 bg-slate-900/70 px-4 py-3 text-xs text-slate-400">
+                    <span className="h-2 w-2 rounded-full bg-emerald-300/80" />
+                    Type your next instruction...
+                  </div>
+                </div>
               </div>
             </div>
           </section>
