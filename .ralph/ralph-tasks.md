@@ -155,7 +155,7 @@
   - [ ] Swap controller + iframe bridge postMessage.
   - [ ] Acceptance: Tests cover swap, error handling, postMessage routing.
 
-- [ ] Epic: Backlog Panel
+- [x] Epic: Backlog Panel
   - [ ] On Deck locked card, drag/drop backlog list, focus highlight, pause/resume.
   - [ ] Acceptance: UI reflects lock, pause badge; drag reorder events emitted.
 
