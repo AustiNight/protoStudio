@@ -15,6 +15,7 @@ import { validateContinuity } from './continuity';
 import { BuildHeartbeat } from './heartbeat';
 import { PatchEngine } from './patch-engine';
 import { ScaffoldAuditor } from './scaffold';
+import { ScaffoldHealthManager } from './scaffold-health';
 
 export type BuilderLoopStatus = 'idle' | 'paused' | 'success' | 'skipped';
 
@@ -64,6 +65,7 @@ export interface BuilderLoopOptions {
   contextManager: ContextManager;
   patchEngine?: PatchEngine;
   scaffoldAuditor?: ScaffoldAuditor;
+  scaffoldHealth?: ScaffoldHealthManager;
   circuitBreaker?: CircuitBreakerTracker;
   heartbeat?: BuildHeartbeat;
   phaseTimeouts?: PhaseTimeouts;
@@ -117,6 +119,7 @@ export class BuilderLoop {
   private contextManager: ContextManager;
   private patchEngine: PatchEngine;
   private scaffoldAuditor: ScaffoldAuditor;
+  private scaffoldHealth: ScaffoldHealthManager;
   private circuitBreaker: CircuitBreakerTracker;
   private heartbeat: BuildHeartbeat;
   private now: () => number;
@@ -129,6 +132,9 @@ export class BuilderLoop {
     this.contextManager = options.contextManager;
     this.patchEngine = options.patchEngine ?? new PatchEngine();
     this.scaffoldAuditor = options.scaffoldAuditor ?? new ScaffoldAuditor();
+    this.scaffoldHealth =
+      options.scaffoldHealth ??
+      new ScaffoldHealthManager({ auditor: this.scaffoldAuditor });
     this.circuitBreaker = options.circuitBreaker ?? new CircuitBreakerTracker();
     const phaseTimeouts = options.phaseTimeouts ?? DEFAULT_PHASE_TIMEOUTS;
     this.heartbeat = options.heartbeat ?? new BuildHeartbeat(phaseTimeouts);
@@ -367,6 +373,8 @@ export class BuilderLoop {
         atom,
         slot: input.preview.getInactiveSlot?.(),
       });
+
+      await this.scaffoldHealth.evaluate(input.vfs);
 
       this.circuitBreaker.recordSuccess(atom.id, this.maxAttempts);
       this.resetBuildState();

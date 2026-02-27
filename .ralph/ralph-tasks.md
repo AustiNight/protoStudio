@@ -258,9 +258,9 @@
   - [ ] Map build phases to status dot colors/text; slow/timeout messaging; skip/fail chat flows; channel consistency.
   - [ ] Acceptance: UI shows amber on warn, red on error; skip emits chat; status/backlog channels consistent.
 
-- [ ] Epic: Scaffold Health Snapshots
-  - [ ] Auto-save healthy snapshots; auto-repair degraded; rollback on critical score.
-  - [ ] Acceptance: Health <50 triggers rollback; >=90 saves snapshot; tests verify.
+- [x] Epic: Scaffold Health Snapshots
+  - [x] Auto-save healthy snapshots; auto-repair degraded; rollback on critical score.
+  - [x] Acceptance: Health <50 triggers rollback; >=90 saves snapshot; tests verify.
 
 - [ ] Epic: Telemetry Surfacing
   - [ ] Capture metrics per PRD §4.5; export hook; ensure local-only storage.

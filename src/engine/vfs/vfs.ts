@@ -86,6 +86,17 @@ export class VirtualFileSystem {
     });
   }
 
+  replaceWith(source: VirtualFileSystem): void {
+    this.metadata = cloneMetadata(source.metadata);
+    this.templateId = source.templateId;
+    this.version = source.version;
+
+    this.files.clear();
+    for (const file of source.files.values()) {
+      this.files.set(file.path, cloneFile(file));
+    }
+  }
+
   toManifest(): SiteManifest {
     const pages: SiteManifestPage[] = [];
     const cssBlocks: string[] = [];
