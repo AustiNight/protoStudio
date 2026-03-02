@@ -23,11 +23,11 @@
   - [x] Add automated coverage for typing + send flow (e2e recommended: new `tests/e2e/chat-composer.spec.ts`; unit fallback if e2e unavailable in CI).
   - [x] Acceptance: typing is possible in the chat composer, sending creates a user bubble immediately, empty submissions are blocked, and keyboard behavior matches spec.
 
-- [ ] Epic: Cross-Cut - Settings Source Of Truth Alignment
-  - [ ] Audit current split between `SettingsModal` local state and `useSettingsStore` state, including runtime consumers in preview/deploy/chat flows.
-  - [ ] Implement a single store-backed read/write path so model/key selections used at runtime match what the modal displays and saves.
-  - [ ] Add regression tests proving modal updates are reflected in runtime consumers without refresh.
-  - [ ] Acceptance: changing provider/model/key in settings updates the canonical store and downstream consumers consistently.
+- [x] Epic: Cross-Cut - Settings Source Of Truth Alignment
+  - [x] Audit current split between `SettingsModal` local state and `useSettingsStore` state, including runtime consumers in preview/deploy/chat flows.
+  - [x] Implement a single store-backed read/write path so model/key selections used at runtime match what the modal displays and saves.
+  - [x] Add regression tests proving modal updates are reflected in runtime consumers without refresh.
+  - [x] Acceptance: changing provider/model/key in settings updates the canonical store and downstream consumers consistently.
 
 - [ ] Epic: Fix #2 - OpenAI Key Ping Marks Valid Key as Invalid
   - [ ] Implement OpenAI key ping in `src/engine/llm` (service/provider module) and invoke that service from `src/components/shared/SettingsModal.tsx`; do not call OpenAI fetch directly from React UI code.

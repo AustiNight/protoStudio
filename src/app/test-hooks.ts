@@ -8,6 +8,7 @@ import type { WorkItem } from '@/types/backlog';
 type DeployTokenPatch = Partial<
   ReturnType<typeof useSettingsStore.getState>['settings']['deployTokens']
 >;
+type SettingsSnapshot = ReturnType<typeof useSettingsStore.getState>['settings'];
 
 type BacklogSeedOptions = {
   onDeckId?: string | null;
@@ -21,6 +22,7 @@ declare global {
       setDeployTokens: (tokens: DeployTokenPatch) => void;
       seedBacklog: (items: WorkItem[], options?: BacklogSeedOptions) => void;
       getChatMessages: () => ChatMessage[];
+      getSettingsSnapshot: () => SettingsSnapshot;
     };
   }
 }
@@ -53,6 +55,7 @@ if (typeof window !== 'undefined' && import.meta.env.MODE === 'e2e') {
       }
     },
     getChatMessages: () => useChatStore.getState().messages,
+    getSettingsSnapshot: () => useSettingsStore.getState().settings,
   };
 }
 

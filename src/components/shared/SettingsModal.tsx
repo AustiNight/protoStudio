@@ -107,7 +107,6 @@ const DEPLOY_HOST_OPTIONS: Array<{
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('keys');
   const [passphrase, setPassphrase] = useState('');
-  const [settings, setSettings] = useState<SettingsPayload>(DEFAULT_SETTINGS);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
@@ -124,14 +123,21 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const telemetryEvents = useTelemetryStore((state) => state.events);
   const exportTelemetryBundle = useTelemetryStore((state) => state.exportBundle);
   const hasStoredSecrets = useSettingsStore((state) => state.hasStoredSecrets);
+  const storeSettings = useSettingsStore((state) => state.settings);
   const hydrateFromStorage = useSettingsStore((state) => state.hydrateFromStorage);
+  const setRuntimeSettings = useSettingsStore((state) => state.setRuntimeSettings);
+  const updateRuntimeSettings = useSettingsStore((state) => state.updateRuntimeSettings);
   const saveSettingsToStore = useSettingsStore((state) => state.saveSettings);
   const unlockSettingsInStore = useSettingsStore((state) => state.unlockSettings);
   const clearSettingsInStore = useSettingsStore((state) => state.clearSettings);
 
   const modelOptions = useMemo(() => MODEL_OPTIONS, []);
+  const settings = useMemo(
+    () => normalizeSettings(storeSettings, modelOptions),
+    [modelOptions, storeSettings],
+  );
   const isPassphraseValid = passphrase.length >= MIN_PASSPHRASE_LENGTH;
-  const storedUpdatedAt = useSettingsStore((state) => state.settings.updatedAt);
+  const storedUpdatedAt = settings.updatedAt;
   const lastTelemetryTimestamp =
     telemetryEvents.length > 0
       ? telemetryEvents[telemetryEvents.length - 1]?.timestamp ?? null
@@ -140,10 +146,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   useEffect(() => {
     if (!open) return;
     hydrateFromStorage();
-    setSettings(normalizeSettings(useSettingsStore.getState().settings, modelOptions));
+    setRuntimeSettings(normalizeSettings(useSettingsStore.getState().settings, modelOptions));
+    setKeyStatus(buildValidationMap(LLM_PROVIDERS));
+    setTokenStatus(buildValidationMap(DEPLOY_HOSTS));
     setIsUnlocked(false);
     setNotice(null);
-  }, [open, hydrateFromStorage, modelOptions]);
+  }, [open, hydrateFromStorage, modelOptions, setRuntimeSettings]);
 
   useEffect(() => {
     if (open) return;
@@ -188,7 +196,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     const unlocked = await unlockSettingsInStore(passphrase);
     const storeState = useSettingsStore.getState();
     if (unlocked) {
-      setSettings(normalizeSettings(storeState.settings, modelOptions));
+      setRuntimeSettings(normalizeSettings(storeState.settings, modelOptions));
       setKeyStatus(buildValidationMap(LLM_PROVIDERS));
       setTokenStatus(buildValidationMap(DEPLOY_HOSTS));
       setIsUnlocked(true);
@@ -215,7 +223,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     const saved = await saveSettingsToStore(settings, passphrase);
     const storeState = useSettingsStore.getState();
     if (saved) {
-      setSettings(normalizeSettings(storeState.settings, modelOptions));
+      setRuntimeSettings(normalizeSettings(storeState.settings, modelOptions));
       setIsUnlocked(true);
       setNotice({ tone: 'success', message: 'Settings saved locally.' });
     } else {
@@ -230,7 +238,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const handleClearStored = () => {
     clearSettingsInStore();
     setIsUnlocked(false);
-    setSettings(normalizeSettings(useSettingsStore.getState().settings, modelOptions));
+    setRuntimeSettings(normalizeSettings(useSettingsStore.getState().settings, modelOptions));
     setKeyStatus(buildValidationMap(LLM_PROVIDERS));
     setTokenStatus(buildValidationMap(DEPLOY_HOSTS));
     setNotice({ tone: 'info', message: 'Stored settings cleared.' });
@@ -268,9 +276,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   };
 
   const handleLlmKeyChange = (provider: ProviderName, value: string) => {
-    setSettings((prev) => ({
-      ...prev,
-      llmKeys: { ...prev.llmKeys, [provider]: value },
+    updateRuntimeSettings((current) => ({
+      ...current,
+      llmKeys: { ...current.llmKeys, [provider]: value },
     }));
     setKeyStatus((prev) => ({
       ...prev,
@@ -279,9 +287,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   };
 
   const handleDeployTokenChange = (host: DeployHost, value: string) => {
-    setSettings((prev) => ({
-      ...prev,
-      deployTokens: { ...prev.deployTokens, [host]: value },
+    updateRuntimeSettings((current) => ({
+      ...current,
+      deployTokens: { ...current.deployTokens, [host]: value },
     }));
     setTokenStatus((prev) => ({
       ...prev,
@@ -290,24 +298,24 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   };
 
   const handleModelProviderChange = (role: 'chat' | 'builder', provider: ProviderName) => {
-    setSettings((prev) => {
+    updateRuntimeSettings((current) => {
       const normalized = normalizeModelSelection(
-        { provider, model: prev.llmModels[role].model },
+        { provider, model: current.llmModels[role].model },
         modelOptions,
       );
       return {
-        ...prev,
-        llmModels: { ...prev.llmModels, [role]: normalized },
+        ...current,
+        llmModels: { ...current.llmModels, [role]: normalized },
       };
     });
   };
 
   const handleModelChange = (role: 'chat' | 'builder', model: string) => {
-    setSettings((prev) => ({
-      ...prev,
+    updateRuntimeSettings((current) => ({
+      ...current,
       llmModels: {
-        ...prev.llmModels,
-        [role]: { ...prev.llmModels[role], model },
+        ...current.llmModels,
+        [role]: { ...current.llmModels[role], model },
       },
     }));
   };

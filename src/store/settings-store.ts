@@ -32,6 +32,8 @@ export interface SettingsStoreState {
   hasStoredSecrets: boolean;
   lastError: string | null;
   hydrateFromStorage: () => void;
+  setRuntimeSettings: (settings: SettingsPayload) => void;
+  updateRuntimeSettings: (updater: (settings: SettingsPayload) => SettingsPayload) => void;
   saveSettings: (settings: SettingsPayload, passphrase: string) => Promise<boolean>;
   unlockSettings: (passphrase: string) => Promise<boolean>;
   clearSettings: () => void;
@@ -47,6 +49,22 @@ export const createSettingsStore = () =>
         return {
           encryptedSettings: encrypted,
           hasStoredSecrets: Boolean(encrypted),
+        };
+      }),
+    setRuntimeSettings: (settings) =>
+      set(() => ({
+        settings: cloneSettings(settings),
+        lastError: null,
+      })),
+    updateRuntimeSettings: (updater) =>
+      set((state) => {
+        const next = updater(cloneSettings(state.settings));
+        return {
+          settings: cloneSettings({
+            ...next,
+            updatedAt: state.settings.updatedAt,
+          }),
+          lastError: null,
         };
       }),
     saveSettings: async (settings, passphrase) => {
@@ -166,6 +184,19 @@ function normalizeSettings(settings: SettingsPayload): SettingsPayload {
     },
     deployTokens: { ...settings.deployTokens },
     updatedAt: now,
+  };
+}
+
+function cloneSettings(settings: SettingsPayload): SettingsPayload {
+  return {
+    version: 1,
+    llmKeys: { ...settings.llmKeys },
+    llmModels: {
+      chat: { ...settings.llmModels.chat },
+      builder: { ...settings.llmModels.builder },
+    },
+    deployTokens: { ...settings.deployTokens },
+    updatedAt: settings.updatedAt,
   };
 }
 

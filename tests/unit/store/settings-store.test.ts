@@ -117,4 +117,39 @@ describe('settings-store', () => {
     expect(unlocked).toBe(true);
     expect(nextStore.getState().settings.llmKeys.anthropic).toBe('sk-anthropic');
   });
+
+  it('should update runtime settings in store without persisting until save', () => {
+    const store = createSettingsStore();
+    const runtimeSeed: SettingsPayload = {
+      ...buildSettingsPayload(),
+      updatedAt: 1700000000000,
+    };
+    store.getState().setRuntimeSettings(runtimeSeed);
+
+    store.getState().updateRuntimeSettings((current) => ({
+      ...current,
+      llmKeys: { ...current.llmKeys, openai: 'sk-runtime-openai' },
+      llmModels: {
+        ...current.llmModels,
+        chat: {
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-20250514',
+        },
+      },
+      deployTokens: {
+        ...current.deployTokens,
+        github: 'github_pat_runtime01234567890123',
+      },
+    }));
+
+    const nextSettings = store.getState().settings;
+    expect(nextSettings.llmKeys.openai).toBe('sk-runtime-openai');
+    expect(nextSettings.llmModels.chat).toEqual({
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-20250514',
+    });
+    expect(nextSettings.deployTokens.github).toBe('github_pat_runtime01234567890123');
+    expect(nextSettings.updatedAt).toBe(1700000000000);
+    expect(globalThis.localStorage.getItem(SETTINGS_STORAGE_KEY)).toBeNull();
+  });
 });
