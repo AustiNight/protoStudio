@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import pricingConfigRaw from '@/config/model-pricing.json';
+import { isOpenAIModelId } from '@/config/model-pricing-schema';
 import { createOpenAIKeyValidationRunner } from '@/engine/llm/openai-key-validation';
 import {
   useSettingsStore,
@@ -40,6 +41,21 @@ const VALIDATION_DELAY_MS = 800;
 const OPENAI_KEY_VALIDATION_TIMEOUT_MS = 10_000;
 
 const pricingConfig = pricingConfigRaw as PricingConfig;
+
+const NON_SELECTABLE_OPENAI_MODEL_PATTERNS: RegExp[] = [
+  /^chatgpt-/i,
+  /-chat-latest$/i,
+  /-preview$/i,
+  /-search-preview$/i,
+];
+
+function isSelectableOpenAIModelId(modelId: string): boolean {
+  if (!isOpenAIModelId(modelId)) {
+    return false;
+  }
+
+  return NON_SELECTABLE_OPENAI_MODEL_PATTERNS.every((pattern) => !pattern.test(modelId));
+}
 
 const MODEL_OPTIONS = buildModelOptions(pricingConfig.models);
 
@@ -1025,7 +1041,7 @@ function StatusBadge({ status }: { status: ValidationStatus }) {
   );
 }
 
-function buildModelOptions(
+export function buildModelOptions(
   models: PricingConfig['models'],
 ): Record<ProviderName, string[]> {
   const options: Record<ProviderName, string[]> = {
@@ -1035,7 +1051,7 @@ function buildModelOptions(
   };
 
   for (const model of Object.keys(models)) {
-    if (model.startsWith('gpt-')) {
+    if (isSelectableOpenAIModelId(model)) {
       options.openai.push(model);
     } else if (model.startsWith('claude-')) {
       options.anthropic.push(model);

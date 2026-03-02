@@ -39,13 +39,13 @@
   - [x] Add e2e ping coverage using deterministic mocked OpenAI responses (no live key/network dependency in CI).
   - [x] Acceptance: a valid OpenAI key passes ping, invalid auth fails with clear reason, and transient connectivity/timeout failures are reported distinctly from invalid credentials.
 
-- [ ] Epic: Fix #3 - OpenAI Model List Is Outdated
-  - [ ] Research current OpenAI model catalog using official sources (`/docs/models` + `/v1/models` reference) and record required model metadata in `src/config/model-pricing.json` with `sourceUrls` and `reviewedAt: 2026-03-02`.
-  - [ ] Update OpenAI entries in `src/config/model-pricing.json` to reflect currently allowed API models relevant to this app’s chat/builder usage (including current GPT-5 family, GPT-4.1 family, `gpt-4o` variants, and current `o*` reasoning models where applicable).
-  - [ ] Refactor `buildModelOptions` in `src/components/shared/SettingsModal.tsx` to avoid `gpt-`-only OpenAI detection so valid OpenAI `o*` IDs are selectable.
-  - [ ] Exclude or clearly mark deprecated/ChatGPT-only aliases from default selectable options when they are not intended for normal API use in this app.
-  - [ ] Add tests confirming model-option classification includes modern OpenAI families (`gpt-*` and `o*`) and still separates Anthropic/Google correctly.
-  - [ ] Acceptance: OpenAI dropdown contains an up-to-date, usable model set, includes modern non-`gpt-` OpenAI IDs, and no longer silently omits valid OpenAI models.
+- [x] Epic: Fix #3 - OpenAI Model List Is Outdated
+  - [x] Research current OpenAI model catalog using official sources (`/docs/models` + `/v1/models` reference) and record required model metadata in `src/config/model-pricing.json` with `sourceUrls` and `reviewedAt: 2026-03-02`.
+  - [x] Update OpenAI entries in `src/config/model-pricing.json` to reflect currently allowed API models relevant to this app’s chat/builder usage (including current GPT-5 family, GPT-4.1 family, `gpt-4o` variants, and current `o*` reasoning models where applicable).
+  - [x] Refactor `buildModelOptions` in `src/components/shared/SettingsModal.tsx` to avoid `gpt-`-only OpenAI detection so valid OpenAI `o*` IDs are selectable.
+  - [x] Exclude or clearly mark deprecated/ChatGPT-only aliases from default selectable options when they are not intended for normal API use in this app.
+  - [x] Add tests confirming model-option classification includes modern OpenAI families (`gpt-*` and `o*`) and still separates Anthropic/Google correctly.
+  - [x] Acceptance: OpenAI dropdown contains an up-to-date, usable model set, includes modern non-`gpt-` OpenAI IDs, and no longer silently omits valid OpenAI models.
 
 - [ ] Epic: Fix #5 - New Conversation Must Reset Cost Counter To Active Conversation Only
   - [ ] Introduce explicit session-id lifecycle on `New Conversation`: generate a new active session id, end the prior telemetry session, and start a fresh telemetry session while preserving the single-active-session model.

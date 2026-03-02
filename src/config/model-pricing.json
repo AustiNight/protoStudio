@@ -1,30 +1,133 @@
 {
-  "lastUpdated": "2026-02-26",
+  "lastUpdated": "2026-03-02",
   "models": {
-    "gpt-4o": {
-      "promptPer1K": 0.0025,
-      "completionPer1K": 0.01,
-      "sourceUrls": [
-        "https://platform.openai.com/docs/models",
-        "https://platform.openai.com/docs/api-reference/models/list"
-      ],
-      "reviewedAt": "2026-03-02"
-    },
     "gpt-4o-mini": {
       "promptPer1K": 0.00015,
       "completionPer1K": 0.0006,
       "sourceUrls": [
         "https://platform.openai.com/docs/models",
-        "https://platform.openai.com/docs/api-reference/models/list"
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
       ],
       "reviewedAt": "2026-03-02"
     },
-    "gpt-4.5-preview": {
-      "promptPer1K": 0.075,
-      "completionPer1K": 0.15,
+    "gpt-4o": {
+      "promptPer1K": 0.0025,
+      "completionPer1K": 0.01,
       "sourceUrls": [
         "https://platform.openai.com/docs/models",
-        "https://platform.openai.com/docs/api-reference/models/list"
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "gpt-4.1-mini": {
+      "promptPer1K": 0.0004,
+      "completionPer1K": 0.0016,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "gpt-4.1": {
+      "promptPer1K": 0.002,
+      "completionPer1K": 0.008,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "gpt-4.1-nano": {
+      "promptPer1K": 0.0001,
+      "completionPer1K": 0.0004,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "gpt-5-mini": {
+      "promptPer1K": 0.00025,
+      "completionPer1K": 0.002,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "gpt-5-nano": {
+      "promptPer1K": 0.00005,
+      "completionPer1K": 0.0004,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "gpt-5": {
+      "promptPer1K": 0.00125,
+      "completionPer1K": 0.01,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "gpt-5.1": {
+      "promptPer1K": 0.00125,
+      "completionPer1K": 0.01,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "gpt-5.2": {
+      "promptPer1K": 0.00175,
+      "completionPer1K": 0.014,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "o4-mini": {
+      "promptPer1K": 0.0011,
+      "completionPer1K": 0.0044,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "o3-mini": {
+      "promptPer1K": 0.0011,
+      "completionPer1K": 0.0044,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "o3": {
+      "promptPer1K": 0.002,
+      "completionPer1K": 0.008,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
       ],
       "reviewedAt": "2026-03-02"
     },
