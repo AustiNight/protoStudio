@@ -24,6 +24,16 @@ export interface ModelPricing {
    * Cost per 1K completion tokens.
    */
   completionPer1K: number;
+  /**
+   * Official OpenAI source URLs used to verify catalog metadata.
+   * Required for OpenAI model entries.
+   */
+  sourceUrls?: string[];
+  /**
+   * Absolute review date for model metadata verification.
+   * Required for OpenAI model entries.
+   */
+  reviewedAt?: string;
 }
 
 /**

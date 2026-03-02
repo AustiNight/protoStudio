@@ -151,4 +151,24 @@ describe('TelemetryLog', () => {
 
     expect(eventsResult.value.length).toBe(0);
   });
+
+  it('should reject telemetry events containing full API keys in payload values', async () => {
+    const log = new TelemetryLog();
+    const sensitiveEvent: TelemetryEvent = {
+      sessionId: 'session-a',
+      timestamp: 7,
+      event: 'session.start',
+      data: {
+        path: 'template',
+        templateId: 'sk-proj-1234567890ABCDEFXYZ987654321',
+      },
+    };
+
+    const result = await log.append(sensitiveEvent);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('telemetry_validation_failed');
+      expect(result.error.details?.reason).toContain('API keys');
+    }
+  });
 });

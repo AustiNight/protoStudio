@@ -47,7 +47,7 @@ function buildSelection(): LLMModelSelection {
   return {
     provider: {
       name: 'openai',
-      apiKey: 'sk-test',
+      apiKey: 'sk-proj-1234567890ABCDEFXYZ987654321',
       models: ['gpt-4o-mini'],
     },
     model: 'gpt-4o-mini',
@@ -176,6 +176,13 @@ describe('telemetry-store', () => {
       'llm.response',
       'llm.error',
     ]);
+    expect(JSON.stringify(llmEvents)).not.toContain(selection.provider.apiKey);
+
+    const requestEvent = llmEvents[0];
+    expect(requestEvent?.event).toBe('llm.request');
+    if (requestEvent?.event === 'llm.request') {
+      expect(JSON.stringify(requestEvent.data)).not.toContain(selection.provider.apiKey);
+    }
 
     const responseEvent = llmEvents[1];
     expect(responseEvent?.event).toBe('llm.response');

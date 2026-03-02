@@ -1,9 +1,33 @@
 {
   "lastUpdated": "2026-02-26",
   "models": {
-    "gpt-4o": { "promptPer1K": 0.0025, "completionPer1K": 0.01 },
-    "gpt-4o-mini": { "promptPer1K": 0.00015, "completionPer1K": 0.0006 },
-    "gpt-4.5-preview": { "promptPer1K": 0.075, "completionPer1K": 0.15 },
+    "gpt-4o": {
+      "promptPer1K": 0.0025,
+      "completionPer1K": 0.01,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "gpt-4o-mini": {
+      "promptPer1K": 0.00015,
+      "completionPer1K": 0.0006,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
+    "gpt-4.5-preview": {
+      "promptPer1K": 0.075,
+      "completionPer1K": 0.15,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list"
+      ],
+      "reviewedAt": "2026-03-02"
+    },
     "claude-sonnet-4-20250514": { "promptPer1K": 0.003, "completionPer1K": 0.015 },
     "claude-3-5-haiku-20241022": { "promptPer1K": 0.0008, "completionPer1K": 0.004 },
     "gemini-2.0-flash": { "promptPer1K": 0.0001, "completionPer1K": 0.0004 },

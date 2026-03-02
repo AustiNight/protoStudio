@@ -164,7 +164,8 @@ export type TelemetryValidationCode =
   | 'invalid_timestamp'
   | 'invalid_session_id'
   | 'invalid_event_data'
-  | 'invalid_event_name';
+  | 'invalid_event_name'
+  | 'contains_sensitive_data';
 
 export interface TelemetryValidationError {
   code: TelemetryValidationCode;
@@ -192,6 +193,14 @@ const LLM_ERROR_CODES = [
 const SAFE_SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
 const SAFE_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 const SAFE_MODEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/;
+const SENSITIVE_VALUE_PATTERNS = [
+  /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/,
+  /\bsk-ant-[A-Za-z0-9_-]{20,}\b/,
+  /\bAIza[0-9A-Za-z_-]{20,}\b/,
+  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/,
+  /\bBearer\s+[A-Za-z0-9._-]{20,}\b/i,
+] as const;
 
 export function validateTelemetryEvent(event: TelemetryEvent): TelemetryValidationError | null {
   if (!isNonNegativeNumber(event.timestamp)) {
@@ -199,6 +208,12 @@ export function validateTelemetryEvent(event: TelemetryEvent): TelemetryValidati
   }
   if (!isSafeSessionId(event.sessionId)) {
     return invalid('invalid_session_id', 'Telemetry sessionId must be a safe identifier.');
+  }
+  if (containsSensitiveData(event.data)) {
+    return invalid(
+      'contains_sensitive_data',
+      'Telemetry event data must not include API keys, tokens, or secret values.',
+    );
   }
 
   switch (event.event) {
@@ -684,6 +699,19 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 function isNumberInRange(value: unknown, min: number, max: number): boolean {
   return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+}
+
+function containsSensitiveData(value: unknown): boolean {
+  if (typeof value === 'string') {
+    return SENSITIVE_VALUE_PATTERNS.some((pattern) => pattern.test(value));
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => containsSensitiveData(item));
+  }
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  return Object.values(value).some((item) => containsSensitiveData(item));
 }
 
 function invalid(code: TelemetryValidationCode, message: string): TelemetryValidationError {

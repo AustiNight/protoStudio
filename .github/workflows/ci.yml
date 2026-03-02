@@ -12,11 +12,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
+      - name: Set change control refs
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "CHANGE_CONTROL_BASE=${{ github.event.pull_request.base.sha }}" >> $GITHUB_ENV
+          else
+            echo "CHANGE_CONTROL_BASE=${{ github.event.before }}" >> $GITHUB_ENV
+          fi
+          echo "CHANGE_CONTROL_HEAD=${{ github.sha }}" >> $GITHUB_ENV
+      - name: Change control checks
+        run: node scripts/change-control.js
+      - name: Guardrail lint checks
+        run: node scripts/guardrails-lint.js
       - name: Install
         run: npm ci
       - name: Lint

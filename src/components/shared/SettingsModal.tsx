@@ -1,35 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import pricingConfigRaw from '@/config/model-pricing.json';
-import { decrypt, encrypt, EncryptionError } from '@/persistence/encryption';
+import {
+  useSettingsStore,
+  type ModelSelection,
+  type SettingsDeployHost as DeployHost,
+  type SettingsPayload,
+} from '@/store/settings-store';
 import { useTelemetryStore } from '@/store/telemetry-store';
+import type { PricingConfig } from '@/types/pricing';
 
-type ProviderName = 'openai' | 'anthropic' | 'google';
-
-type DeployHost = 'github' | 'cloudflare' | 'netlify' | 'vercel';
+type ProviderName = ModelSelection['provider'];
 
 type TabKey = 'keys' | 'models' | 'deploy' | 'telemetry';
-
-type PricingConfig = {
-  lastUpdated: string;
-  models: Record<string, { promptPer1K: number; completionPer1K: number }>;
-};
-
-type ModelSelection = {
-  provider: ProviderName;
-  model: string;
-};
-
-type SettingsPayload = {
-  version: 1;
-  llmKeys: Record<ProviderName, string>;
-  llmModels: {
-    chat: ModelSelection;
-    builder: ModelSelection;
-  };
-  deployTokens: Record<DeployHost, string>;
-  updatedAt: number;
-};
 
 type ValidationStatus = 'idle' | 'validating' | 'valid' | 'invalid';
 
@@ -51,7 +34,6 @@ type SettingsModalProps = {
   onClose: () => void;
 };
 
-const STORAGE_KEY = 'studio.settings.v1';
 const MIN_PASSPHRASE_LENGTH = 12;
 const VALIDATION_DELAY_MS = 800;
 
@@ -127,7 +109,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [passphrase, setPassphrase] = useState('');
   const [settings, setSettings] = useState<SettingsPayload>(DEFAULT_SETTINGS);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [hasStoredSecrets, setHasStoredSecrets] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
   const [keyStatus, setKeyStatus] = useState<Record<ProviderName, ValidationState>>(
@@ -142,9 +123,15 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const telemetryCounters = useTelemetryStore((state) => state.counters);
   const telemetryEvents = useTelemetryStore((state) => state.events);
   const exportTelemetryBundle = useTelemetryStore((state) => state.exportBundle);
+  const hasStoredSecrets = useSettingsStore((state) => state.hasStoredSecrets);
+  const hydrateFromStorage = useSettingsStore((state) => state.hydrateFromStorage);
+  const saveSettingsToStore = useSettingsStore((state) => state.saveSettings);
+  const unlockSettingsInStore = useSettingsStore((state) => state.unlockSettings);
+  const clearSettingsInStore = useSettingsStore((state) => state.clearSettings);
 
+  const modelOptions = useMemo(() => MODEL_OPTIONS, []);
   const isPassphraseValid = passphrase.length >= MIN_PASSPHRASE_LENGTH;
-  const storedUpdatedAt = settings.updatedAt;
+  const storedUpdatedAt = useSettingsStore((state) => state.settings.updatedAt);
   const lastTelemetryTimestamp =
     telemetryEvents.length > 0
       ? telemetryEvents[telemetryEvents.length - 1]?.timestamp ?? null
@@ -152,11 +139,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   useEffect(() => {
     if (!open) return;
-    const storedCiphertext = getStoredCiphertext();
-    setHasStoredSecrets(Boolean(storedCiphertext));
+    hydrateFromStorage();
+    setSettings(normalizeSettings(useSettingsStore.getState().settings, modelOptions));
     setIsUnlocked(false);
     setNotice(null);
-  }, [open]);
+  }, [open, hydrateFromStorage, modelOptions]);
 
   useEffect(() => {
     if (open) return;
@@ -184,8 +171,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     };
   }, [open]);
 
-  const modelOptions = useMemo(() => MODEL_OPTIONS, []);
-
   const handleUnlock = async () => {
     if (!isPassphraseValid) {
       setNotice({
@@ -194,28 +179,27 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       });
       return;
     }
-    const storedCiphertext = getStoredCiphertext();
-    if (!storedCiphertext) {
+    if (!hasStoredSecrets) {
       setNotice({ tone: 'info', message: 'No saved settings found.' });
-      setHasStoredSecrets(false);
       return;
     }
 
     setIsWorking(true);
-    try {
-      const decrypted = await decrypt(storedCiphertext, passphrase);
-      const parsed = JSON.parse(decrypted) as Partial<SettingsPayload>;
-      const normalized = normalizeSettings(parsed, modelOptions);
-      setSettings(normalized);
+    const unlocked = await unlockSettingsInStore(passphrase);
+    const storeState = useSettingsStore.getState();
+    if (unlocked) {
+      setSettings(normalizeSettings(storeState.settings, modelOptions));
       setKeyStatus(buildValidationMap(LLM_PROVIDERS));
       setTokenStatus(buildValidationMap(DEPLOY_HOSTS));
       setIsUnlocked(true);
       setNotice({ tone: 'success', message: 'Settings unlocked.' });
-    } catch (error) {
-      setNotice({ tone: 'error', message: getEncryptionMessage(error) });
-    } finally {
-      setIsWorking(false);
+    } else {
+      setNotice({
+        tone: 'error',
+        message: storeState.lastError ?? 'Unable to unlock settings.',
+      });
     }
+    setIsWorking(false);
   };
 
   const handleSave = async () => {
@@ -228,33 +212,25 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     }
 
     setIsWorking(true);
-    try {
-      const payload: SettingsPayload = {
-        ...settings,
-        updatedAt: Date.now(),
-      };
-      const encrypted = await encrypt(JSON.stringify(payload), passphrase);
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(STORAGE_KEY, encrypted);
-      }
-      setSettings(payload);
-      setHasStoredSecrets(true);
+    const saved = await saveSettingsToStore(settings, passphrase);
+    const storeState = useSettingsStore.getState();
+    if (saved) {
+      setSettings(normalizeSettings(storeState.settings, modelOptions));
       setIsUnlocked(true);
       setNotice({ tone: 'success', message: 'Settings saved locally.' });
-    } catch (error) {
-      setNotice({ tone: 'error', message: getEncryptionMessage(error) });
-    } finally {
-      setIsWorking(false);
+    } else {
+      setNotice({
+        tone: 'error',
+        message: storeState.lastError ?? 'Unable to save settings.',
+      });
     }
+    setIsWorking(false);
   };
 
   const handleClearStored = () => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
-    setHasStoredSecrets(false);
+    clearSettingsInStore();
     setIsUnlocked(false);
-    setSettings(DEFAULT_SETTINGS);
+    setSettings(normalizeSettings(useSettingsStore.getState().settings, modelOptions));
     setKeyStatus(buildValidationMap(LLM_PROVIDERS));
     setTokenStatus(buildValidationMap(DEPLOY_HOSTS));
     setNotice({ tone: 'info', message: 'Stored settings cleared.' });
@@ -1116,13 +1092,6 @@ function validateDeployToken(
   };
 }
 
-function getStoredCiphertext(): string | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-  return window.localStorage.getItem(STORAGE_KEY);
-}
-
 function delay(durationMs: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, durationMs);
@@ -1148,14 +1117,4 @@ function formatShortTime(timestamp: number): string {
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(timestamp));
-}
-
-function getEncryptionMessage(error: unknown): string {
-  if (error instanceof EncryptionError) {
-    return error.message;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return 'Unable to process encrypted settings.';
 }

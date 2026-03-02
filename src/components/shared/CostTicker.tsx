@@ -2,11 +2,7 @@ import { useId } from 'react';
 
 import pricingConfigRaw from '@/config/model-pricing.json';
 import type { LLMRole } from '@/types/llm';
-
-type PricingConfig = {
-  lastUpdated: string;
-  models: Record<string, { promptPer1K: number; completionPer1K: number }>;
-};
+import type { PricingConfig } from '@/types/pricing';
 
 const pricingConfig = pricingConfigRaw as PricingConfig;
 const currencyFormatter = new Intl.NumberFormat('en-US', {
