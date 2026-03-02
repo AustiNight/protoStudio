@@ -15,13 +15,13 @@
   - [x] Add a guardrail check that runtime settings readers/writers resolve through `useSettingsStore` to prevent modal/store drift.
   - [x] Acceptance: CI/test run fails when a key leak, model-metadata omission, settings-source-of-truth drift, or architecture-boundary violation is introduced.
 
-- [ ] Epic: Fix #1 - Chat Window Input Does Not Accept User Typing
-  - [ ] Replace the chat-footer placeholder status row in `src/app/Layout.tsx` with a real composer control (`textarea` or `input`) + submit button while preserving the existing visual language.
-  - [ ] Add controlled draft state, disabled-send behavior for blank input, and keyboard handling: `Enter` sends, `Shift+Enter` inserts newline.
-  - [ ] On submit, append a `user` message to `useChatStore` with the active `sessionId`, current timestamp, and focused backlog metadata when present.
-  - [ ] Keep scroll-to-bottom behavior after send and maintain current focus hint text (`Ask about ...` vs general prompt).
-  - [ ] Add automated coverage for typing + send flow (e2e recommended: new `tests/e2e/chat-composer.spec.ts`; unit fallback if e2e unavailable in CI).
-  - [ ] Acceptance: typing is possible in the chat composer, sending creates a user bubble immediately, empty submissions are blocked, and keyboard behavior matches spec.
+- [x] Epic: Fix #1 - Chat Window Input Does Not Accept User Typing
+  - [x] Replace the chat-footer placeholder status row in `src/app/Layout.tsx` with a real composer control (`textarea` or `input`) + submit button while preserving the existing visual language.
+  - [x] Add controlled draft state, disabled-send behavior for blank input, and keyboard handling: `Enter` sends, `Shift+Enter` inserts newline.
+  - [x] On submit, append a `user` message to `useChatStore` with the active `sessionId`, current timestamp, and focused backlog metadata when present.
+  - [x] Keep scroll-to-bottom behavior after send and maintain current focus hint text (`Ask about ...` vs general prompt).
+  - [x] Add automated coverage for typing + send flow (e2e recommended: new `tests/e2e/chat-composer.spec.ts`; unit fallback if e2e unavailable in CI).
+  - [x] Acceptance: typing is possible in the chat composer, sending creates a user bubble immediately, empty submissions are blocked, and keyboard behavior matches spec.
 
 - [ ] Epic: Cross-Cut - Settings Source Of Truth Alignment
   - [ ] Audit current split between `SettingsModal` local state and `useSettingsStore` state, including runtime consumers in preview/deploy/chat flows.

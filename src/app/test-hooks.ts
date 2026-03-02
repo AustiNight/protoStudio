@@ -1,6 +1,8 @@
 import { useBacklogStore } from '@/store/backlog-store';
 import { useBuildStore } from '@/store/build-store';
+import { useChatStore } from '@/store/chat-store';
 import { useSettingsStore } from '@/store/settings-store';
+import type { ChatMessage } from '@/types/chat';
 import type { WorkItem } from '@/types/backlog';
 
 type DeployTokenPatch = Partial<
@@ -18,6 +20,7 @@ declare global {
     __protoStudioTest?: {
       setDeployTokens: (tokens: DeployTokenPatch) => void;
       seedBacklog: (items: WorkItem[], options?: BacklogSeedOptions) => void;
+      getChatMessages: () => ChatMessage[];
     };
   }
 }
@@ -49,6 +52,7 @@ if (typeof window !== 'undefined' && import.meta.env.MODE === 'e2e') {
         buildStore.pauseBuild();
       }
     },
+    getChatMessages: () => useChatStore.getState().messages,
   };
 }
 

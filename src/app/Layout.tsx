@@ -286,6 +286,7 @@ function emitBacklogReorder(fromId: string, toId: string, order: string[]): void
 export function Layout() {
   const [activePanel, setActivePanel] = useState<PanelKey>('chat');
   const [activeSessionId, setActiveSessionId] = useState(sampleSessionId);
+  const [chatDraft, setChatDraft] = useState('');
   const [recoveryState, setRecoveryState] = useState<RecoveryState | null>(null);
   const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
   const [isRecoveryLoading, setIsRecoveryLoading] = useState(false);
@@ -328,6 +329,7 @@ export function Layout() {
   const [isResetting, setIsResetting] = useState(false);
   const [previewResetKey, setPreviewResetKey] = useState(0);
   const [autoFocusOnDeck, setAutoFocusOnDeck] = useState(true);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const revertTimerRef = useRef<number | null>(null);
   const deniedTimerRef = useRef<number | null>(null);
   const isReorderPending = pendingReorder !== null;
@@ -383,6 +385,17 @@ export function Layout() {
     },
     [focusItem, focusedItemId],
   );
+
+  const submitChatDraft = useCallback(() => {
+    const content = chatDraft.trim();
+    if (!content) {
+      return false;
+    }
+
+    addFocusedMessage(buildNarrationMessage(activeSessionId, 'user', content));
+    setChatDraft('');
+    return true;
+  }, [activeSessionId, addFocusedMessage, chatDraft]);
 
   useEffect(() => {
     let isMounted = true;
@@ -461,6 +474,10 @@ export function Layout() {
     return backlogItems.find((item) => item.id === focusedItemId) ?? null;
   }, [backlogItems, focusedItemId]);
   const hasFocusedItem = focusedItem !== null;
+  const composerHint = focusedItem
+    ? `Ask about ${focusedItem.title}...`
+    : 'Type your next instruction...';
+  const canSendDraft = chatDraft.trim().length > 0;
 
   useEffect(() => {
     if (!onDeckItem && hasBacklog) {
@@ -649,6 +666,7 @@ export function Layout() {
     await checkpoint.clear();
     resetChlorastroliteSession();
     clearMessages();
+    setChatDraft('');
     clearBacklog();
     resetBuild();
     resetTransientUi();
@@ -684,6 +702,7 @@ export function Layout() {
     const { session, backlog, conversation } = loadResult.value;
     setActiveSessionId(session.id);
     setMessages(conversation);
+    setChatDraft('');
     setBacklogItems(backlog);
     resetBuild();
     resetTransientUi();
@@ -877,12 +896,60 @@ export function Layout() {
                   </div>
                 </div>
                 <div className="border-t border-slate-800/80 px-4 py-3">
-                  <div className="flex items-center gap-3 rounded-2xl border border-slate-800/70 bg-slate-900/70 px-4 py-3 text-xs text-slate-400">
-                    <span className="h-2 w-2 rounded-full bg-emerald-300/80" />
-                    {focusedItem
-                      ? `Ask about ${focusedItem.title}...`
-                      : 'Type your next instruction...'}
-                  </div>
+                  <form
+                    className="flex items-end gap-3 rounded-2xl border border-slate-800/70 bg-slate-900/70 px-3 py-3"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!submitChatDraft()) {
+                        return;
+                      }
+                      requestAnimationFrame(() => {
+                        composerRef.current?.focus();
+                      });
+                    }}
+                  >
+                    <span className="mb-2 h-2 w-2 rounded-full bg-emerald-300/80" />
+                    <label htmlFor="chat-composer" className="sr-only">
+                      Chat composer
+                    </label>
+                    <textarea
+                      ref={composerRef}
+                      id="chat-composer"
+                      data-chat-input="true"
+                      value={chatDraft}
+                      rows={1}
+                      aria-label="Chat composer"
+                      placeholder={composerHint}
+                      className="min-h-[2.25rem] max-h-32 flex-1 resize-y bg-transparent text-sm text-slate-100 placeholder:text-xs placeholder:uppercase placeholder:tracking-[0.2em] placeholder:text-slate-500 focus:outline-none"
+                      onChange={(event) => {
+                        setChatDraft(event.target.value);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' || event.shiftKey) {
+                          return;
+                        }
+                        event.preventDefault();
+                        if (!submitChatDraft()) {
+                          return;
+                        }
+                        requestAnimationFrame(() => {
+                          composerRef.current?.focus();
+                        });
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      data-chat-input="true"
+                      disabled={!canSendDraft}
+                      className={`rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition ${
+                        canSendDraft
+                          ? 'border border-emerald-300/70 bg-emerald-300/90 text-slate-950 hover:bg-emerald-200'
+                          : 'cursor-not-allowed border border-slate-700/80 bg-slate-800/80 text-slate-500'
+                      }`}
+                    >
+                      Send
+                    </button>
+                  </form>
                 </div>
               </div>
             </div>
