@@ -29,15 +29,15 @@
   - [x] Add regression tests proving modal updates are reflected in runtime consumers without refresh.
   - [x] Acceptance: changing provider/model/key in settings updates the canonical store and downstream consumers consistently.
 
-- [ ] Epic: Fix #2 - OpenAI Key Ping Marks Valid Key as Invalid
-  - [ ] Implement OpenAI key ping in `src/engine/llm` (service/provider module) and invoke that service from `src/components/shared/SettingsModal.tsx`; do not call OpenAI fetch directly from React UI code.
-  - [ ] Replace regex-only verdicts with API-based validation (preferred endpoint: `GET https://api.openai.com/v1/models`); keep local format checks as advisory hints only.
-  - [ ] Extend validation status handling to include explicit `error` state with timeout, cancellation (`AbortController`), and stale-response protection for repeated clicks/input edits/unmount.
-  - [ ] Map outcomes to actionable messages: `200` valid, `401/403` auth invalid, `429` rate limit, all other HTTP/network/CORS/timeout paths as service/connectivity errors (never default to “invalid key”).
-  - [ ] Ensure ping logic does not persist plaintext keys and does not emit them into telemetry events.
-  - [ ] Add unit tests for response mapping + async race scenarios (abort/timeout/stale result suppression).
-  - [ ] Add e2e ping coverage using deterministic mocked OpenAI responses (no live key/network dependency in CI).
-  - [ ] Acceptance: a valid OpenAI key passes ping, invalid auth fails with clear reason, and transient connectivity/timeout failures are reported distinctly from invalid credentials.
+- [x] Epic: Fix #2 - OpenAI Key Ping Marks Valid Key as Invalid
+  - [x] Implement OpenAI key ping in `src/engine/llm` (service/provider module) and invoke that service from `src/components/shared/SettingsModal.tsx`; do not call OpenAI fetch directly from React UI code.
+  - [x] Replace regex-only verdicts with API-based validation (preferred endpoint: `GET https://api.openai.com/v1/models`); keep local format checks as advisory hints only.
+  - [x] Extend validation status handling to include explicit `error` state with timeout, cancellation (`AbortController`), and stale-response protection for repeated clicks/input edits/unmount.
+  - [x] Map outcomes to actionable messages: `200` valid, `401/403` auth invalid, `429` rate limit, all other HTTP/network/CORS/timeout paths as service/connectivity errors (never default to “invalid key”).
+  - [x] Ensure ping logic does not persist plaintext keys and does not emit them into telemetry events.
+  - [x] Add unit tests for response mapping + async race scenarios (abort/timeout/stale result suppression).
+  - [x] Add e2e ping coverage using deterministic mocked OpenAI responses (no live key/network dependency in CI).
+  - [x] Acceptance: a valid OpenAI key passes ping, invalid auth fails with clear reason, and transient connectivity/timeout failures are reported distinctly from invalid credentials.
 
 - [ ] Epic: Fix #3 - OpenAI Model List Is Outdated
   - [ ] Research current OpenAI model catalog using official sources (`/docs/models` + `/v1/models` reference) and record required model metadata in `src/config/model-pricing.json` with `sourceUrls` and `reviewedAt: 2026-03-02`.

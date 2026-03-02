@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import pricingConfigRaw from '@/config/model-pricing.json';
+import { createOpenAIKeyValidationRunner } from '@/engine/llm/openai-key-validation';
 import {
   useSettingsStore,
   type ModelSelection,
@@ -14,7 +15,7 @@ type ProviderName = ModelSelection['provider'];
 
 type TabKey = 'keys' | 'models' | 'deploy' | 'telemetry';
 
-type ValidationStatus = 'idle' | 'validating' | 'valid' | 'invalid';
+type ValidationStatus = 'idle' | 'validating' | 'valid' | 'invalid' | 'error';
 
 type ValidationState = {
   status: ValidationStatus;
@@ -36,6 +37,7 @@ type SettingsModalProps = {
 
 const MIN_PASSPHRASE_LENGTH = 12;
 const VALIDATION_DELAY_MS = 800;
+const OPENAI_KEY_VALIDATION_TIMEOUT_MS = 10_000;
 
 const pricingConfig = pricingConfigRaw as PricingConfig;
 
@@ -132,6 +134,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const clearSettingsInStore = useSettingsStore((state) => state.clearSettings);
 
   const modelOptions = useMemo(() => MODEL_OPTIONS, []);
+  const openAIKeyValidationRunner = useMemo(
+    () =>
+      createOpenAIKeyValidationRunner({
+        timeoutMs: OPENAI_KEY_VALIDATION_TIMEOUT_MS,
+      }),
+    [],
+  );
   const settings = useMemo(
     () => normalizeSettings(storeSettings, modelOptions),
     [modelOptions, storeSettings],
@@ -158,6 +167,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     setPassphrase('');
     setNotice(null);
   }, [open]);
+
+  useEffect(() => {
+    if (open) return;
+    openAIKeyValidationRunner.cancel();
+  }, [open, openAIKeyValidationRunner]);
+
+  useEffect(() => () => openAIKeyValidationRunner.dispose(), [openAIKeyValidationRunner]);
 
   useEffect(() => {
     if (!open) return;
@@ -276,6 +292,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   };
 
   const handleLlmKeyChange = (provider: ProviderName, value: string) => {
+    if (provider === 'openai') {
+      openAIKeyValidationRunner.cancel();
+    }
     updateRuntimeSettings((current) => ({
       ...current,
       llmKeys: { ...current.llmKeys, [provider]: value },
@@ -321,20 +340,66 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   };
 
   const runKeyValidation = async (provider: ProviderName) => {
-    const value = settings.llmKeys[provider].trim();
+    const value = useSettingsStore.getState().settings.llmKeys[provider].trim();
+    if (!value) {
+      setKeyStatus((prev) => ({
+        ...prev,
+        [provider]: { status: 'invalid', message: 'Key is empty.' },
+      }));
+      return;
+    }
+
+    if (provider === 'openai') {
+      const formatHint = getOpenAIFormatHint(value);
+      setKeyStatus((prev) => ({
+        ...prev,
+        [provider]: {
+          status: 'validating',
+          message: formatHint
+            ? `${formatHint} Checking with OpenAI...`
+            : 'Checking with OpenAI...',
+        },
+      }));
+
+      const result = await openAIKeyValidationRunner.validate(value);
+      if (result.status === 'aborted') {
+        return;
+      }
+
+      const timeLabel = formatShortTime(result.checkedAt);
+      const status: ValidationStatus =
+        result.status === 'valid'
+          ? 'valid'
+          : result.status === 'invalid'
+            ? 'invalid'
+            : 'error';
+      const advisorySuffix = formatHint && status !== 'valid' ? ` ${formatHint}` : '';
+
+      setKeyStatus((prev) => ({
+        ...prev,
+        [provider]: {
+          status,
+          message: `${result.message}${advisorySuffix} (pinged ${timeLabel})`,
+          checkedAt: result.checkedAt,
+        },
+      }));
+      return;
+    }
+
     setKeyStatus((prev) => ({
       ...prev,
       [provider]: { status: 'validating', message: 'Pinging...' },
     }));
     await delay(VALIDATION_DELAY_MS);
-    const result = validateLlmKey(provider, value);
-    const timeLabel = formatShortTime(Date.now());
+    const result = validateLlmKeyFormat(provider, value);
+    const checkedAt = Date.now();
+    const timeLabel = formatShortTime(checkedAt);
     setKeyStatus((prev) => ({
       ...prev,
       [provider]: {
         status: result.ok ? 'valid' : 'invalid',
         message: `${result.message} (pinged ${timeLabel})`,
-        checkedAt: Date.now(),
+        checkedAt,
       },
     }));
   };
@@ -812,6 +877,8 @@ function SecretField({
       ? 'text-emerald-200'
       : status.status === 'invalid'
         ? 'text-rose-200'
+        : status.status === 'error'
+          ? 'text-amber-200'
         : 'text-slate-400';
 
   return (
@@ -935,12 +1002,16 @@ function StatusBadge({ status }: { status: ValidationStatus }) {
         ? 'Valid'
         : status === 'invalid'
           ? 'Invalid'
+          : status === 'error'
+            ? 'Error'
           : 'Idle';
   const tone =
     status === 'valid'
       ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-200'
       : status === 'invalid'
         ? 'border-rose-300/40 bg-rose-300/10 text-rose-200'
+        : status === 'error'
+          ? 'border-amber-300/40 bg-amber-300/10 text-amber-200'
         : status === 'validating'
           ? 'border-amber-300/40 bg-amber-300/10 text-amber-200'
           : 'border-slate-700/80 bg-slate-900/60 text-slate-400';
@@ -1023,7 +1094,7 @@ function buildValidationMap<T extends string>(keys: T[]): Record<T, ValidationSt
   }, {} as Record<T, ValidationState>);
 }
 
-function validateLlmKey(
+function validateLlmKeyFormat(
   provider: ProviderName,
   value: string,
 ): { ok: boolean; message: string } {
@@ -1035,7 +1106,9 @@ function validateLlmKey(
     const valid = /^sk-(?:proj-)?[A-Za-z0-9]{10,}/.test(value);
     return {
       ok: valid,
-      message: valid ? 'OpenAI key looks valid.' : 'OpenAI key format looks off.',
+      message: valid
+        ? 'Format hint: OpenAI key pattern looks reasonable.'
+        : 'Format hint: OpenAI keys usually start with sk- and are longer.',
     };
   }
   if (provider === 'anthropic') {
@@ -1051,6 +1124,11 @@ function validateLlmKey(
     ok: valid,
     message: valid ? 'Google key looks valid.' : 'Google key format looks off.',
   };
+}
+
+function getOpenAIFormatHint(value: string): string | null {
+  const format = validateLlmKeyFormat('openai', value);
+  return format.ok ? null : format.message;
 }
 
 function validateDeployToken(
