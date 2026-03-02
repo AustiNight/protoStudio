@@ -23,6 +23,7 @@ import type {
   TelemetryEventDataMap,
   TelemetryEventName,
   TelemetryExportBundle,
+  TelemetryLLMRole,
   TelemetryMessageRole,
   TelemetrySessionPath,
   TelemetrySwapSlot,
@@ -39,6 +40,30 @@ export interface TelemetryCounters {
   backlogCount: number;
   buildCount: number;
   deployCount: number;
+}
+
+export interface SessionCostModelBreakdown {
+  model: string;
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+  cost: number;
+  unknown?: boolean;
+}
+
+export interface SessionCostRoleBreakdown {
+  role: TelemetryLLMRole;
+  cost: number;
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+  models: SessionCostModelBreakdown[];
+}
+
+export interface SessionCostSummary {
+  totalCost: number;
+  roles: SessionCostRoleBreakdown[];
+  hasUnknownModel: boolean;
 }
 
 export interface TelemetryStoreState {
@@ -607,6 +632,102 @@ export const selectTelemetryEvents = (state: TelemetryStoreState) => state.event
 export const selectTelemetryCount = (state: TelemetryStoreState) => state.events.length;
 export const selectTelemetryTotals = (state: TelemetryStoreState) =>
   buildTotals(state.events);
+
+const TELEMETRY_ROLE_ORDER: TelemetryLLMRole[] = ['chat', 'builder'];
+
+type MutableRoleSummary = Omit<SessionCostRoleBreakdown, 'models'> & {
+  models: Map<string, SessionCostModelBreakdown>;
+};
+
+export function buildSessionCostSummary(
+  events: TelemetryEvent[],
+  sessionId: string | null,
+): SessionCostSummary {
+  if (!sessionId) {
+    return {
+      totalCost: 0,
+      roles: [],
+      hasUnknownModel: false,
+    };
+  }
+
+  const rolesByName = new Map<TelemetryLLMRole, MutableRoleSummary>();
+
+  for (const event of events) {
+    if (event.event !== 'llm.response' || event.sessionId !== sessionId) {
+      continue;
+    }
+    const role = event.data.role;
+    const existingRole = rolesByName.get(role);
+    const roleSummary: MutableRoleSummary =
+      existingRole ??
+      ({
+        role,
+        cost: 0,
+        calls: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        models: new Map<string, SessionCostModelBreakdown>(),
+      } satisfies MutableRoleSummary);
+
+    roleSummary.cost += event.data.cost;
+    roleSummary.calls += 1;
+    roleSummary.promptTokens += event.data.promptTokens;
+    roleSummary.completionTokens += event.data.completionTokens;
+
+    const existingModel = roleSummary.models.get(event.data.model);
+    const modelSummary: SessionCostModelBreakdown =
+      existingModel ?? {
+        model: event.data.model,
+        cost: 0,
+        calls: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        unknown: false,
+      };
+    modelSummary.cost += event.data.cost;
+    modelSummary.calls += 1;
+    modelSummary.promptTokens += event.data.promptTokens;
+    modelSummary.completionTokens += event.data.completionTokens;
+    modelSummary.unknown = modelSummary.unknown || event.data.unknownModel;
+
+    roleSummary.models.set(event.data.model, modelSummary);
+    rolesByName.set(role, roleSummary);
+  }
+
+  const roles: SessionCostRoleBreakdown[] = [];
+  for (const role of TELEMETRY_ROLE_ORDER) {
+    const summary = rolesByName.get(role);
+    if (!summary) {
+      continue;
+    }
+    const models = Array.from(summary.models.values()).sort(
+      (left, right) =>
+        right.cost - left.cost ||
+        right.calls - left.calls ||
+        left.model.localeCompare(right.model),
+    );
+    roles.push({
+      role: summary.role,
+      cost: summary.cost,
+      calls: summary.calls,
+      promptTokens: summary.promptTokens,
+      completionTokens: summary.completionTokens,
+      models,
+    });
+  }
+
+  const totalCost = roles.reduce((total, role) => total + role.cost, 0);
+  const hasUnknownModel = roles.some((role) =>
+    role.models.some((model) => model.unknown),
+  );
+
+  return {
+    totalCost,
+    roles,
+    hasUnknownModel,
+  };
+}
 
 function buildTotals(events: TelemetryEvent[]): TelemetryTotals {
   const byEvent: Record<string, number> = {};

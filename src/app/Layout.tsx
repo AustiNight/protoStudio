@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { resetChlorastroliteSession } from '@/components/preview/ChlorastroliteLoader';
 import { PreviewPanel } from '@/components/preview/PreviewPanel';
-import type { CostRoleBreakdown } from '@/components/shared/CostTicker';
 import { HeaderBar } from '@/components/shared/HeaderBar';
 import { NewConversationDialog } from '@/components/shared/NewConversationDialog';
 import { SessionRecoveryDialog } from '@/components/shared/SessionRecoveryDialog';
@@ -17,10 +16,12 @@ import { SessionCheckpoint } from '@/persistence/checkpoint';
 import { useBacklogStore } from '@/store/backlog-store';
 import { useBuildStore } from '@/store/build-store';
 import { useChatStore } from '@/store/chat-store';
+import { buildSessionCostSummary, useTelemetryStore } from '@/store/telemetry-store';
 import type { ChatMessage } from '@/types/chat';
 import type { AtomType, Effort, WorkItem, WorkItemStatus } from '@/types/backlog';
 import type { BuildPhase } from '@/types/build';
 import type { RecoveryState } from '@/types/persistence';
+import type { TelemetrySessionPath } from '@/types/telemetry';
 import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
 
 type PanelKey = 'chat' | 'preview' | 'backlog';
@@ -54,99 +55,53 @@ const panels: Array<{
 const panelShell =
   'relative flex h-full min-h-[420px] flex-col gap-4 rounded-3xl border border-slate-800/70 bg-slate-900/60 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)] backdrop-blur';
 
-const sampleSessionId = 'session-demo';
 const baseTimestamp = new Date('2025-02-01T18:30:00Z').getTime();
-const sampleMessages: ChatMessage[] = [
-  {
-    id: 'm1',
-    sessionId: sampleSessionId,
-    timestamp: baseTimestamp,
-    sender: 'user',
-    content: 'We need a launch page for a ceramics studio in Portland.',
-  },
-  {
-    id: 'm2',
-    sessionId: sampleSessionId,
-    timestamp: baseTimestamp + 45_000,
-    sender: 'user',
-    content: 'Lean on warm neutrals and show upcoming classes.',
-  },
-  {
-    id: 'm3',
-    sessionId: sampleSessionId,
-    timestamp: baseTimestamp + 120_000,
-    sender: 'chat_ai',
-    content: 'Got it. Building a calm, tactile layout with classes up front.',
-  },
-  {
-    id: 'm4',
-    sessionId: sampleSessionId,
-    timestamp: baseTimestamp + 165_000,
-    sender: 'chat_ai',
-    content: 'Do you want a waitlist form or direct booking buttons?',
-  },
-  {
-    id: 'm5',
-    sessionId: sampleSessionId,
-    timestamp: baseTimestamp + 240_000,
-    sender: 'user',
-    content: 'Add a waitlist form for now. We will add booking later.',
-  },
-  {
-    id: 'm6',
-    sessionId: sampleSessionId,
-    timestamp: baseTimestamp + 360_000,
-    sender: 'system',
-    content: 'Preview build queued. ETA 24 seconds.',
-  },
-];
-
-const sampleCostRoles: CostRoleBreakdown[] = [
-  {
-    role: 'chat',
-    cost: 0.18,
-    calls: 14,
-    promptTokens: 2400,
-    completionTokens: 800,
-    models: [
-      {
-        model: 'gpt-4o-mini',
-        calls: 12,
-        promptTokens: 2000,
-        completionTokens: 700,
-        cost: 0.15,
-      },
-      {
-        model: 'gpt-4o',
-        calls: 2,
-        promptTokens: 400,
-        completionTokens: 100,
-        cost: 0.03,
-      },
-    ],
-  },
-  {
-    role: 'builder',
-    cost: 0.24,
-    calls: 6,
-    promptTokens: 1200,
-    completionTokens: 600,
-    models: [
-      {
-        model: 'claude-sonnet-4-20250514',
-        calls: 6,
-        promptTokens: 1200,
-        completionTokens: 600,
-        cost: 0.24,
-      },
-    ],
-  },
-];
-
-const sampleCostTotal = sampleCostRoles.reduce((total, role) => total + role.cost, 0);
-const sampleHasUnknownModel = sampleCostRoles.some((role) =>
-  role.models.some((model) => model.unknown),
-);
+function buildSampleMessages(sessionId: string): ChatMessage[] {
+  return [
+    {
+      id: 'm1',
+      sessionId,
+      timestamp: baseTimestamp,
+      sender: 'user',
+      content: 'We need a launch page for a ceramics studio in Portland.',
+    },
+    {
+      id: 'm2',
+      sessionId,
+      timestamp: baseTimestamp + 45_000,
+      sender: 'user',
+      content: 'Lean on warm neutrals and show upcoming classes.',
+    },
+    {
+      id: 'm3',
+      sessionId,
+      timestamp: baseTimestamp + 120_000,
+      sender: 'chat_ai',
+      content: 'Got it. Building a calm, tactile layout with classes up front.',
+    },
+    {
+      id: 'm4',
+      sessionId,
+      timestamp: baseTimestamp + 165_000,
+      sender: 'chat_ai',
+      content: 'Do you want a waitlist form or direct booking buttons?',
+    },
+    {
+      id: 'm5',
+      sessionId,
+      timestamp: baseTimestamp + 240_000,
+      sender: 'user',
+      content: 'Add a waitlist form for now. We will add booking later.',
+    },
+    {
+      id: 'm6',
+      sessionId,
+      timestamp: baseTimestamp + 360_000,
+      sender: 'system',
+      content: 'Preview build queued. ETA 24 seconds.',
+    },
+  ];
+}
 
 const timeFormatter = new Intl.DateTimeFormat('en-US', {
   hour: 'numeric',
@@ -283,9 +238,17 @@ function emitBacklogReorder(fromId: string, toId: string, order: string[]): void
   );
 }
 
+function createSessionId(): string {
+  const randomPart =
+    typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : Math.random().toString(36).slice(2, 10);
+  return `session-${Date.now()}-${randomPart}`;
+}
+
 export function Layout() {
   const [activePanel, setActivePanel] = useState<PanelKey>('chat');
-  const [activeSessionId, setActiveSessionId] = useState(sampleSessionId);
+  const [activeSessionId, setActiveSessionId] = useState(() => createSessionId());
   const [chatDraft, setChatDraft] = useState('');
   const [recoveryState, setRecoveryState] = useState<RecoveryState | null>(null);
   const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
@@ -317,6 +280,7 @@ export function Layout() {
   const buildError = useBuildStore((state) => state.buildState.lastError);
   const togglePause = useBuildStore((state) => state.togglePause);
   const resetBuild = useBuildStore((state) => state.resetBuild);
+  const telemetryEvents = useTelemetryStore((state) => state.events);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [pendingReorder, setPendingReorder] = useState<PendingReorder | null>(null);
@@ -332,6 +296,7 @@ export function Layout() {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const revertTimerRef = useRef<number | null>(null);
   const deniedTimerRef = useRef<number | null>(null);
+  const telemetryInitializedRef = useRef(false);
   const isReorderPending = pendingReorder !== null;
 
   const triggerRevertPulse = () => {
@@ -397,6 +362,43 @@ export function Layout() {
     return true;
   }, [activeSessionId, addFocusedMessage, chatDraft]);
 
+  const activateTelemetrySession = useCallback(
+    async (
+      sessionId: string,
+      options: {
+        path: TelemetrySessionPath;
+        rehydrate?: boolean;
+        startedAt?: number;
+      },
+    ) => {
+      const telemetry = useTelemetryStore.getState();
+      if (telemetry.sessionId && telemetry.sessionId !== sessionId) {
+        await telemetry.endSession({ endedAt: Date.now() });
+      }
+
+      const loaded = await telemetry.loadEvents(sessionId);
+      if (!loaded) {
+        telemetry.setSessionId(sessionId);
+      }
+
+      const next = useTelemetryStore.getState();
+      const lastEvent = next.events[next.events.length - 1];
+      const hasOpenSession =
+        next.sessionId === sessionId &&
+        next.sessionStartedAt !== null &&
+        lastEvent?.event !== 'session.end';
+
+      if (!hasOpenSession) {
+        await next.startSession({
+          sessionId,
+          path: options.path,
+          startedAt: options.startedAt,
+        });
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     let isMounted = true;
     const checkpoint = new SessionCheckpoint();
@@ -417,6 +419,20 @@ export function Layout() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (telemetryInitializedRef.current) {
+      return;
+    }
+    if (!recoveryChecked || recoveryState) {
+      return;
+    }
+    telemetryInitializedRef.current = true;
+    void activateTelemetrySession(activeSessionId, {
+      path: 'scratch',
+      startedAt: Date.now(),
+    });
+  }, [activeSessionId, activateTelemetrySession, recoveryChecked, recoveryState]);
 
   useEffect(() => {
     return () => {
@@ -478,6 +494,10 @@ export function Layout() {
     ? `Ask about ${focusedItem.title}...`
     : 'Type your next instruction...';
   const canSendDraft = chatDraft.trim().length > 0;
+  const sessionCostSummary = useMemo(
+    () => buildSessionCostSummary(telemetryEvents, activeSessionId),
+    [activeSessionId, telemetryEvents],
+  );
 
   useEffect(() => {
     if (!onDeckItem && hasBacklog) {
@@ -558,9 +578,9 @@ export function Layout() {
     }
     seededMessagesRef.current = true;
     if (messages.length === 0) {
-      setMessages(sampleMessages);
+      setMessages(buildSampleMessages(activeSessionId));
     }
-  }, [messages.length, recoveryChecked, recoveryState, setMessages]);
+  }, [activeSessionId, messages.length, recoveryChecked, recoveryState, setMessages]);
 
   useEffect(() => {
     const atomId = buildAtom?.id ?? null;
@@ -662,6 +682,7 @@ export function Layout() {
   };
 
   const resetWorkspace = async () => {
+    const nextSessionId = createSessionId();
     const checkpoint = new SessionCheckpoint();
     await checkpoint.clear();
     resetChlorastroliteSession();
@@ -670,7 +691,13 @@ export function Layout() {
     clearBacklog();
     resetBuild();
     resetTransientUi();
-    setActiveSessionId(sampleSessionId);
+    narrationRef.current = null;
+    setActiveSessionId(nextSessionId);
+    telemetryInitializedRef.current = true;
+    await activateTelemetrySession(nextSessionId, {
+      path: 'scratch',
+      startedAt: Date.now(),
+    });
     setPreviewResetKey((prev) => prev + 1);
     seededMessagesRef.current = true;
   };
@@ -701,11 +728,18 @@ export function Layout() {
 
     const { session, backlog, conversation } = loadResult.value;
     setActiveSessionId(session.id);
+    telemetryInitializedRef.current = true;
+    await activateTelemetrySession(session.id, {
+      path: session.path,
+      rehydrate: true,
+      startedAt: session.createdAt,
+    });
     setMessages(conversation);
     setChatDraft('');
     setBacklogItems(backlog);
     resetBuild();
     resetTransientUi();
+    narrationRef.current = null;
     setRecoveryState(null);
     setIsRecoveryOpen(false);
     setIsRecoveryLoading(false);
@@ -732,9 +766,9 @@ export function Layout() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onNewConversation={handleStartNewConversation}
         isResetting={isResetting}
-        costTotal={sampleCostTotal}
-        costRoles={sampleCostRoles}
-        hasUnknownModel={sampleHasUnknownModel}
+        costTotal={sessionCostSummary.totalCost}
+        costRoles={sessionCostSummary.roles}
+        hasUnknownModel={sessionCostSummary.hasUnknownModel}
       />
       <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       <SessionRecoveryDialog

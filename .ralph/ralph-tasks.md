@@ -47,14 +47,14 @@
   - [x] Add tests confirming model-option classification includes modern OpenAI families (`gpt-*` and `o*`) and still separates Anthropic/Google correctly.
   - [x] Acceptance: OpenAI dropdown contains an up-to-date, usable model set, includes modern non-`gpt-` OpenAI IDs, and no longer silently omits valid OpenAI models.
 
-- [ ] Epic: Fix #5 - New Conversation Must Reset Cost Counter To Active Conversation Only
-  - [ ] Introduce explicit session-id lifecycle on `New Conversation`: generate a new active session id, end the prior telemetry session, and start a fresh telemetry session while preserving the single-active-session model.
-  - [ ] Remove static demo cost wiring in `src/app/Layout.tsx` (`sampleCostRoles`, `sampleCostTotal`) and replace with live state driven by active session.
-  - [ ] Derive `CostTicker` totals/breakdowns from session-scoped telemetry (`llm.response`) keyed by active session id to prevent cross-session cost bleed.
-  - [ ] Reset active-session cost totals to zero during `New Conversation` confirm flow together with session/chat/backlog/build resets.
-  - [ ] Implement recovery rehydration so resumed sessions restore their own cost totals from checkpoint/telemetry history without mixing sessions.
-  - [ ] Add automated tests: session-id rotation + telemetry session rollover, cost reset semantics, and e2e check that clicking `New Conversation` returns visible cost to `$0.00` for the fresh conversation.
-  - [ ] Acceptance: top-right cost ticker always represents only the active conversation, `New Conversation` reliably resets visible cost to zero, and recovery restores the resumed session’s own totals.
+- [x] Epic: Fix #5 - New Conversation Must Reset Cost Counter To Active Conversation Only
+  - [x] Introduce explicit session-id lifecycle on `New Conversation`: generate a new active session id, end the prior telemetry session, and start a fresh telemetry session while preserving the single-active-session model.
+  - [x] Remove static demo cost wiring in `src/app/Layout.tsx` (`sampleCostRoles`, `sampleCostTotal`) and replace with live state driven by active session.
+  - [x] Derive `CostTicker` totals/breakdowns from session-scoped telemetry (`llm.response`) keyed by active session id to prevent cross-session cost bleed.
+  - [x] Reset active-session cost totals to zero during `New Conversation` confirm flow together with session/chat/backlog/build resets.
+  - [x] Implement recovery rehydration so resumed sessions restore their own cost totals from checkpoint/telemetry history without mixing sessions.
+  - [x] Add automated tests: session-id rotation + telemetry session rollover, cost reset semantics, and e2e check that clicking `New Conversation` returns visible cost to `$0.00` for the fresh conversation.
+  - [x] Acceptance: top-right cost ticker always represents only the active conversation, `New Conversation` reliably resets visible cost to zero, and recovery restores the resumed session’s own totals.
 
 - [ ] Epic: Regression Sweep and Verification
   - [ ] Run targeted unit tests for settings/model/cost/chat changes and update failing fixtures/snapshots intentionally affected by model list/cost data changes.

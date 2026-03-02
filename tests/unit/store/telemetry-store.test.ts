@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { deleteDB } from 'idb';
 
 import { resetStudioDbForTests, STUDIO_DB_NAME } from '../../../src/persistence/db';
-import { createTelemetryStore } from '../../../src/store/telemetry-store';
+import {
+  buildSessionCostSummary,
+  createTelemetryStore,
+} from '../../../src/store/telemetry-store';
 import type { LLMModelSelection, LLMRequest, LLMResponse } from '../../../src/types/llm';
 import type { TelemetryExportBundle } from '../../../src/types/telemetry';
 
@@ -73,6 +76,31 @@ function buildResponse(): LLMResponse {
     latencyMs: 150,
     cost: 0.01,
     unknownModel: false,
+  };
+}
+
+function buildLlmResponseEvent(input: {
+  sessionId: string;
+  role: 'chat' | 'builder';
+  model: string;
+  cost: number;
+  unknownModel?: boolean;
+  timestamp: number;
+}) {
+  return {
+    timestamp: input.timestamp,
+    sessionId: input.sessionId,
+    event: 'llm.response' as const,
+    data: {
+      role: input.role,
+      provider: input.role === 'chat' ? 'openai' : 'anthropic',
+      model: input.model,
+      promptTokens: 120,
+      completionTokens: 60,
+      cost: input.cost,
+      latencyMs: 180,
+      unknownModel: input.unknownModel ?? false,
+    },
   };
 }
 
@@ -191,5 +219,73 @@ describe('telemetry-store', () => {
       expect(responseEvent.data.completionTokens).toBe(5);
       expect(responseEvent.data.cost).toBe(0.01);
     }
+  });
+
+  it('rotates sessions and restores per-session llm cost totals without bleed', async () => {
+    const store = createTelemetryStore();
+
+    await store.getState().startSession({
+      sessionId: 'session-a',
+      path: 'scratch',
+      startedAt: 1000,
+    });
+    await store
+      .getState()
+      .appendEvent(
+        buildLlmResponseEvent({
+          sessionId: 'session-a',
+          role: 'chat',
+          model: 'gpt-4o-mini',
+          cost: 0.12,
+          timestamp: 1100,
+        }),
+      );
+    await store.getState().endSession({ endedAt: 1200 });
+
+    await store.getState().startSession({
+      sessionId: 'session-b',
+      path: 'scratch',
+      startedAt: 2000,
+    });
+    await store
+      .getState()
+      .appendEvent(
+        buildLlmResponseEvent({
+          sessionId: 'session-b',
+          role: 'builder',
+          model: 'claude-sonnet-4-20250514',
+          cost: 0.34,
+          unknownModel: true,
+          timestamp: 2100,
+        }),
+      );
+
+    const activeSessionSummary = buildSessionCostSummary(store.getState().events, 'session-b');
+    expect(activeSessionSummary.totalCost).toBeCloseTo(0.34, 6);
+    expect(activeSessionSummary.roles).toHaveLength(1);
+    expect(activeSessionSummary.roles[0]?.role).toBe('builder');
+    expect(activeSessionSummary.hasUnknownModel).toBe(true);
+    expect(store.getState().events.every((event) => event.sessionId === 'session-b')).toBe(true);
+
+    const loadedA = await store.getState().loadEvents('session-a');
+    expect(loadedA).toBe(true);
+    const sessionASummary = buildSessionCostSummary(store.getState().events, 'session-a');
+    expect(sessionASummary.totalCost).toBeCloseTo(0.12, 6);
+    expect(sessionASummary.roles).toHaveLength(1);
+    expect(sessionASummary.roles[0]?.role).toBe('chat');
+    expect(sessionASummary.hasUnknownModel).toBe(false);
+
+    const loadedB = await store.getState().loadEvents('session-b');
+    expect(loadedB).toBe(true);
+    const sessionBSummary = buildSessionCostSummary(store.getState().events, 'session-b');
+    expect(sessionBSummary.totalCost).toBeCloseTo(0.34, 6);
+    expect(sessionBSummary.roles).toHaveLength(1);
+    expect(sessionBSummary.roles[0]?.role).toBe('builder');
+    expect(sessionBSummary.hasUnknownModel).toBe(true);
+
+    const sessionAExport = await store.getState().exportEvents('session-a');
+    expect(sessionAExport).not.toBeNull();
+    const parsedA = JSON.parse(sessionAExport ?? '[]') as Array<{ event: string }>;
+    expect(parsedA.some((event) => event.event === 'session.end')).toBe(true);
   });
 });
