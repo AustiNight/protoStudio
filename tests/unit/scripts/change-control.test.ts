@@ -14,6 +14,7 @@ const {
   collectChangeControlResult: (options: {
     baseRefRaw?: string;
     headRef?: string;
+    cwd?: string;
   }) => {
     errors: string[];
     warnings: string[];
