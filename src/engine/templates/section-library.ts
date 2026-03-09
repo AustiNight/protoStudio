@@ -938,7 +938,7 @@ const SECTION_DEFINITIONS: SectionDefinition[] = [
         type: 'embed',
         required: false,
         defaultValue:
-          '<div class=\"reviews-embed__placeholder\">Paste your review widget embed code here.</div>',
+          '<div class="reviews-embed__placeholder">Paste your review widget embed code here.</div>',
       },
       {
         id: 'reviews',
@@ -1010,34 +1010,34 @@ const SECTION_DEFINITIONS: SectionDefinition[] = [
         required: true,
         defaultValue: `[
   {
-    \"title\": \"Designing for momentum\",
-    \"excerpt\": \"How to keep a launch moving without burning out.\",
-    \"date\": \"2026-02-01\",
-    \"author\": \"Alex Rivera\",
-    \"category\": \"Strategy\",
-    \"href\": \"/blog/designing-for-momentum\",
-    \"image\": \"https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=900&q=80\",
-    \"ctaText\": \"Read story\"
+    "title": "Designing for momentum",
+    "excerpt": "How to keep a launch moving without burning out.",
+    "date": "2026-02-01",
+    "author": "Alex Rivera",
+    "category": "Strategy",
+    "href": "/blog/designing-for-momentum",
+    "image": "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=900&q=80",
+    "ctaText": "Read story"
   },
   {
-    \"title\": \"The anatomy of a high-converting hero\",
-    \"excerpt\": \"A quick framework for crafting headlines that convert.\",
-    \"date\": \"2026-01-24\",
-    \"author\": \"Casey Morgan\",
-    \"category\": \"Conversion\",
-    \"href\": \"/blog/anatomy-of-a-hero\",
-    \"image\": \"https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?auto=format&fit=crop&w=900&q=80\",
-    \"ctaText\": \"Read story\"
+    "title": "The anatomy of a high-converting hero",
+    "excerpt": "A quick framework for crafting headlines that convert.",
+    "date": "2026-01-24",
+    "author": "Casey Morgan",
+    "category": "Conversion",
+    "href": "/blog/anatomy-of-a-hero",
+    "image": "https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?auto=format&fit=crop&w=900&q=80",
+    "ctaText": "Read story"
   },
   {
-    \"title\": \"Launch checklist for calm teams\",
-    \"excerpt\": \"A simple checklist for confident go-lives.\",
-    \"date\": \"2026-01-10\",
-    \"author\": \"Jamie Lee\",
-    \"category\": \"Operations\",
-    \"href\": \"/blog/launch-checklist\",
-    \"image\": \"https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80\",
-    \"ctaText\": \"Read story\"
+    "title": "Launch checklist for calm teams",
+    "excerpt": "A simple checklist for confident go-lives.",
+    "date": "2026-01-10",
+    "author": "Jamie Lee",
+    "category": "Operations",
+    "href": "/blog/launch-checklist",
+    "image": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80",
+    "ctaText": "Read story"
   }
 ]`,
       },

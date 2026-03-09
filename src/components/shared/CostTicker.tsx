@@ -11,7 +11,15 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
+const preciseCurrencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 4,
+});
 const numberFormatter = new Intl.NumberFormat('en-US');
+const COMPACT_VISIBLE_MIN_COST = 0.01;
+const PRECISE_VISIBLE_MIN_COST = 0.0001;
 
 export type CostModelBreakdown = {
   model: string;
@@ -44,8 +52,16 @@ const roleLabels: Record<LLMRole, string> = {
   builder: 'Builder AI',
 };
 
-function formatUsd(value: number): string {
-  if (!Number.isFinite(value)) return currencyFormatter.format(0);
+function formatUsdCompact(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return currencyFormatter.format(0);
+  if (value < COMPACT_VISIBLE_MIN_COST) return '<$0.01';
+  return currencyFormatter.format(value);
+}
+
+function formatUsdPrecise(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return currencyFormatter.format(0);
+  if (value < PRECISE_VISIBLE_MIN_COST) return '<$0.0001';
+  if (value < COMPACT_VISIBLE_MIN_COST) return preciseCurrencyFormatter.format(value);
   return currencyFormatter.format(value);
 }
 
@@ -89,7 +105,7 @@ export function CostTicker({
           💰
         </span>
         <span>
-          {formatUsd(totalCost)}
+          {formatUsdCompact(totalCost)}
           {unknown ? '*' : ''}
         </span>
         {unknown ? (
@@ -109,7 +125,7 @@ export function CostTicker({
             Session Cost
           </div>
           <div className="text-sm font-semibold text-slate-100">
-            {formatUsd(totalCost)}
+            {formatUsdPrecise(totalCost)}
             {unknown ? '*' : ''}
           </div>
         </div>
@@ -125,7 +141,7 @@ export function CostTicker({
                     {roleLabels[role.role]}
                   </span>
                   <span className="text-xs font-semibold text-slate-100">
-                    {formatUsd(role.cost)}
+                    {formatUsdPrecise(role.cost)}
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-400">

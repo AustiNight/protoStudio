@@ -110,7 +110,7 @@ describe('ScaffoldAuditor', () => {
     if (!file) {
       throw new Error('Missing index.html fixture');
     }
-    const updated = file.content.replace('<!-- /PP:SECTION:hero -->', '');
+    const updated = file.content.replace('<!-- /PP:SECTION:nav -->', '');
     await vfs.updateFile('index.html', updated);
 
     const result = auditor.audit(vfs);

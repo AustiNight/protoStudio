@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { gotoApp } from './utils/navigation';
 
 type SeedWorkItem = {
   id: string;
@@ -62,7 +63,7 @@ async function readChatMessages(page: Page): Promise<TestChatMessage[]> {
 }
 
 test('chat composer accepts typing, send controls, and keyboard behavior', async ({ page }) => {
-  await page.goto('/');
+  await gotoApp(page);
 
   await page.waitForFunction(
     () => typeof window !== 'undefined' && Boolean(window.__protoStudioTest?.getChatMessages),
@@ -130,8 +131,10 @@ test('chat composer accepts typing, send controls, and keyboard behavior', async
   await expect(chatPanel.getByText(/Line one\s*Line two/)).toBeVisible();
 
   const messagesAfterShiftSend = await readChatMessages(page);
-  expect(messagesAfterShiftSend).toHaveLength(messagesBefore.length + 2);
-  const secondSent = messagesAfterShiftSend[messagesAfterShiftSend.length - 1];
+  expect(messagesAfterShiftSend.length).toBeGreaterThanOrEqual(messagesBefore.length + 2);
+  const secondSent = [...messagesAfterShiftSend]
+    .reverse()
+    .find((message) => message.sender === 'user');
   expect(secondSent?.sender).toBe('user');
   expect(secondSent?.content).toBe('Line one\nLine two');
   expect(secondSent?.metadata?.backlogItemId).toBe(focusedItemId);

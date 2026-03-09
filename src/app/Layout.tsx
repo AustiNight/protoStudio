@@ -3,57 +3,125 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resetChlorastroliteSession } from '@/components/preview/ChlorastroliteLoader';
 import { PreviewPanel } from '@/components/preview/PreviewPanel';
 import { HeaderBar } from '@/components/shared/HeaderBar';
+import { LogViewerPanel } from '@/components/shared/LogViewerPanel';
 import { NewConversationDialog } from '@/components/shared/NewConversationDialog';
 import { SessionRecoveryDialog } from '@/components/shared/SessionRecoveryDialog';
 import { SettingsModal } from '@/components/shared/SettingsModal';
+import { supportsOpenAIReasoningForModel } from '@/config/openai-reasoning';
+import { runtimeConfig } from '@/config/runtime-config';
+import { BuilderLoop, type BacklogController } from '@/engine/builder/builder-loop';
+import { FirstMessagePath } from '@/engine/chat/first-message';
 import {
   getErrorChatMessage,
+  getMilestoneChatMessage,
   getSkipChatMessage,
   getSwapChatMessage,
 } from '@/engine/chat/narration';
-import { evaluateReorder } from '@/engine/chat/po-logic';
+import {
+  buildBacklogPrompt,
+  evaluateReorder,
+  parseBacklogResponse,
+  validateAtomSizing,
+} from '@/engine/chat/po-logic';
+import { buildPreviewSecurityHeaders } from '@/engine/guardrails/guardrails';
+import { ContextManager } from '@/engine/llm/context';
+import { LLMGateway } from '@/engine/llm/gateway';
+import { TEMPLATE_CATALOG } from '@/engine/templates/catalog';
+import { buildPreviewHtml } from '@/engine/vfs/preview';
+import { VirtualFileSystem } from '@/engine/vfs/vfs';
 import { SessionCheckpoint } from '@/persistence/checkpoint';
 import { useBacklogStore } from '@/store/backlog-store';
 import { useBuildStore } from '@/store/build-store';
 import { useChatStore } from '@/store/chat-store';
+import { useLogStore } from '@/store/log-store';
+import type { SettingsPayload } from '@/store/settings-store';
+import { useSettingsStore } from '@/store/settings-store';
 import { buildSessionCostSummary, useTelemetryStore } from '@/store/telemetry-store';
-import type { ChatMessage } from '@/types/chat';
+import type { ChatMessage, ClassificationResult } from '@/types/chat';
 import type { AtomType, Effort, WorkItem, WorkItemStatus } from '@/types/backlog';
+import type { BuildPatch } from '@/types/patch';
+import type { LLMMessage, LLMProviderClient, RawLLMResponse } from '@/types/llm';
 import type { BuildPhase } from '@/types/build';
 import type { RecoveryState } from '@/types/persistence';
 import type { TelemetrySessionPath } from '@/types/telemetry';
+import type { LLMConfig, LLMProviderName } from '@/types/session';
+import type { TemplateConfig } from '@/types/template';
+import { studioLog } from '@/utils/studio-logger';
 import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
 
-type PanelKey = 'chat' | 'preview' | 'backlog';
+type PanelKey = 'chat' | 'preview' | 'backlog' | 'logs';
+type PreviewSlot = 'blue' | 'green';
 
 const panels: Array<{
   id: PanelKey;
   label: string;
-  kicker: string;
-  description: string;
 }> = [
   {
     id: 'chat',
     label: 'Chat',
-    kicker: 'Conversation',
-    description: 'Speak in plain language. We translate it into a build plan.',
   },
   {
     id: 'preview',
     label: 'Preview',
-    kicker: 'Live Canvas',
-    description: 'Blue/green swaps land here with visual confirmation.',
   },
   {
     id: 'backlog',
     label: 'Backlog',
-    kicker: 'On Deck',
-    description: 'Work items line up, focus locks in, progress stays visible.',
+  },
+  {
+    id: 'logs',
+    label: 'Log Viewer',
   },
 ];
 
 const panelShell =
-  'relative flex h-full min-h-[420px] flex-col gap-4 rounded-3xl border border-slate-800/70 bg-slate-900/60 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)] backdrop-blur';
+  'relative flex flex-col gap-3 rounded-3xl border border-slate-800/70 bg-slate-900/60 p-4 shadow-[0_20px_40px_rgba(0,0,0,0.35)] backdrop-blur';
+const previewPanelShell = `${panelShell} min-h-[50vh] lg:min-h-[56vh]`;
+const workPanelShell =
+  `${panelShell} h-[460px] sm:h-[500px] lg:h-[540px] xl:h-[42vh] xl:min-h-[430px] xl:max-h-[560px]`;
+const logsPanelShell = `${panelShell} min-h-[300px] xl:min-h-[320px]`;
+
+const CHAT_SYSTEM_PROMPT = [
+  'You are the chat AI for prontoproto.studio.',
+  'Give direct, concise, practical guidance for website-building requests.',
+  'Ask one clarifying question when needed.',
+  'Do not claim to have completed actions unless they are confirmed by the app state.',
+].join('\n');
+const MAX_CHAT_CONTEXT_MESSAGES = 20;
+const CHAT_RESPONSE_MAX_TOKENS = 600;
+const CHAT_EMPTY_RETRY_MAX_TOKENS = 1800;
+const USE_MOCK_LLM =
+  import.meta.env.MODE === 'e2e' ||
+  (import.meta.env.DEV && !runtimeConfig.useRealLlm);
+const BUILDER_LOOP_DELAY_MS = runtimeConfig.builderLoopDelayMs;
+const PREVIEW_SWAP_EVENT = 'preview:swap';
+const PREVIEW_ACTIVE_SLOT_EVENT = 'preview:active-slot';
+const PREVIEW_STAGED_STATE_EVENT = 'preview:staged-state';
+const BUILDER_SYSTEM_PROMPT = [
+  'You are the Builder AI for prontoproto.studio.',
+  'Return JSON only and produce a valid BuildPatch payload.',
+  'Do not include markdown fences.',
+].join('\n');
+const BUILDER_PATCH_FORMAT = [
+  'Return a single JSON object with this shape:',
+  '{',
+  '  "workItemId": "<exact on_deck id>",',
+  '  "targetVersion": <current vfs version>,',
+  '  "operations": [',
+  '    { "op": "section.replace", "file": "index.html", "sectionId": "hero", "html": "<!-- PP:SECTION:hero -->...<!-- /PP:SECTION:hero -->", "ifVersion": <current vfs version> },',
+  '    { "op": "section.insert", "file": "index.html", "before": "footer", "sectionId": "new-section", "html": "<!-- PP:SECTION:new-section -->...<!-- /PP:SECTION:new-section -->", "ifVersion": <current vfs version> },',
+  '    { "op": "section.delete", "file": "index.html", "sectionId": "hero", "ifVersion": <current vfs version> },',
+  '    { "op": "css.append", "file": "styles.css", "blockId": "hero", "css": "/* === PP:BLOCK:hero === */.../* === /PP:BLOCK:hero === */", "ifVersion": <current vfs version> },',
+  '    { "op": "css.replace", "file": "styles.css", "blockId": "hero", "css": "/* === PP:BLOCK:hero === */.../* === /PP:BLOCK:hero === */", "ifVersion": <current vfs version> },',
+  '    { "op": "js.append", "file": "main.js", "funcId": "hero-init", "js": "// === PP:FUNC:hero-init === ... // === /PP:FUNC:hero-init ===", "ifVersion": <current vfs version> },',
+  '    { "op": "js.replace", "file": "main.js", "funcId": "hero-init", "js": "// === PP:FUNC:hero-init === ... // === /PP:FUNC:hero-init ===", "ifVersion": <current vfs version> },',
+  '    { "op": "file.create", "file": "robots.txt", "content": "...", "ifAbsent": true },',
+  '    { "op": "file.delete", "file": "old.txt", "ifVersion": <current vfs version> },',
+  '    { "op": "meta.update", "file": "index.html", "fields": { "title": "..." } }',
+  '  ]',
+  '}',
+  'Do not output alias operation names such as asset.create, file.add, or metadata.update.',
+].join('\n');
 
 const baseTimestamp = new Date('2025-02-01T18:30:00Z').getTime();
 function buildSampleMessages(sessionId: string): ChatMessage[] {
@@ -160,6 +228,422 @@ function buildNarrationMessage(
   };
 }
 
+function buildLlmConfigFromSettings(settings: SettingsPayload): LLMConfig {
+  const buildSelection = (
+    providerName: LLMProviderName,
+    model: string,
+    apiKey: string,
+  ) => ({
+    provider: {
+      name: providerName,
+      apiKey,
+      models: [model],
+    },
+    model,
+  });
+
+  const chatSelection = settings.llmModels.chat;
+  const builderSelection = settings.llmModels.builder;
+
+  return {
+    chatModel: buildSelection(
+      chatSelection.provider,
+      chatSelection.model,
+      settings.llmKeys[chatSelection.provider].trim(),
+    ),
+    builderModel: buildSelection(
+      builderSelection.provider,
+      builderSelection.model,
+      settings.llmKeys[builderSelection.provider].trim(),
+    ),
+    openAIReasoning: {
+      chat: settings.openaiThinking.chat,
+      builder: settings.openaiThinking.builder,
+    },
+  };
+}
+
+function toChatContextMessages(messages: ChatMessage[]): LLMMessage[] {
+  return messages
+    .filter((message) => {
+      if (message.sender === 'system') {
+        return false;
+      }
+      if (message.sender === 'user') {
+        return true;
+      }
+      // Keep assistant history grounded in actual model outputs, not app narration.
+      return typeof message.metadata?.tokensUsed === 'number';
+    })
+    .slice(-MAX_CHAT_CONTEXT_MESSAGES)
+    .map((message) => ({
+      role: message.sender === 'user' ? 'user' : 'assistant',
+      content: message.content,
+    }));
+}
+
+function getChatErrorMessage(
+  provider: LLMProviderName,
+  error: { code?: string; message: string; details?: unknown },
+): string {
+  if (error.code === 'auth') {
+    return `${provider} authentication failed. Update your API key in Settings and try again.`;
+  }
+  if (error.code === 'rate_limit') {
+    return `${provider} rate limit hit. Wait a moment, then retry.`;
+  }
+  if (error.code === 'timeout') {
+    return `${provider} timed out before responding. Please retry.`;
+  }
+  if (error.code === 'provider_error') {
+    const details = asRecord(error.details);
+    const cause = typeof details?.cause === 'string' ? details.cause.trim() : '';
+    const hint = typeof details?.hint === 'string' ? details.hint.trim() : '';
+    const bodyMessage = extractProviderBodyMessage(details?.body);
+    if (cause.length > 0 && hint.length > 0) {
+      return `${error.message} (${cause}) ${hint}`;
+    }
+    if (cause.length > 0) {
+      return `${error.message} (${cause})`;
+    }
+    if (bodyMessage.length > 0) {
+      if (error.message.includes(bodyMessage)) {
+        return error.message;
+      }
+      return `${error.message} (${bodyMessage})`;
+    }
+    if (hint.length > 0) {
+      return `${error.message} ${hint}`;
+    }
+  }
+  return error.message || `${provider} failed to return a response.`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function extractProviderBodyMessage(body: unknown): string {
+  if (typeof body !== 'string') {
+    return '';
+  }
+
+  const trimmed = body.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    const root = asRecord(parsed);
+    const nested = asRecord(root?.error);
+    const message = typeof nested?.message === 'string' ? nested.message.trim() : '';
+    if (message) {
+      return message;
+    }
+  } catch {
+    // Fall through to raw-body fallback.
+  }
+
+  if (trimmed.length <= 220) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, 220)}...`;
+}
+
+function sanitizeIdentifier(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized.length > 0 ? normalized : 'update';
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function pickMockTemplateId(message: string): string {
+  const normalized = message.toLowerCase();
+  if (/(store|shop|checkout|cart|product)/.test(normalized)) {
+    return 'simple-store';
+  }
+  if (/(portfolio|case study|gallery|photography)/.test(normalized)) {
+    return 'portfolio';
+  }
+  if (/(blog|article|post|newsletter)/.test(normalized)) {
+    return 'blog';
+  }
+  if (/(book|appointment|calendar|schedule|reservation)/.test(normalized)) {
+    return 'bookings';
+  }
+  if (/(saas|startup|launch|landing)/.test(normalized)) {
+    return 'marketing';
+  }
+  return 'small-business';
+}
+
+function buildMockSiteTitle(message: string): string {
+  const compact = message.replace(/\s+/g, ' ').trim();
+  if (!compact) {
+    return 'Launch Studio';
+  }
+  const words = compact
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 3);
+  if (words.length === 0) {
+    return 'Launch Studio';
+  }
+  return words.map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
+}
+
+function buildMockClassificationResponse(message: string, model: string): RawLLMResponse {
+  const templateId = pickMockTemplateId(message);
+  const title = buildMockSiteTitle(message);
+  const payload = {
+    path: 'template' as const,
+    templateId,
+    confidence: 0.9,
+    reasoning: `The request best fits the "${templateId}" template.`,
+    suggestedCustomization: {
+      title,
+      slogan: 'Built fast, then refined iteratively.',
+      primaryColor: '#0ea5e9',
+      industry: 'general',
+    },
+  };
+
+  return {
+    content: JSON.stringify(payload),
+    usage: { promptTokens: 120, completionTokens: 48 },
+    model,
+    latencyMs: 180,
+  };
+}
+
+function buildMockBacklogResponse(templateId: string): RawLLMResponse {
+  const baseItems = [
+    {
+      title: 'Refine hero positioning',
+      description: 'Adjust the hero section structure for clearer primary action.',
+      atomType: 'structure',
+      filesTouch: ['index.html'],
+      estimatedLines: 70,
+      visibleChange: 'Hero section hierarchy is clearer and CTA placement is improved.',
+      dependencies: [],
+    },
+    {
+      title: 'Tune brand accents',
+      description: 'Apply a consistent accent treatment to buttons and highlights.',
+      atomType: 'style',
+      filesTouch: ['styles.css'],
+      estimatedLines: 48,
+      visibleChange: 'Buttons and highlight accents use a more cohesive style.',
+      dependencies: ['Refine hero positioning'],
+    },
+    {
+      title: 'Improve interaction feedback',
+      description: 'Add subtle interaction feedback for key controls in the primary flow.',
+      atomType: 'behavior',
+      filesTouch: ['main.js'],
+      estimatedLines: 36,
+      visibleChange: 'Primary controls now show clearer interaction feedback.',
+      dependencies: ['Tune brand accents'],
+    },
+  ];
+
+  return {
+    content: JSON.stringify(baseItems),
+    usage: { promptTokens: 220, completionTokens: 160 },
+    model: `${templateId}-mock`,
+    latencyMs: 210,
+  };
+}
+
+function buildMockChatReply(userInput: string, focusedItemTitle?: string): string {
+  const focusLine = focusedItemTitle
+    ? `I will keep this aligned with "${focusedItemTitle}". `
+    : '';
+  return `${focusLine}Drafting the next update based on: "${userInput.trim()}".`;
+}
+
+function createMockGateway(
+  config: LLMConfig,
+  responder: (args: {
+    model: string;
+    messages: LLMMessage[];
+    callCount: number;
+  }) => RawLLMResponse,
+): LLMGateway {
+  let callCount = 0;
+  const provider: LLMProviderClient = {
+    name: 'openai',
+    async call(_apiKey, model, messages) {
+      callCount += 1;
+      return {
+        ok: true,
+        value: responder({ model, messages, callCount }),
+      };
+    },
+  };
+
+  return new LLMGateway(config, {
+    providers: {
+      openai: provider,
+      anthropic: provider,
+      google: provider,
+    },
+  });
+}
+
+function buildMockPatch(input: {
+  atom: WorkItem;
+  vfs: VirtualFileSystem;
+  iteration: number;
+}): BuildPatch {
+  const { atom, vfs, iteration } = input;
+  const targetVersion = vfs.getVersion();
+  const touchedFiles = atom.filesTouch.filter((path) => vfs.hasFile(path));
+  const allowFallback = touchedFiles.length === 0;
+  const htmlFile =
+    touchedFiles.find((path) => path.toLowerCase().endsWith('.html')) ??
+    (allowFallback ? vfs.listFiles().find((path) => path.toLowerCase().endsWith('.html')) : undefined);
+  const cssFile =
+    touchedFiles.find((path) => path.toLowerCase().endsWith('.css')) ??
+    (allowFallback ? vfs.listFiles().find((path) => path.toLowerCase().endsWith('.css')) : undefined);
+  const jsFile =
+    touchedFiles.find((path) => path.toLowerCase().endsWith('.js')) ??
+    (allowFallback ? vfs.listFiles().find((path) => path.toLowerCase().endsWith('.js')) : undefined);
+
+  // Keep mock patches continuity-safe by editing only files the atom intends to touch.
+  if (atom.atomType === 'behavior' && jsFile) {
+    const funcId = sanitizeIdentifier(`${atom.id}-mock-${targetVersion}-${iteration}`);
+    const jsFunctionName = `run${funcId.replace(/-([a-z0-9])/g, (_, char: string) =>
+      char.toUpperCase(),
+    )}`;
+    const js = [
+      `// === PP:FUNC:${funcId} ===`,
+      `function ${jsFunctionName}() {`,
+      `  document.body?.setAttribute('data-${funcId}', '${targetVersion}.${iteration}');`,
+      '}',
+      `// === /PP:FUNC:${funcId} ===`,
+    ].join('\n');
+
+    return {
+      workItemId: atom.id,
+      targetVersion,
+      operations: [
+        {
+          op: 'js.append',
+          file: jsFile,
+          funcId,
+          js,
+          ifVersion: targetVersion,
+        },
+      ],
+    };
+  }
+
+  if (cssFile) {
+    const blockId = sanitizeIdentifier(`${atom.id}-mock-${targetVersion}-${iteration}`);
+    const css = [
+      `/* === PP:BLOCK:${blockId} === */`,
+      `.${blockId} {`,
+      '  color: var(--color-text);',
+      '  border-color: var(--color-primary);',
+      '}',
+      `/* === /PP:BLOCK:${blockId} === */`,
+    ].join('\n');
+
+    return {
+      workItemId: atom.id,
+      targetVersion,
+      operations: [
+        {
+          op: 'css.append',
+          file: cssFile,
+          blockId,
+          css,
+          ifVersion: targetVersion,
+        },
+      ],
+    };
+  }
+
+  if (jsFile) {
+    const funcId = sanitizeIdentifier(`${atom.id}-mock-${targetVersion}-${iteration}`);
+    const jsFunctionName = `run${funcId.replace(/-([a-z0-9])/g, (_, char: string) =>
+      char.toUpperCase(),
+    )}`;
+    const js = [
+      `// === PP:FUNC:${funcId} ===`,
+      `function ${jsFunctionName}() {`,
+      `  document.body?.setAttribute('data-${funcId}', '${targetVersion}.${iteration}');`,
+      '}',
+      `// === /PP:FUNC:${funcId} ===`,
+    ].join('\n');
+
+    return {
+      workItemId: atom.id,
+      targetVersion,
+      operations: [
+        {
+          op: 'js.append',
+          file: jsFile,
+          funcId,
+          js,
+          ifVersion: targetVersion,
+        },
+      ],
+    };
+  }
+
+  if (htmlFile) {
+    return {
+      workItemId: atom.id,
+      targetVersion,
+      operations: [
+        {
+          op: 'meta.update',
+          file: htmlFile,
+          fields: {
+            description: `${atom.visibleChange} (build ${targetVersion}.${iteration})`,
+          },
+        },
+      ],
+    };
+  }
+
+  return {
+    workItemId: atom.id,
+    targetVersion,
+    operations: [
+      {
+        op: 'meta.update',
+        file: 'index.html',
+        fields: {
+          description: `${atom.visibleChange} (build ${targetVersion}.${iteration})`,
+        },
+      },
+    ],
+  };
+}
+
+function getOnDeckItemFromStore(): WorkItem | null {
+  const state = useBacklogStore.getState();
+  if (!state.onDeckId) {
+    return null;
+  }
+  return state.items.find((item) => item.id === state.onDeckId) ?? null;
+}
+
 function reorderArray<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   const next = [...items];
   const [moved] = next.splice(fromIndex, 1);
@@ -246,6 +730,94 @@ function createSessionId(): string {
   return `session-${Date.now()}-${randomPart}`;
 }
 
+function summarizeUserRequest(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return 'Implement requested update';
+  }
+  const firstSentence = normalized.split(/[.!?]/)[0]?.trim() ?? normalized;
+  const max = 72;
+  if (firstSentence.length <= max) {
+    return firstSentence;
+  }
+  return `${firstSentence.slice(0, max).trim()}...`;
+}
+
+function inferAtomTypeFromRequest(value: string): AtomType {
+  const normalized = value.toLowerCase();
+  if (/(menu|nav|link|button|click|toggle|interaction|scroll|animation|form submit)/.test(normalized)) {
+    return 'behavior';
+  }
+  if (/(layout|section|page|header|footer|hero|structure|add page|new page)/.test(normalized)) {
+    return 'structure';
+  }
+  if (/(color|font|typography|style|theme|spacing|shadow|gradient|design)/.test(normalized)) {
+    return 'style';
+  }
+  if (/(api|map|embed|analytics|deploy|token|auth|integration|webhook)/.test(normalized)) {
+    return 'integration';
+  }
+  return 'content';
+}
+
+function defaultFilesForAtomType(atomType: AtomType): string[] {
+  switch (atomType) {
+    case 'behavior':
+      return ['main.js', 'index.html'];
+    case 'style':
+      return ['styles.css', 'index.html'];
+    case 'integration':
+      return ['index.html', 'main.js'];
+    default:
+      return ['index.html'];
+  }
+}
+
+type PreviewRouteMap = Record<string, string>;
+
+type PreviewSwapPayload = {
+  html: string;
+  pagePath?: string;
+  routes?: PreviewRouteMap;
+};
+
+function buildPreviewRouteMap(vfs: VirtualFileSystem): PreviewRouteMap {
+  const routeMap: PreviewRouteMap = {};
+  const htmlFiles = vfs
+    .listFiles()
+    .filter((path) => path.toLowerCase().endsWith('.html'));
+
+  for (const path of htmlFiles) {
+    const preview = buildPreviewHtml(vfs, path);
+    if (preview.ok) {
+      routeMap[path] = preview.value.html;
+    }
+  }
+
+  return routeMap;
+}
+
+function buildPreviewSwapPayload(
+  vfs: VirtualFileSystem,
+  html: string,
+): PreviewSwapPayload {
+  const preview = buildPreviewHtml(vfs);
+  if (!preview.ok) {
+    return { html };
+  }
+
+  const routes = buildPreviewRouteMap(vfs);
+  if (!(preview.value.pagePath in routes)) {
+    routes[preview.value.pagePath] = html;
+  }
+
+  return {
+    html,
+    pagePath: preview.value.pagePath,
+    routes,
+  };
+}
+
 export function Layout() {
   const [activePanel, setActivePanel] = useState<PanelKey>('chat');
   const [activeSessionId, setActiveSessionId] = useState(() => createSessionId());
@@ -258,11 +830,26 @@ export function Layout() {
   const addMessage = useChatStore((state) => state.addMessage);
   const setMessages = useChatStore((state) => state.setMessages);
   const clearMessages = useChatStore((state) => state.clearMessages);
-  const groupedMessages = groupChatMessages(messages);
+  const sessionMessages = useMemo(
+    () => messages.filter((message) => message.sessionId === activeSessionId),
+    [activeSessionId, messages],
+  );
+  const groupedMessages = useMemo(() => groupChatMessages(sessionMessages), [sessionMessages]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const seededMessagesRef = useRef(false);
   const narrationRef = useRef<NarrationCheckpoint | null>(null);
-  const isTyping = messages.length > 0;
+  const [isAwaitingChatResponse, setIsAwaitingChatResponse] = useState(false);
+  const activeSessionIdRef = useRef(activeSessionId);
+  const chatRequestIdRef = useRef(0);
+  const workingVfsRef = useRef<VirtualFileSystem | null>(null);
+  const injectedPreviewHtmlRef = useRef<string | null>(null);
+  const previewActiveSlotRef = useRef<PreviewSlot>('blue');
+  const previewHasStagedRef = useRef(false);
+  const [previewHasStaged, setPreviewHasStaged] = useState(false);
+  const builderRunningRef = useRef(false);
+  const builderCycleRef = useRef(0);
+  const [hasPreview, setHasPreview] = useState(false);
+  const isTyping = isAwaitingChatResponse;
   const backlogItems = useBacklogStore((state) => state.items);
   const onDeckItem = useBacklogStore((state) =>
     state.onDeckId ? state.items.find((item) => item.id === state.onDeckId) ?? null : null,
@@ -281,6 +868,7 @@ export function Layout() {
   const togglePause = useBuildStore((state) => state.togglePause);
   const resetBuild = useBuildStore((state) => state.resetBuild);
   const telemetryEvents = useTelemetryStore((state) => state.events);
+  const logEntries = useLogStore((state) => state.entries);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [pendingReorder, setPendingReorder] = useState<PendingReorder | null>(null);
@@ -298,6 +886,13 @@ export function Layout() {
   const deniedTimerRef = useRef<number | null>(null);
   const telemetryInitializedRef = useRef(false);
   const isReorderPending = pendingReorder !== null;
+  const visiblePanels = useMemo(
+    () =>
+      runtimeConfig.logViewerEnabled
+        ? panels
+        : panels.filter((panel) => panel.id !== 'logs'),
+    [],
+  );
 
   const triggerRevertPulse = () => {
     if (revertTimerRef.current) {
@@ -338,6 +933,1020 @@ export function Layout() {
     [addMessage, focusedItemId],
   );
 
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+    chatRequestIdRef.current += 1;
+    setIsAwaitingChatResponse(false);
+    workingVfsRef.current = null;
+    injectedPreviewHtmlRef.current = null;
+    previewActiveSlotRef.current = 'blue';
+    previewHasStagedRef.current = false;
+    setPreviewHasStaged(false);
+    builderCycleRef.current = 0;
+    builderRunningRef.current = false;
+    setHasPreview(false);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    const onPreviewActiveSlot = (event: Event) => {
+      const customEvent = event as CustomEvent<{ slot?: unknown }>;
+      const slot = customEvent.detail?.slot;
+      if (slot !== 'blue' && slot !== 'green') {
+        return;
+      }
+      previewActiveSlotRef.current = slot;
+      studioLog({
+        level: 'debug',
+        source: 'preview.slot.active',
+        sessionId: activeSessionIdRef.current,
+        message: `Preview live slot is now ${slot}.`,
+      });
+    };
+
+    window.addEventListener(PREVIEW_ACTIVE_SLOT_EVENT, onPreviewActiveSlot as EventListener);
+    return () => {
+      window.removeEventListener(PREVIEW_ACTIVE_SLOT_EVENT, onPreviewActiveSlot as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onPreviewStagedState = (event: Event) => {
+      const customEvent = event as CustomEvent<{ hasStaged?: unknown }>;
+      const hasStaged = customEvent.detail?.hasStaged === true;
+      previewHasStagedRef.current = hasStaged;
+      setPreviewHasStaged(hasStaged);
+      studioLog({
+        level: 'debug',
+        source: 'preview.staged.state',
+        sessionId: activeSessionIdRef.current,
+        message: hasStaged
+          ? 'Builder paused until staged preview is validated/swapped.'
+          : 'Staged preview cleared. Builder can continue.',
+      });
+    };
+
+    window.addEventListener(PREVIEW_STAGED_STATE_EVENT, onPreviewStagedState as EventListener);
+    return () => {
+      window.removeEventListener(PREVIEW_STAGED_STATE_EVENT, onPreviewStagedState as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    studioLog({
+      level: 'info',
+      source: 'runtime.mode',
+      sessionId: activeSessionId,
+      message: USE_MOCK_LLM ? 'Running with mock LLM pipeline.' : 'Running with real LLM pipeline.',
+      details: {
+        useRealLlm: runtimeConfig.useRealLlm,
+        mode: import.meta.env.MODE,
+        logViewerEnabled: runtimeConfig.logViewerEnabled,
+      },
+    });
+  }, [activeSessionId]);
+
+  const emitPreviewSwap = useCallback((input: string | PreviewSwapPayload) => {
+    const payload: PreviewSwapPayload = typeof input === 'string' ? { html: input } : input;
+    injectedPreviewHtmlRef.current = payload.html;
+    const nextSlot: PreviewSlot =
+      previewActiveSlotRef.current === 'blue' ? 'green' : 'blue';
+    studioLog({
+      level: 'debug',
+      source: 'preview.swap.emit',
+      sessionId: activeSessionIdRef.current,
+      message: `Dispatching preview swap to ${nextSlot}.`,
+      details: {
+        htmlLength: payload.html.length,
+        slot: nextSlot,
+        pagePath: payload.pagePath ?? null,
+        routeCount: payload.routes ? Object.keys(payload.routes).length : 0,
+      },
+    });
+    setHasPreview(true);
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.dispatchEvent(
+      new CustomEvent(PREVIEW_SWAP_EVENT, {
+        detail: {
+          html: payload.html,
+          slot: nextSlot,
+          pagePath: payload.pagePath,
+          routes: payload.routes,
+        },
+      }),
+    );
+  }, []);
+
+  const requestChatResponse = useCallback(async () => {
+    const requestSessionId = activeSessionId;
+    const requestId = chatRequestIdRef.current + 1;
+    chatRequestIdRef.current = requestId;
+    setIsAwaitingChatResponse(true);
+
+    const settings = useSettingsStore.getState().settings;
+    const providerName = settings.llmModels.chat.provider;
+    const modelName = settings.llmModels.chat.model;
+
+    studioLog({
+      level: 'debug',
+      source: 'chat.request',
+      sessionId: requestSessionId,
+      message: 'Requesting chat response.',
+      details: {
+        requestId,
+        useMock: USE_MOCK_LLM,
+        provider: providerName,
+        model: modelName,
+        reasoningEffort:
+          providerName === 'openai' ? settings.openaiThinking.chat : undefined,
+      },
+    });
+
+    try {
+      const latestMessages = useChatStore
+        .getState()
+        .messages.filter((message) => message.sessionId === requestSessionId);
+
+      if (USE_MOCK_LLM) {
+        const lastUser = [...latestMessages].reverse().find((message) => message.sender === 'user');
+        const focusedItem = focusedItemId
+          ? useBacklogStore
+              .getState()
+              .items.find((item) => item.id === focusedItemId) ?? null
+          : null;
+        const reply = buildMockChatReply(lastUser?.content ?? '', focusedItem?.title);
+        await new Promise((resolve) => window.setTimeout(resolve, 280));
+        if (
+          chatRequestIdRef.current !== requestId ||
+          activeSessionIdRef.current !== requestSessionId
+        ) {
+          return;
+        }
+        addFocusedMessage(buildNarrationMessage(requestSessionId, 'chat_ai', reply));
+        studioLog({
+          level: 'debug',
+          source: 'chat.response.mock',
+          sessionId: requestSessionId,
+          message: 'Mock chat response generated.',
+          details: { requestId },
+        });
+        return;
+      }
+
+      const apiKey = settings.llmKeys[providerName].trim();
+      if (!apiKey) {
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'system',
+            'No chat API key is configured. Add one in Settings to get AI responses.',
+          ),
+        );
+        return;
+      }
+
+      const telemetry = useTelemetryStore.getState();
+      const gateway = new LLMGateway(buildLlmConfigFromSettings(settings), {
+        telemetry: telemetry.createGatewayTelemetry(),
+      });
+      const contextMessages = toChatContextMessages(latestMessages);
+      const userContextCount = contextMessages.filter((message) => message.role === 'user').length;
+      const assistantContextCount = contextMessages.length - userContextCount;
+      studioLog({
+        level: 'debug',
+        source: 'chat.request.context',
+        sessionId: requestSessionId,
+        message: 'Built chat context window.',
+        details: {
+          requestId,
+          totalMessagesInSession: latestMessages.length,
+          contextMessages: contextMessages.length,
+          userContextCount,
+          assistantContextCount,
+        },
+      });
+      const focusedContext = focusedItemId
+        ? `\nFocused backlog item: ${focusedItemId}. Keep the response aligned with this item when relevant.`
+        : '';
+      const baseRequest = {
+        role: 'chat',
+        systemPrompt: `${CHAT_SYSTEM_PROMPT}${focusedContext}`,
+        messages: contextMessages,
+        temperature: 0.4,
+        maxTokens: CHAT_RESPONSE_MAX_TOKENS,
+      } as const;
+      let result = await gateway.send(baseRequest);
+
+      if (chatRequestIdRef.current !== requestId) {
+        return;
+      }
+      if (activeSessionIdRef.current !== requestSessionId) {
+        return;
+      }
+
+      if (!result.ok) {
+        studioLog({
+          level: 'error',
+          source: 'chat.response.error',
+          sessionId: requestSessionId,
+          message: 'Live chat response failed.',
+          details: {
+            requestId,
+            provider: providerName,
+            error: result.error,
+          },
+        });
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'system',
+            getChatErrorMessage(providerName, result.error),
+          ),
+        );
+        return;
+      }
+
+      let content = result.value.content.trim();
+      let likelyTokenBudgetExhausted =
+        result.value.usage.completionTokens >= baseRequest.maxTokens;
+      if (!content) {
+        const canTuneOpenAIReasoning =
+          providerName === 'openai' && supportsOpenAIReasoningForModel(modelName);
+        const retryMaxTokens = likelyTokenBudgetExhausted
+          ? CHAT_EMPTY_RETRY_MAX_TOKENS
+          : baseRequest.maxTokens;
+        studioLog({
+          level: 'warn',
+          source: 'chat.response.empty',
+          sessionId: requestSessionId,
+          message: 'Live chat response was empty; retrying with explicit non-empty instruction.',
+          details: {
+            requestId,
+            model: result.value.model,
+            usage: result.value.usage,
+            latencyMs: result.value.latencyMs,
+            likelyTokenBudgetExhausted,
+            retryMaxTokens,
+            retryReasoningEffort: canTuneOpenAIReasoning ? 'low' : undefined,
+          },
+        });
+        const retryResult = await gateway.send({
+          ...baseRequest,
+          maxTokens: retryMaxTokens,
+          reasoningEffort: canTuneOpenAIReasoning ? 'low' : undefined,
+          systemPrompt:
+            `${CHAT_SYSTEM_PROMPT}${focusedContext}\n` +
+            'Your previous response was empty. Reply with at least one concise sentence in plain text.',
+        });
+
+        if (chatRequestIdRef.current !== requestId) {
+          return;
+        }
+        if (activeSessionIdRef.current !== requestSessionId) {
+          return;
+        }
+
+        if (!retryResult.ok) {
+          studioLog({
+            level: 'error',
+            source: 'chat.response.retry.error',
+            sessionId: requestSessionId,
+            message: 'Chat retry after empty response failed.',
+            details: {
+              requestId,
+              provider: providerName,
+              error: retryResult.error,
+            },
+          });
+          addFocusedMessage(
+            buildNarrationMessage(
+              requestSessionId,
+              'system',
+              getChatErrorMessage(providerName, retryResult.error),
+            ),
+          );
+          return;
+        }
+
+        result = retryResult;
+        content = result.value.content.trim();
+        likelyTokenBudgetExhausted =
+          result.value.usage.completionTokens >= retryMaxTokens;
+      }
+
+      if (!content) {
+        studioLog({
+          level: 'error',
+          source: 'chat.response.empty',
+          sessionId: requestSessionId,
+          message: 'Live chat response remained empty after retry.',
+          details: {
+            requestId,
+            model: result.value.model,
+            usage: result.value.usage,
+            latencyMs: result.value.latencyMs,
+          },
+        });
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'system',
+            likelyTokenBudgetExhausted
+              ? 'The model used the full response token budget without visible output. Try again or switch to a lower-reasoning chat model.'
+              : 'The model returned an empty response twice. Try again or switch to another chat model.',
+          ),
+        );
+        return;
+      }
+
+      addFocusedMessage({
+        ...buildNarrationMessage(requestSessionId, 'chat_ai', content),
+        metadata: {
+          tokensUsed:
+            result.value.usage.promptTokens + result.value.usage.completionTokens,
+          cost: result.value.cost,
+        },
+      });
+      studioLog({
+        level: 'debug',
+        source: 'chat.response.live',
+        sessionId: requestSessionId,
+        message: 'Live chat response received.',
+        details: {
+          requestId,
+          contentLength: content.length,
+          cost: result.value.cost,
+        },
+      });
+    } catch (error) {
+      if (chatRequestIdRef.current !== requestId) {
+        return;
+      }
+      if (activeSessionIdRef.current !== requestSessionId) {
+        return;
+      }
+      addFocusedMessage(
+        buildNarrationMessage(
+          requestSessionId,
+          'system',
+          error instanceof Error
+            ? error.message
+            : 'Unexpected chat error. Please retry.',
+        ),
+      );
+    } finally {
+      if (
+        chatRequestIdRef.current === requestId &&
+        activeSessionIdRef.current === requestSessionId
+      ) {
+        setIsAwaitingChatResponse(false);
+      }
+    }
+  }, [activeSessionId, addFocusedMessage, focusedItemId]);
+
+  const buildInitialBacklog = useCallback(
+    async (
+      classification: ClassificationResult,
+      template: TemplateConfig,
+      gateway: LLMGateway | null,
+      providerName: LLMProviderName,
+      requestSessionId: string,
+    ): Promise<WorkItem[]> => {
+      const response = USE_MOCK_LLM
+        ? buildMockBacklogResponse(template.id)
+        : (() => {
+            if (!gateway) {
+              throw new Error('Backlog generation gateway unavailable.');
+            }
+            return null;
+          })();
+
+      const resolvedResponse =
+        response ??
+        (await (async () => {
+          const result = await gateway!.send(buildBacklogPrompt(classification, template));
+          if (!result.ok) {
+            throw new Error(getChatErrorMessage(providerName, result.error));
+          }
+          return result.value;
+        })());
+
+      const parsed = parseBacklogResponse(resolvedResponse, {
+        sessionId: requestSessionId,
+      });
+      const validation = validateAtomSizing(parsed);
+      if (!validation.valid) {
+        const firstIssue = validation.issues[0];
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'system',
+            `Backlog generated with validation warnings. First issue: ${firstIssue?.message ?? 'Unknown issue.'}`,
+          ),
+        );
+      }
+      return parsed;
+    },
+    [addFocusedMessage],
+  );
+
+  const runBuilderCycle = useCallback(async () => {
+    if (builderRunningRef.current) {
+      return;
+    }
+    if (previewHasStagedRef.current) {
+      return;
+    }
+    if (!workingVfsRef.current) {
+      return;
+    }
+    if (useBuildStore.getState().isPaused) {
+      return;
+    }
+    const onDeck = getOnDeckItemFromStore();
+    if (!onDeck) {
+      return;
+    }
+    const vfs = workingVfsRef.current;
+    if (!vfs) {
+      return;
+    }
+
+    const requestSessionId = activeSessionIdRef.current;
+    const settings = useSettingsStore.getState().settings;
+    const llmConfig = buildLlmConfigFromSettings(settings);
+    const providerName = settings.llmModels.builder.provider;
+    const telemetry = useTelemetryStore.getState();
+    studioLog({
+      level: 'debug',
+      source: 'builder.cycle.start',
+      sessionId: requestSessionId,
+      message: `Starting builder cycle for "${onDeck.title}".`,
+      details: {
+        workItemId: onDeck.id,
+        useMock: USE_MOCK_LLM,
+      },
+    });
+
+    let gateway: LLMGateway;
+    if (USE_MOCK_LLM) {
+      gateway = createMockGateway(llmConfig, ({ model, callCount }) => {
+        const atom = getOnDeckItemFromStore();
+        const vfs = workingVfsRef.current;
+        if (!atom || !vfs) {
+          return {
+            content: JSON.stringify({
+              workItemId: 'mock-missing-atom',
+              targetVersion: 1,
+              operations: [],
+            }),
+            usage: { promptTokens: 80, completionTokens: 20 },
+            model,
+            latencyMs: 80,
+          };
+        }
+        const patch = buildMockPatch({
+          atom,
+          vfs,
+          iteration: builderCycleRef.current + callCount,
+        });
+        return {
+          content: JSON.stringify(patch),
+          usage: { promptTokens: 180, completionTokens: 90 },
+          model,
+          latencyMs: 120,
+        };
+      });
+    } else {
+      const apiKey = settings.llmKeys[providerName].trim();
+      if (!apiKey) {
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'system',
+            'No builder API key is configured. Add one in Settings to continue iterative builds.',
+          ),
+        );
+        return;
+      }
+      gateway = new LLMGateway(llmConfig, {
+        telemetry: telemetry.createGatewayTelemetry(),
+      });
+    }
+
+    const guardrailsHeaders = buildPreviewSecurityHeaders();
+    const loop = new BuilderLoop({
+      gateway,
+      contextManager: new ContextManager({
+        builder: {
+          model: settings.llmModels.builder.model,
+          systemPrompt: BUILDER_SYSTEM_PROMPT,
+          patchFormat: BUILDER_PATCH_FORMAT,
+        },
+      }),
+      events: {
+        onEvent: (event) => {
+          if (activeSessionIdRef.current !== requestSessionId) {
+            return;
+          }
+          studioLog({
+            level: event.type === 'error' ? 'error' : 'debug',
+            source: `builder.event.${event.type}`,
+            sessionId: requestSessionId,
+            message: `Builder event: ${event.type}`,
+            details: event,
+          });
+          if (event.type === 'phase_changed') {
+            useBuildStore.setState((state) => ({
+              isPaused: state.isPaused,
+              buildState: { ...event.state },
+            }));
+            return;
+          }
+          if (event.type === 'error') {
+            useBuildStore.setState((state) => ({
+              isPaused: state.isPaused,
+              buildState: {
+                ...state.buildState,
+                phase: 'error',
+                currentAtom: event.atom,
+                lastError: event.message,
+                phaseStartedAt: Date.now(),
+              },
+            }));
+          }
+        },
+      },
+      telemetry: {
+        onBuildStart: ({ atom, attempt, timestamp }) => {
+          void telemetry.recordBuildStart({
+            sessionId: requestSessionId,
+            workItemId: atom.id,
+            attempt,
+            timestamp,
+          });
+        },
+        onBuildPreview: ({ durationMs, timestamp }) => {
+          void telemetry.recordBuildPreview({
+            sessionId: requestSessionId,
+            durationMs,
+            timestamp,
+          });
+        },
+        onBuildComplete: ({ durationMs, status, errorCategory, timestamp }) => {
+          void telemetry.recordBuildComplete({
+            sessionId: requestSessionId,
+            durationMs,
+            status,
+            errorCategory,
+            timestamp,
+          });
+        },
+      },
+    });
+
+    const previewPayloadRef: { current: PreviewSwapPayload | null } = { current: null };
+    const backlogController: BacklogController = {
+      getOnDeck: () =>
+        activeSessionIdRef.current === requestSessionId ? getOnDeckItemFromStore() : null,
+      updateItem: (itemId, update) => {
+        if (activeSessionIdRef.current !== requestSessionId) {
+          return;
+        }
+        useBacklogStore.getState().updateItem(itemId, update);
+      },
+      promoteNext: () => {
+        if (activeSessionIdRef.current !== requestSessionId) {
+          return null;
+        }
+        useBacklogStore.getState().promoteNext();
+        return getOnDeckItemFromStore();
+      },
+      moveToEnd: (itemId) => {
+        if (activeSessionIdRef.current !== requestSessionId) {
+          return;
+        }
+        useBacklogStore.getState().moveToEnd(itemId);
+      },
+    };
+    const previewAdapter = {
+      inject: (html: string) => {
+        previewPayloadRef.current = { html };
+      },
+      swap: () => {
+        if (!previewPayloadRef.current?.html) {
+          return;
+        }
+        const payload = buildPreviewSwapPayload(vfs, previewPayloadRef.current.html);
+        previewPayloadRef.current = payload;
+        emitPreviewSwap(payload);
+      },
+      getInactiveSlot: () =>
+        previewActiveSlotRef.current === 'blue' ? 'green' : 'blue',
+    };
+
+    builderRunningRef.current = true;
+    builderCycleRef.current += 1;
+    try {
+      const result = await loop.run({
+        vfs,
+        backlog: backlogController,
+        conversation: useChatStore
+          .getState()
+          .messages.filter((message) => message.sessionId === requestSessionId),
+        preview: previewAdapter,
+        guardrails: {
+          deploy: {
+            selectedHost: 'github_pages',
+            availableHosts: ['github_pages', 'cloudflare_pages', 'netlify', 'vercel'],
+          },
+          preview: {
+            cspHeader: guardrailsHeaders.csp,
+            sriEnabled: guardrailsHeaders.sriRequired,
+          },
+        },
+        isPaused: () => useBuildStore.getState().isPaused,
+      });
+
+      if (!result.ok) {
+        const surfacedError = getChatErrorMessage(
+          providerName,
+          result.error,
+        );
+        studioLog({
+          level: 'error',
+          source: 'builder.cycle.error',
+          sessionId: requestSessionId,
+          message: surfacedError || 'Builder loop failed unexpectedly.',
+          details: result.error,
+        });
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'system',
+            surfacedError || 'Builder loop failed unexpectedly.',
+          ),
+        );
+      } else {
+        studioLog({
+          level: 'debug',
+          source: 'builder.cycle.complete',
+          sessionId: requestSessionId,
+          message: `Builder cycle finished with status "${result.value.status}".`,
+          details: {
+            workItemId: result.value.atom?.id ?? null,
+            attempts: result.value.attempts,
+          },
+        });
+      }
+    } finally {
+      builderRunningRef.current = false;
+    }
+  }, [addFocusedMessage, emitPreviewSwap]);
+
+  const runFirstMessageFlow = useCallback(
+    async (firstUserMessage: string) => {
+      const requestSessionId = activeSessionId;
+      const requestId = chatRequestIdRef.current + 1;
+      chatRequestIdRef.current = requestId;
+      setIsAwaitingChatResponse(true);
+      const settings = useSettingsStore.getState().settings;
+      const providerName = settings.llmModels.chat.provider;
+
+      studioLog({
+        level: 'info',
+        source: 'first-message.start',
+        sessionId: requestSessionId,
+        message: 'Starting first-message preview flow.',
+        details: {
+          requestId,
+          useMock: USE_MOCK_LLM,
+          inputLength: firstUserMessage.length,
+          provider: providerName,
+          model: settings.llmModels.chat.model,
+          reasoningEffort:
+            providerName === 'openai' ? settings.openaiThinking.chat : undefined,
+        },
+      });
+
+      const llmConfig = buildLlmConfigFromSettings(settings);
+      const telemetry = useTelemetryStore.getState();
+
+      try {
+        let gateway: LLMGateway;
+        if (USE_MOCK_LLM) {
+          gateway = createMockGateway(llmConfig, ({ model, messages }) => {
+            const prompt = [...messages].reverse().find((message) => message.role === 'user');
+            return buildMockClassificationResponse(prompt?.content ?? '', model);
+          });
+        } else {
+          const apiKey = settings.llmKeys[providerName].trim();
+          if (!apiKey) {
+            addFocusedMessage(
+              buildNarrationMessage(
+                requestSessionId,
+                'system',
+                'No chat API key is configured. Add one in Settings to generate a first preview.',
+              ),
+            );
+            return;
+          }
+          gateway = new LLMGateway(llmConfig, {
+            telemetry: telemetry.createGatewayTelemetry(),
+          });
+        }
+
+        const firstPath = new FirstMessagePath({
+          gateway,
+          templateCatalog: TEMPLATE_CATALOG,
+        });
+        const firstResult = await firstPath.run(firstUserMessage);
+
+        if (
+          chatRequestIdRef.current !== requestId ||
+          activeSessionIdRef.current !== requestSessionId
+        ) {
+          return;
+        }
+
+        if (!firstResult.ok) {
+          const errorMessage = getChatErrorMessage(providerName, firstResult.error);
+          studioLog({
+            level: 'error',
+            source: 'first-message.error',
+            sessionId: requestSessionId,
+            message: errorMessage || 'Failed to build the first preview.',
+            details: firstResult.error,
+          });
+          addFocusedMessage(
+            buildNarrationMessage(
+              requestSessionId,
+              'system',
+              errorMessage || 'Failed to build the first preview.',
+            ),
+          );
+          return;
+        }
+
+        if (firstResult.value.status === 'clarify') {
+          studioLog({
+            level: 'info',
+            source: 'first-message.clarify',
+            sessionId: requestSessionId,
+            message: 'First-message classifier requested clarification.',
+            details: {
+              question: firstResult.value.question,
+            },
+          });
+          addFocusedMessage(
+            buildNarrationMessage(
+              requestSessionId,
+              'chat_ai',
+              firstResult.value.question,
+            ),
+          );
+          return;
+        }
+
+        if (firstResult.value.status === 'scratch') {
+          studioLog({
+            level: 'info',
+            source: 'first-message.scratch',
+            sessionId: requestSessionId,
+            message: 'First-message classifier selected scratch path.',
+          });
+          addFocusedMessage(
+            buildNarrationMessage(
+              requestSessionId,
+              'chat_ai',
+              'I can start from scratch, but I need a little more direction on layout and content.',
+            ),
+          );
+          return;
+        }
+
+        workingVfsRef.current = firstResult.value.vfs;
+        studioLog({
+          level: 'info',
+          source: 'first-message.preview',
+          sessionId: requestSessionId,
+          message: 'First preview generated and ready to swap.',
+          details: {
+            templateId: firstResult.value.template.id,
+            previewPath: firstResult.value.preview.pagePath,
+            htmlLength: firstResult.value.preview.html.length,
+            durationMs: firstResult.value.timing.durationMs,
+            withinSla: firstResult.value.timing.withinSla,
+          },
+        });
+        emitPreviewSwap({
+          html: firstResult.value.preview.html,
+          pagePath: firstResult.value.preview.pagePath,
+          routes: firstResult.value.preview.routes,
+        });
+        void telemetry.recordTemplateSelected({
+          sessionId: requestSessionId,
+          templateId: firstResult.value.template.id,
+          path: 'template',
+          timestamp: Date.now(),
+        });
+
+        addFocusedMessage(
+          buildNarrationMessage(requestSessionId, 'chat_ai', "Here's your first preview!"),
+        );
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'chat_ai',
+            getMilestoneChatMessage('first_preview', { previewUrl: 'in this panel' }),
+          ),
+        );
+
+        let backlog: WorkItem[] = [];
+        let backlogErrorMessage: string | null = null;
+        const backlogStartedAt = Date.now();
+        studioLog({
+          level: 'debug',
+          source: 'first-message.backlog.start',
+          sessionId: requestSessionId,
+          message: 'Generating initial backlog from first-message classification.',
+          details: {
+            requestId,
+            provider: providerName,
+            model: settings.llmModels.chat.model,
+          },
+        });
+        try {
+          backlog = await buildInitialBacklog(
+            firstResult.value.classification,
+            firstResult.value.template,
+            USE_MOCK_LLM ? null : gateway,
+            providerName,
+            requestSessionId,
+          );
+        } catch (error) {
+          backlogErrorMessage =
+            error instanceof Error
+              ? error.message
+              : 'Initial backlog planning failed.';
+          studioLog({
+            level: 'warn',
+            source: 'first-message.backlog.error',
+            sessionId: requestSessionId,
+            message: backlogErrorMessage,
+          });
+        }
+        if (backlog.length > 0) {
+          studioLog({
+            level: 'info',
+            source: 'first-message.backlog',
+            sessionId: requestSessionId,
+            message: `Initial backlog created with ${backlog.length} work items.`,
+            details: {
+              durationMs: Math.max(0, Date.now() - backlogStartedAt),
+            },
+          });
+          setBacklogItems(backlog);
+          promoteNext();
+        } else if (backlogErrorMessage) {
+          const normalized = backlogErrorMessage.toLowerCase();
+          const planningMessage = normalized.includes('timed out')
+            ? 'First preview is ready. Initial backlog planning timed out, so auto-improvements are paused. Ask for a specific next change and I will continue.'
+            : `First preview is ready, but initial backlog planning failed: ${backlogErrorMessage}`;
+          addFocusedMessage(
+            buildNarrationMessage(
+              requestSessionId,
+              'system',
+              planningMessage,
+            ),
+          );
+        }
+      } catch (error) {
+        if (
+          chatRequestIdRef.current !== requestId ||
+          activeSessionIdRef.current !== requestSessionId
+        ) {
+          return;
+        }
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'system',
+            error instanceof Error
+              ? error.message
+              : 'Unexpected first-preview error. Please retry.',
+          ),
+        );
+        studioLog({
+          level: 'error',
+          source: 'first-message.exception',
+          sessionId: requestSessionId,
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Unexpected first-preview error. Please retry.',
+        });
+      } finally {
+        if (
+          chatRequestIdRef.current === requestId &&
+          activeSessionIdRef.current === requestSessionId
+        ) {
+          setIsAwaitingChatResponse(false);
+        }
+      }
+    },
+    [
+      activeSessionId,
+      addFocusedMessage,
+      buildInitialBacklog,
+      emitPreviewSwap,
+      promoteNext,
+      setBacklogItems,
+    ],
+  );
+
+  useEffect(() => {
+    if (!hasPreview) {
+      return;
+    }
+    if (isPaused) {
+      return;
+    }
+    if (!onDeckItem) {
+      return;
+    }
+    if (previewHasStaged) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (!builderRunningRef.current) {
+        void runBuilderCycle();
+      }
+    }, BUILDER_LOOP_DELAY_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [buildPhase, hasPreview, isPaused, onDeckItem?.id, previewHasStaged, runBuilderCycle]);
+
+  const queueUserRequestAsBacklogItem = useCallback(
+    (rawContent: string) => {
+      const content = rawContent.trim();
+      if (!content) {
+        return null;
+      }
+
+      const now = Date.now();
+      const atomType = inferAtomTypeFromRequest(content);
+      const title = summarizeUserRequest(content);
+      const workItemId = `user-${now}-${sanitizeIdentifier(title).slice(0, 40)}`;
+      const workItem: WorkItem = {
+        id: workItemId,
+        sessionId: activeSessionId,
+        title,
+        description: content,
+        effort: 'M',
+        status: 'backlog',
+        order: 1,
+        dependencies: [],
+        rationale: 'Directly requested by the user in chat.',
+        createdAt: now,
+        atomType,
+        filesTouch: defaultFilesForAtomType(atomType),
+        estimatedLines: 65,
+        visibleChange: `Implements: ${title}`,
+      };
+
+      const backlog = useBacklogStore.getState();
+      backlog.addItem(workItem);
+      backlog.setOnDeck(workItem.id);
+      backlog.focusItem(workItem.id);
+      setAutoFocusOnDeck(true);
+      studioLog({
+        level: 'info',
+        source: 'planner.user-request.queued',
+        sessionId: activeSessionId,
+        message: 'Queued user request as On Deck backlog item.',
+        details: {
+          workItemId: workItem.id,
+          title: workItem.title,
+          atomType: workItem.atomType,
+          filesTouch: workItem.filesTouch,
+        },
+      });
+      addFocusedMessage(
+        buildNarrationMessage(
+          activeSessionId,
+          'chat_ai',
+          `Added to backlog and set On Deck: "${workItem.title}". Building now.`,
+          workItem.id,
+        ),
+      );
+      return workItem;
+    },
+    [activeSessionId, addFocusedMessage],
+  );
+
   const handleFocusToggle = useCallback(
     (itemId: string) => {
       if (focusedItemId === itemId) {
@@ -357,10 +1966,33 @@ export function Layout() {
       return false;
     }
 
+    const isFirstUserMessage = sessionMessages.every(
+      (message) => message.sender !== 'user',
+    );
     addFocusedMessage(buildNarrationMessage(activeSessionId, 'user', content));
     setChatDraft('');
+    if (isFirstUserMessage) {
+      void runFirstMessageFlow(content);
+      return true;
+    }
+
+    if (hasPreview) {
+      queueUserRequestAsBacklogItem(content);
+      return true;
+    }
+
+    void requestChatResponse();
     return true;
-  }, [activeSessionId, addFocusedMessage, chatDraft]);
+  }, [
+    activeSessionId,
+    addFocusedMessage,
+    chatDraft,
+    hasPreview,
+    queueUserRequestAsBacklogItem,
+    requestChatResponse,
+    runFirstMessageFlow,
+    sessionMessages,
+  ]);
 
   const activateTelemetrySession = useCallback(
     async (
@@ -567,6 +2199,10 @@ export function Layout() {
   }, [autoFocusOnDeck, focusItem, focusedItemId, hasFocusedItem, onDeckItem]);
 
   useEffect(() => {
+    if (import.meta.env.MODE !== 'e2e') {
+      seededMessagesRef.current = true;
+      return;
+    }
     if (seededMessagesRef.current) {
       return;
     }
@@ -785,55 +2421,23 @@ export function Layout() {
         isWorking={isResetting}
       />
 
-      <main className="relative z-10 mx-auto flex min-h-screen max-w-[1800px] flex-col px-4 pb-6 pt-20">
-        <div className="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-slate-800/70 bg-slate-900/60 p-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300 md:hidden">
-          {panels.map((panel) => (
-            <button
-              key={panel.id}
-              type="button"
-              onClick={() => setActivePanel(panel.id)}
-              aria-pressed={activePanel === panel.id}
-              className={`flex-1 rounded-xl px-3 py-2 transition ${
-                activePanel === panel.id
-                  ? 'bg-emerald-300/90 text-slate-950 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
-                  : 'text-slate-300 hover:text-emerald-200'
-              }`}
-            >
-              {panel.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,4.5fr)_minmax(0,2.5fr)]">
+      <main className="relative z-10 mx-auto w-full max-w-[1800px] px-4 pb-10 pt-20">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <section
             aria-label="Chat panel"
-            className={`${panelShell} ${
-              activePanel === 'chat' ? 'block' : 'hidden'
-            } md:block`}
+            className={`${workPanelShell} order-2 lg:order-2`}
           >
             <header className="flex items-center justify-between">
-              <div>
-                <p className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.3em] text-slate-400">
-                  {panels[0].kicker}
-                </p>
-                <h2 className="text-xl font-semibold tracking-tight">{panels[0].label}</h2>
-              </div>
-              <span className="rounded-full border border-slate-800/80 px-3 py-1 font-['JetBrains_Mono'] text-xs uppercase tracking-[0.2em] text-slate-300">
-                Live
-              </span>
+              <h2 className="font-['JetBrains_Mono'] text-lg font-bold uppercase tracking-[0.22em] text-slate-100">
+                {panels[0].label}
+              </h2>
+              <span
+                aria-hidden="true"
+                className="h-2.5 w-2.5 rounded-full bg-emerald-300/90 shadow-[0_0_10px_rgba(16,185,129,0.6)]"
+              />
             </header>
-            <div className="flex min-h-0 flex-1 flex-col gap-4">
-              <p className="text-sm text-slate-300">{panels[0].description}</p>
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950/50">
-                <div className="flex items-center justify-between border-b border-slate-800/80 px-4 py-3">
-                  <div className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.3em] text-slate-400">
-                    Live Conversation
-                  </div>
-                  <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-slate-400">
-                    <span className="h-2 w-2 rounded-full bg-emerald-300/90 shadow-[0_0_10px_rgba(16,185,129,0.6)]" />
-                    Active
-                  </div>
-                </div>
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 px-4 py-2 text-[11px] text-slate-300">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="rounded-full border border-emerald-300/40 bg-emerald-300/10 px-2 py-0.5 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.3em] text-emerald-200">
@@ -849,7 +2453,7 @@ export function Layout() {
                       : 'Click a backlog card to focus.'}
                   </span>
                 </div>
-                <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+                <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
                   <div className="flex flex-col">
                     {groupedMessages.length === 0 ? (
                       <div className="flex flex-1 flex-col items-center justify-center gap-2 py-12 text-center text-sm text-slate-400">
@@ -991,41 +2595,29 @@ export function Layout() {
 
           <section
             aria-label="Preview panel"
-            className={`${panelShell} ${
-              activePanel === 'preview' ? 'block' : 'hidden'
-            } md:block`}
+            className={`${previewPanelShell} order-1 lg:order-1 lg:col-span-2`}
           >
             <PreviewPanel
               key={previewResetKey}
-              kicker={panels[1].kicker}
               label={panels[1].label}
-              description={panels[1].description}
               sessionId={activeSessionId}
             />
           </section>
 
           <section
             aria-label="Backlog panel"
-            className={`${panelShell} ${
-              activePanel === 'backlog' ? 'block' : 'hidden'
-            } md:block`}
+            className={`${workPanelShell} order-3 lg:order-3`}
           >
             <header className="flex items-center justify-between">
-              <div>
-                <p className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.3em] text-slate-400">
-                  {panels[2].kicker}
-                </p>
-                <h2 className="text-xl font-semibold tracking-tight">{panels[2].label}</h2>
-              </div>
+              <h2 className="font-['JetBrains_Mono'] text-lg font-bold uppercase tracking-[0.22em] text-slate-100">
+                {panels[2].label}
+              </h2>
               <div className="flex items-center gap-2">
                 {isPaused && (
                   <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-amber-200">
                     Paused
                   </span>
                 )}
-                <span className="rounded-full border border-slate-800/80 px-3 py-1 font-['JetBrains_Mono'] text-xs uppercase tracking-[0.2em] text-slate-300">
-                  Locked
-                </span>
                 <button
                   type="button"
                   onClick={togglePause}
@@ -1035,8 +2627,7 @@ export function Layout() {
                 </button>
               </div>
             </header>
-            <div className="flex min-h-0 flex-1 flex-col gap-4">
-              <p className="text-sm text-slate-300">{panels[2].description}</p>
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex min-h-0 flex-1 flex-col gap-3">
                 {onDeckItem ? (
                   <div
@@ -1142,7 +2733,7 @@ export function Layout() {
                         isPaused ? 'opacity-70' : ''
                       } ${revertPulse ? 'animate-backlog-revert' : ''}`}
                     >
-                      {queueItems.map((item) => {
+                      {queueItems.map((item, index) => {
                         const isFocused = focusedItemId === item.id;
                         const isDragTarget = dragOverId === item.id;
                         const isDraggable =
@@ -1396,6 +2987,16 @@ export function Layout() {
               </div>
             </div>
           </section>
+          {runtimeConfig.logViewerEnabled && (
+            <section
+              aria-label="Log viewer panel"
+              className={`${logsPanelShell} order-4 lg:order-4 lg:col-span-2`}
+            >
+              <LogViewerPanel
+                label={panels[3].label}
+              />
+            </section>
+          )}
         </div>
       </main>
     </div>

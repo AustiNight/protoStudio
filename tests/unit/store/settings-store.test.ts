@@ -66,6 +66,10 @@ function buildSettingsPayload(): SettingsPayload {
       chat: { provider: 'openai', model: 'gpt-4o-mini' },
       builder: { provider: 'openai', model: 'gpt-4o-mini' },
     },
+    openaiThinking: {
+      chat: 'default',
+      builder: 'default',
+    },
     deployTokens: {
       github: 'ghp-token',
       cloudflare: 'cf-token',

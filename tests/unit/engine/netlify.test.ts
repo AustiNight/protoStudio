@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { deployToNetlify } from '../../../src/engine/deploy/hosts/netlify';
+import type { FetchFn } from '../../../src/engine/deploy/deploy-manager';
 import { VirtualFileSystem } from '../../../src/engine/vfs/vfs';
 import type { VfsMetadata } from '../../../src/types/vfs';
 
-type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type FetchArgs = [RequestInfo | URL, RequestInit?];
 
 function createMockResponse(status: number, body: unknown): Response {
   return {
@@ -15,7 +16,7 @@ function createMockResponse(status: number, body: unknown): Response {
     json: async () => body,
     text: async () =>
       typeof body === 'string' ? body : JSON.stringify(body),
-  } as Response;
+  } as unknown as Response;
 }
 
 async function buildVfs(): Promise<VirtualFileSystem> {
@@ -46,8 +47,8 @@ function createFetchMock(
   siteId: string,
   deployId: string,
   required: string[],
-): FetchFn {
-  return vi.fn(async (input, init) => {
+) {
+  return vi.fn<FetchArgs, Promise<Response>>(async (input, init) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
 
@@ -83,7 +84,7 @@ function createFetchMock(
     }
 
     return createMockResponse(404, { message: 'Not found' });
-  }) as unknown as FetchFn;
+  });
 }
 
 describe('deployToNetlify', () => {
@@ -101,7 +102,7 @@ describe('deployToNetlify', () => {
       vfs,
       sessionId: 'session-1',
       apiBaseUrl,
-      fetchFn,
+      fetchFn: fetchFn as unknown as FetchFn,
     });
 
     expect(result.ok).toBe(true);
@@ -150,7 +151,7 @@ describe('deployToNetlify', () => {
       vfs,
       sessionId: 'session-2',
       apiBaseUrl,
-      fetchFn,
+      fetchFn: fetchFn as unknown as FetchFn,
     });
 
     expect(result.ok).toBe(true);
@@ -163,14 +164,14 @@ describe('deployToNetlify', () => {
     const apiBaseUrl = 'https://api.netlify.test/api/v1';
     const vfs = await buildVfs();
 
-    const fetchFn = vi.fn(async (input, init) => {
+    const fetchFn = vi.fn<FetchArgs, Promise<Response>>(async (input, init) => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method ?? 'GET';
       if (url === `${apiBaseUrl}/sites` && method === 'POST') {
         return createMockResponse(401, { message: 'Unauthorized' });
       }
       return createMockResponse(404, { message: 'Not found' });
-    }) as unknown as FetchFn;
+    });
 
     const result = await deployToNetlify({
       token: 'bad-token',
@@ -178,7 +179,7 @@ describe('deployToNetlify', () => {
       vfs,
       sessionId: 'session-3',
       apiBaseUrl,
-      fetchFn,
+      fetchFn: fetchFn as unknown as FetchFn,
     });
 
     expect(result.ok).toBe(false);

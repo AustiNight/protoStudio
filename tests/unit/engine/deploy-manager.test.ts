@@ -72,7 +72,7 @@ describe('deploy manager', () => {
       status: 'live',
     };
 
-    const deployer = vi.fn(async () => ({ ok: true, value: deployment }));
+    const deployer = vi.fn(async () => ({ ok: true as const, value: deployment }));
 
     const result = await deploySite({
       vfs,
@@ -93,7 +93,7 @@ describe('deploy manager', () => {
     await vfs.addFile('node_modules/react/index.js', 'export const React = {};');
 
     const deployer = vi.fn(async () => ({
-      ok: true,
+      ok: true as const,
       value: {
         id: 'deploy-2',
         sessionId: 'session-2',

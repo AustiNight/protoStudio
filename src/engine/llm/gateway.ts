@@ -9,6 +9,7 @@ import type {
   LLMRunningTotal,
 } from '../../types/llm';
 import type { LLMConfig, LLMModelSelection, LLMProviderName } from '../../types/session';
+import { resolveOpenAIReasoningEffortForModel } from '../../config/openai-reasoning';
 import { calculateCost } from './cost';
 import { AnthropicProvider } from './providers/anthropic';
 import { GoogleProvider } from './providers/google';
@@ -48,7 +49,22 @@ export class LLMGateway {
       return errResult(error);
     }
 
+    const modelCompatibilityError = getModelCompatibilityError(
+      providerName,
+      selection.model,
+    );
+    if (modelCompatibilityError) {
+      this.telemetry?.onError?.(request, modelCompatibilityError);
+      return errResult(modelCompatibilityError);
+    }
+
     const messages = buildMessages(request.systemPrompt, request.messages);
+    const reasoningEffort = resolveOpenAIReasoningEffort(
+      providerName,
+      selection.model,
+      request.reasoningEffort,
+      this.config.openAIReasoning?.[request.role],
+    );
     this.telemetry?.onRequest?.(request, selection);
 
     const result = await provider.call(
@@ -59,6 +75,7 @@ export class LLMGateway {
         responseFormat: request.responseFormat,
         maxTokens: request.maxTokens,
         temperature: request.temperature,
+        reasoningEffort,
       },
     );
 
@@ -120,6 +137,43 @@ function buildProviderMissingError(provider: LLMProviderName): LLMError {
     message: `Provider ${provider} is not configured in the gateway.`,
     provider,
   };
+}
+
+function getModelCompatibilityError(
+  provider: LLMProviderName,
+  model: string,
+): LLMError | null {
+  if (
+    provider === 'openai' &&
+    isResponsesOnlyOpenAIModel(model)
+  ) {
+    return {
+      category: 'user_action',
+      code: 'provider_error',
+      message:
+        `${model} requires the OpenAI Responses API. ` +
+        'This app currently uses Chat Completions for OpenAI requests.',
+      provider,
+    };
+  }
+
+  return null;
+}
+
+function isResponsesOnlyOpenAIModel(model: string): boolean {
+  return /-codex(?:$|-)/i.test(model.trim());
+}
+
+function resolveOpenAIReasoningEffort(
+  provider: LLMProviderName,
+  model: string,
+  requestValue: LLMRequest['reasoningEffort'],
+  configValue: LLMRequest['reasoningEffort'] | undefined,
+) {
+  if (provider !== 'openai') {
+    return undefined;
+  }
+  return resolveOpenAIReasoningEffortForModel(model, requestValue ?? configValue);
 }
 
 function okResult<T, E>(value: T): Result<T, E> {

@@ -1,17 +1,33 @@
 import { expect, test } from '@playwright/test';
+import { gotoApp } from './utils/navigation';
 
 test('template flow swaps and deploys a preview', async ({ page }) => {
-  await page.goto('/');
+  await gotoApp(page);
 
-  await expect(
-    page.getByText('We need a launch page for a ceramics studio in Portland.'),
-  ).toBeVisible();
+  const closeSettings = page.getByRole('button', { name: 'Close' }).first();
+  if (await closeSettings.isVisible()) {
+    await closeSettings.click();
+    await expect(closeSettings).toBeHidden();
+  }
 
-  const blueFrame = page.frameLocator('iframe[title="Preview slot blue"]');
-  await expect(blueFrame.getByText('JUNIPER')).toBeVisible();
+  await page.getByRole('button', { name: 'New Conversation' }).click();
+  const resetDialog = page.getByRole('dialog', { name: 'Start a new conversation?' });
+  await expect(resetDialog).toBeVisible();
+  await resetDialog.getByRole('button', { name: 'Start fresh' }).click();
+  await expect(resetDialog).toBeHidden();
+
+  const chatPanel = page.getByLabel('Chat panel');
+  await expect(chatPanel.getByText('New session')).toBeVisible();
+  const composer = chatPanel.getByLabel('Chat composer');
+  await composer.fill('We need a launch page for a ceramics studio in Portland.');
+  await composer.press('Enter');
+  await expect(chatPanel.getByText("Here's your first preview!")).toBeVisible({
+    timeout: 45_000,
+  });
 
   const validateButton = page.getByRole('button', { name: /Validate/i });
   const swapButton = page.getByRole('button', { name: 'Swap' });
+  await expect(validateButton).toBeEnabled({ timeout: 45_000 });
 
   let expectedLiveLabel = 'Green Live';
   for (let i = 0; i < 3; i += 1) {

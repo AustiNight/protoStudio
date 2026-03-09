@@ -105,7 +105,7 @@ export const createBacklogStore = () =>
       }),
     setOnDeck: (itemId) =>
       set((state) => {
-        const nextItems = state.items.map((item) => {
+        const nextItems = state.items.map((item): WorkItem => {
           if (item.id === itemId) {
             return { ...item, status: 'on_deck' };
           }
@@ -125,7 +125,7 @@ export const createBacklogStore = () =>
         const sorted = sortByOrder(backlogItems);
         const nextItem = sorted[0];
         if (!nextItem) {
-          const resetItems = state.items.map((item) => {
+          const resetItems = state.items.map((item): WorkItem => {
             if (item.id === state.onDeckId && item.status === 'on_deck') {
               return { ...item, status: 'backlog' };
             }
@@ -137,7 +137,7 @@ export const createBacklogStore = () =>
           };
         }
 
-        const nextItems = state.items.map((item) => {
+        const nextItems = state.items.map((item): WorkItem => {
           if (item.id === nextItem.id) {
             return { ...item, status: 'on_deck' };
           }

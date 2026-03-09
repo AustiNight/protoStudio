@@ -64,6 +64,7 @@ describe('ClassificationEngine', () => {
     expect(request.systemPrompt).toContain('High-converting SaaS landing pages.');
     expect(request.systemPrompt).toContain('Showcase creative work with galleries.');
     expect(request.messages[0]?.content).toBe('Build a landing page for my SaaS.');
+    expect(request.reasoningEffort).toBe('minimal');
   });
 
   it('should parse a valid template-match response', () => {

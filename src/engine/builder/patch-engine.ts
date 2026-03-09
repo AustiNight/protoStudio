@@ -18,6 +18,7 @@ import { VirtualFileSystem } from '../vfs/vfs';
 
 const CSS_INSERT_REGEX = /\/\*\s*PP:CSS_INSERT_POINT\s*\*\//;
 const JS_INSERT_REGEX = /\/\/\s*PP:JS_INSERT_POINT/;
+type OperationLike = PatchOperation | Record<string, unknown>;
 
 export class PatchEngine {
   async apply(vfs: VirtualFileSystem, patch: BuildPatch): Promise<PatchResult> {
@@ -35,7 +36,8 @@ export class PatchEngine {
     const clone = vfs.clone();
 
     for (const op of patch.operations) {
-      const result = await applyOperation(clone, op, currentVersion);
+      const normalizedOp = normalizeOperation(op, clone, currentVersion);
+      const result = await applyOperation(clone, normalizedOp, currentVersion);
       if (!result.success) {
         return result;
       }
@@ -46,6 +48,382 @@ export class PatchEngine {
 
     return { success: true, version: vfs.getVersion() };
   }
+}
+
+function normalizeOperation(
+  op: OperationLike,
+  vfs: VirtualFileSystem,
+  expectedVersion: number,
+): PatchOperation {
+  const record = { ...(op as Record<string, unknown>) };
+  const normalizedOp = normalizeOperationName(pickString(record, ['op']) ?? '');
+  if (normalizedOp) {
+    record.op = normalizedOp;
+  }
+  const opName = typeof record.op === 'string' ? record.op : '';
+
+  const fileFromAlias = pickString(
+    record,
+    ['file', 'path', 'filePath', 'targetFile', 'targetPath', 'filename'],
+  );
+  const inferredFile = inferDefaultFile(opName, vfs);
+  const normalizedFile = fileFromAlias ?? inferredFile;
+  if (normalizedFile) {
+    record.file = normalizedFile;
+  }
+
+  switch (opName) {
+    case 'section.replace':
+    case 'section.insert':
+    case 'section.delete': {
+      let sectionId = pickString(record, [
+        'sectionId',
+        'section',
+        'targetSection',
+        'sectionName',
+        'id',
+      ]);
+      if (!sectionId && normalizedFile) {
+        sectionId = inferFirstSectionId(vfs, normalizedFile);
+      }
+      if (sectionId) {
+        record.sectionId = sectionId;
+      }
+      if (opName !== 'section.delete') {
+        let html = pickString(record, [
+          'html',
+          'content',
+          'markup',
+          'innerHtml',
+          'sectionHtml',
+        ]);
+        if (!html && normalizedFile && sectionId && opName === 'section.replace') {
+          html = extractSectionBody(vfs, normalizedFile, sectionId);
+        }
+        if (!html && sectionId) {
+          html = fallbackSectionMarkup(sectionId);
+        }
+        if (!html && sectionId && opName === 'section.insert') {
+          html = [
+            `<!-- PP:SECTION:${sectionId} -->`,
+            `<section data-pp-section="${sectionId}"><h2>${sectionId}</h2></section>`,
+            `<!-- /PP:SECTION:${sectionId} -->`,
+          ].join('\n');
+        }
+        if (html) {
+          if (sectionId && opName === 'section.insert') {
+            record.html = ensureSectionAnchors(html, sectionId);
+          } else if (sectionId && opName === 'section.replace') {
+            record.html = stripSectionAnchors(html, sectionId);
+          } else {
+            record.html = html;
+          }
+        }
+      }
+      if (opName === 'section.insert') {
+        const before = pickString(record, [
+          'before',
+          'insertBefore',
+          'targetMarker',
+          'marker',
+        ]);
+        const inferredBefore = normalizedFile
+          ? inferFirstInsertMarkerId(vfs, normalizedFile)
+          : null;
+        record.before = before ?? inferredBefore ?? sectionId ?? 'footer';
+      }
+      break;
+    }
+    case 'css.append':
+    case 'css.replace': {
+      const blockId = pickString(record, ['blockId', 'block', 'targetBlock', 'id']);
+      if (blockId) {
+        record.blockId = blockId;
+      }
+      const css = pickString(record, ['css', 'content', 'code', 'styles']);
+      if (css) {
+        if (blockId && opName === 'css.append' && !hasBlockAnchors(css, blockId)) {
+          record.css = ensureBlockAnchors(css, blockId);
+        } else {
+          record.css = css;
+        }
+      }
+      break;
+    }
+    case 'js.append':
+    case 'js.replace': {
+      const funcId = pickString(record, ['funcId', 'functionId', 'function', 'targetFunction', 'id']);
+      if (funcId) {
+        record.funcId = funcId;
+      }
+      const js = pickString(record, ['js', 'content', 'code', 'script']);
+      if (js) {
+        if (funcId && opName === 'js.append' && !hasFuncAnchors(js, funcId)) {
+          record.js = ensureFuncAnchors(js, funcId);
+        } else {
+          record.js = js;
+        }
+      }
+      break;
+    }
+    case 'file.create': {
+      const content = pickString(record, ['content', 'text', 'body']);
+      if (content) {
+        record.content = content;
+      }
+      break;
+    }
+    case 'meta.update': {
+      const fields = record.fields;
+      if (!fields || typeof fields !== 'object') {
+        const alias = record.metadata ?? record.meta;
+        if (alias && typeof alias === 'object') {
+          record.fields = alias;
+        }
+      }
+      break;
+    }
+    default:
+      break;
+  }
+
+  if (requiresIfVersion(opName)) {
+    const ifVersion = record.ifVersion;
+    if (
+      typeof ifVersion !== 'number' ||
+      Number.isNaN(ifVersion) ||
+      ifVersion !== expectedVersion
+    ) {
+      record.ifVersion = expectedVersion;
+    }
+  }
+
+  if (opName === 'file.create') {
+    if (typeof record.ifAbsent !== 'boolean') {
+      record.ifAbsent = true;
+    }
+  }
+
+  return record as unknown as PatchOperation;
+}
+
+function pickString(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function normalizeOperationName(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  switch (normalized) {
+    case 'asset.create':
+    case 'asset.add':
+    case 'file.add':
+      return 'file.create';
+    case 'asset.delete':
+    case 'asset.remove':
+    case 'file.remove':
+      return 'file.delete';
+    case 'section.add':
+      return 'section.insert';
+    case 'section.update':
+      return 'section.replace';
+    case 'section.remove':
+      return 'section.delete';
+    case 'css.add':
+      return 'css.append';
+    case 'css.update':
+      return 'css.replace';
+    case 'js.add':
+      return 'js.append';
+    case 'js.update':
+      return 'js.replace';
+    case 'metadata.update':
+    case 'meta.patch':
+    case 'metadata.patch':
+      return 'meta.update';
+    default:
+      return normalized;
+  }
+}
+
+function requiresIfVersion(op: string): boolean {
+  switch (op) {
+    case 'section.replace':
+    case 'section.insert':
+    case 'section.delete':
+    case 'css.append':
+    case 'css.replace':
+    case 'js.append':
+    case 'js.replace':
+    case 'file.delete':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function inferDefaultFile(
+  op: string,
+  vfs: VirtualFileSystem,
+): string | null {
+  const candidates = (() => {
+    switch (op) {
+      case 'section.replace':
+      case 'section.insert':
+      case 'section.delete':
+      case 'meta.update':
+        return ['index.html', 'index.htm', 'pages/index.html'];
+      case 'css.append':
+      case 'css.replace':
+        return ['styles.css', 'style.css', 'assets/styles.css'];
+      case 'js.append':
+      case 'js.replace':
+        return ['main.js', 'script.js', 'assets/main.js'];
+      default:
+        return [] as string[];
+    }
+  })();
+
+  for (const candidate of candidates) {
+    if (vfs.hasFile(candidate)) {
+      return candidate;
+    }
+  }
+  const extensions = (() => {
+    switch (op) {
+      case 'section.replace':
+      case 'section.insert':
+      case 'section.delete':
+      case 'meta.update':
+        return ['.html'];
+      case 'css.append':
+      case 'css.replace':
+        return ['.css'];
+      case 'js.append':
+      case 'js.replace':
+        return ['.js', '.mjs'];
+      default:
+        return [] as string[];
+    }
+  })();
+  if (extensions.length > 0) {
+    const file = vfs
+      .listFiles()
+      .sort()
+      .find((path) =>
+        extensions.some((extension) => path.toLowerCase().endsWith(extension)),
+      );
+    if (file) {
+      return file;
+    }
+  }
+  return null;
+}
+
+function inferFirstSectionId(vfs: VirtualFileSystem, file: string): string | null {
+  const content = vfs.getFile(file)?.content;
+  if (!content) {
+    return null;
+  }
+  const anchor = content.match(/<!--\s*PP:SECTION:([a-zA-Z0-9_-]+)\s*-->/);
+  if (anchor?.[1]) {
+    return anchor[1];
+  }
+  const dataAttr = content.match(/data-pp-section=["']([a-zA-Z0-9_-]+)["']/i);
+  if (dataAttr?.[1]) {
+    return dataAttr[1];
+  }
+  const sectionId = content.match(/<section[^>]*\sid=["']([a-zA-Z0-9_-]+)["']/i);
+  if (sectionId?.[1]) {
+    return sectionId[1];
+  }
+  return null;
+}
+
+function extractSectionBody(
+  vfs: VirtualFileSystem,
+  file: string,
+  sectionId: string,
+): string | null {
+  const content = vfs.getFile(file)?.content;
+  if (!content) {
+    return null;
+  }
+  const escaped = sectionId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(
+    `<!--\\s*PP:SECTION:${escaped}\\s*-->([\\s\\S]*?)<!--\\s*\\/PP:SECTION:${escaped}\\s*-->`,
+    'm',
+  );
+  const match = content.match(regex);
+  const body = match?.[1]?.trim();
+  return body && body.length > 0 ? body : null;
+}
+
+function inferFirstInsertMarkerId(vfs: VirtualFileSystem, file: string): string | null {
+  const content = vfs.getFile(file)?.content;
+  if (!content) {
+    return null;
+  }
+  const match = content.match(/<!--\s*PP:INSERT_BEFORE:([a-zA-Z0-9_-]+)\s*-->/);
+  return match?.[1] ?? null;
+}
+
+function ensureSectionAnchors(html: string, sectionId: string): string {
+  if (hasSectionAnchors(html, sectionId)) {
+    return html;
+  }
+  return [
+    `<!-- PP:SECTION:${sectionId} -->`,
+    html.trim(),
+    `<!-- /PP:SECTION:${sectionId} -->`,
+  ].join('\n');
+}
+
+function stripSectionAnchors(html: string, sectionId: string): string {
+  const escaped = escapeRegExp(sectionId);
+  const regex = new RegExp(
+    `<!--\\s*PP:SECTION:${escaped}\\s*-->([\\s\\S]*?)<!--\\s*\\/PP:SECTION:${escaped}\\s*-->`,
+    'm',
+  );
+  const match = html.match(regex);
+  if (match?.[1]) {
+    return match[1].trim();
+  }
+  return html.trim();
+}
+
+function ensureBlockAnchors(css: string, blockId: string): string {
+  if (hasBlockAnchors(css, blockId)) {
+    return css;
+  }
+  return [
+    `/* === PP:BLOCK:${blockId} === */`,
+    css.trim(),
+    `/* === /PP:BLOCK:${blockId} === */`,
+  ].join('\n');
+}
+
+function ensureFuncAnchors(js: string, funcId: string): string {
+  if (hasFuncAnchors(js, funcId)) {
+    return js;
+  }
+  return [
+    `// === PP:FUNC:${funcId} ===`,
+    js.trim(),
+    `// === /PP:FUNC:${funcId} ===`,
+  ].join('\n');
+}
+
+function fallbackSectionMarkup(sectionId: string): string {
+  return `<section data-pp-section="${sectionId}"><h2>${sectionId}</h2></section>`;
 }
 
 function isValidPatch(patch: BuildPatch): boolean {
@@ -97,8 +475,10 @@ async function applyOperation(
       return applyFileDelete(vfs, op, expectedVersion);
     case 'meta.update':
       return applyMetadataUpdate(vfs, op);
-    default:
-      return failure(`Unknown patch operation "${String(op.op)}".`, op);
+    default: {
+      const unknownOp = op as PatchOperation;
+      return failure(`Unknown patch operation "${String(unknownOp.op)}".`, unknownOp);
+    }
   }
 }
 

@@ -213,7 +213,11 @@ export class BuilderLoop {
         input.conversation,
       );
 
-      const builderPrompt = buildBuilderPrompt(context, retryContext);
+      const builderPrompt = buildBuilderPrompt(
+        context,
+        retryContext,
+        typeof atom.expectedSectionDelta === 'number' ? atom.expectedSectionDelta : 0,
+      );
 
       this.setPhase('awaiting_llm');
       const llmResult = await this.gateway.send({
@@ -262,7 +266,7 @@ export class BuilderLoop {
         return okResult(outcome);
       }
 
-      const patch = parsed.value;
+      const patch = normalizePatchForRuntime(parsed.value, input.vfs);
       this.setPhase('validating_patch');
 
       const patchValidationError = validatePatch(atom, input.vfs, patch);
@@ -282,7 +286,10 @@ export class BuilderLoop {
       const sandbox = input.vfs.clone();
       const patchResult = await this.patchEngine.apply(sandbox, patch);
       if (!patchResult.success) {
-        const reason = patchResult.error ?? 'Patch application failed.';
+        const failedOpDetail = patchResult.failedOp
+          ? ` Failed op: ${JSON.stringify(patchResult.failedOp)}`
+          : '';
+        const reason = `${patchResult.error ?? 'Patch application failed.'}${failedOpDetail}`;
         const decision = this.recordFailure(atom, reason, attempt);
         this.recordBuildFailure(atom, attemptStartedAt, 'patch');
         if (decision.action === 'retry') {
@@ -547,7 +554,7 @@ function buildBuilderPrompt(context: {
   adjacentSections: unknown[];
   patchFormat: string;
   conversation: ChatMessage[];
-}, retry: RetryContext | null): string {
+}, retry: RetryContext | null, expectedSectionDelta = 0): string {
   const sections: string[] = [];
 
   if (retry) {
@@ -570,10 +577,40 @@ function buildBuilderPrompt(context: {
   sections.push(JSON.stringify(context.adjacentSections, null, 2));
   sections.push('Patch format:');
   sections.push(context.patchFormat || '');
+  sections.push('Hard constraints:');
+  sections.push('- Output exactly one JSON object (no markdown, no prose).');
+  sections.push(
+    '- Use only supported op values: section.replace, section.insert, section.delete, css.append, css.replace, js.append, js.replace, file.create, file.delete, meta.update.',
+  );
+  sections.push('- Do not emit alias op names such as asset.create or file.add.');
+  sections.push('- Set targetVersion and each ifVersion to the current VFS version.');
+  sections.push(`- Expected section delta: ${expectedSectionDelta}.`);
+  if (expectedSectionDelta === 0) {
+    sections.push('- Do not add or remove sections. Avoid section.insert and section.delete.');
+  }
+  if (
+    retry?.violations?.some((violation) => violation.startsWith('section_count_delta'))
+  ) {
+    sections.push('- Previous retry changed section count. Keep section count unchanged.');
+  }
   sections.push('Conversation:');
   sections.push(JSON.stringify(context.conversation, null, 2));
 
   return sections.filter((section) => section.trim().length > 0).join('\n\n');
+}
+
+function normalizePatchForRuntime(
+  patch: BuildPatch,
+  vfs: VirtualFileSystem,
+): BuildPatch {
+  const currentVersion = vfs.getVersion();
+  if (patch.targetVersion === currentVersion) {
+    return patch;
+  }
+  return {
+    ...patch,
+    targetVersion: currentVersion,
+  };
 }
 
 function parsePatchResponse(raw: string): Result<BuildPatch, AppError> {
@@ -734,17 +771,16 @@ function hasMetadataChanged(before: VirtualFileSystem, after: VirtualFileSystem)
   return false;
 }
 
-function shallowEqual(
-  left: Record<string, string>,
-  right: Record<string, string>,
-): boolean {
-  const leftKeys = Object.keys(left);
-  const rightKeys = Object.keys(right);
+function shallowEqual<T extends object, U extends object>(left: T, right: U): boolean {
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  const rightKeys = Object.keys(rightRecord);
   if (leftKeys.length !== rightKeys.length) {
     return false;
   }
   for (const key of leftKeys) {
-    if (left[key] !== right[key]) {
+    if (leftRecord[key] !== rightRecord[key]) {
       return false;
     }
   }

@@ -47,4 +47,36 @@ more setup overhead, Puppeteer (no built-in test runner).
 
 (new entries appended here by agents)
 
+### D-006 | 2026-03-02 | Move OpenAI key validation to engine-level API checks
+**Decision:** Run OpenAI key ping via `src/engine/llm/openai-key-validation.ts` and consume
+that service from UI, using `GET https://api.openai.com/v1/models` response mapping
+(`200` valid, `401/403` invalid auth, `429` rate-limited, others as service/connectivity).
+**Rationale:** Keeps provider/network logic out of React UI, prevents regex-only false negatives,
+supports timeout/cancellation/stale-response handling, and centralizes key-safe behavior.
+**Alternatives:** UI-local regex checks (too inaccurate), UI-direct fetch calls
+(architecture violation + duplicated logic).
+
+### D-007 | 2026-03-02 | Require official source metadata for OpenAI model catalog updates
+**Decision:** Enforce `sourceUrls` (OpenAI official docs only) and `reviewedAt: 2026-03-02`
+for OpenAI entries in `src/config/model-pricing.json` via schema + tests.
+**Rationale:** Model availability and pricing change quickly; source and review stamping makes
+catalog updates auditable and reduces drift.
+**Alternatives:** Unstamped/manual model edits (higher risk of stale/unsupported entries),
+third-party model lists (non-authoritative).
+
+### D-008 | 2026-03-02 | Keep runtime settings store-backed as single source of truth
+**Decision:** Treat `useSettingsStore` as canonical for provider/model/key runtime behavior;
+`SettingsModal` reads/writes through store state instead of diverging local-only state.
+**Rationale:** Prevents modal/runtime mismatch, ensures preview/deploy/chat consumers see updates
+without refresh, and preserves encrypted settings UX semantics.
+**Alternatives:** Modal-local state with delayed sync (drift/regression risk), scattered per-feature state.
+
+### D-009 | 2026-03-02 | Scope cost ticker to the active telemetry session
+**Decision:** Compute visible cost from `llm.response` events tied to the active `sessionId`,
+rotate telemetry session on New Conversation, and reset active totals to zero for the new session.
+**Rationale:** Prevents cross-conversation cost bleed and keeps header cost aligned with current chat context;
+rehydration restores only the resumed session totals.
+**Alternatives:** Global cumulative cost across sessions (confusing for per-conversation UX),
+hardcoded/demo cost values (non-runtime-accurate).
+ 
 ---

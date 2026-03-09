@@ -28,9 +28,9 @@ export interface ScaffoldHealthManagerOptions {
 }
 
 const DEFAULT_THRESHOLDS: ScaffoldHealthThresholds = {
-  healthy: 90,
-  degraded: 70,
-  critical: 50,
+  healthy: 95,
+  degraded: 85,
+  critical: 75,
 };
 
 const EMPTY_REPAIR: RepairResult = { repaired: 0, unrepairable: 0 };

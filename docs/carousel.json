@@ -1,0 +1,9 @@
+{
+  "title": "Deep Searches",
+  "description": "AI-assisted research and synthesis workspace leveraging Socrata openData & public APIs.",
+  "imageUrl": "https://deepsearches.app/preview-carousel.jpg?v=1",
+  "tags": ["ai", "search", "research"],
+  "projectKey": "deepsearches",
+  "repoUrl": "https://github.com/AustiNight/deepsearches",
+  "carouselText": "Built for multi-source deep research with fast query iteration, summarized outputs, and deployment-first UX."
+}

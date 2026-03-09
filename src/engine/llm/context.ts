@@ -133,7 +133,7 @@ export class ContextManager {
       this.estimateTokens(this.builder.patchFormat ?? '') +
       this.estimateTokens(cssVariables);
 
-    let affectedSections = buildSectionContexts(
+    const affectedSections = buildSectionContexts(
       affectedBlocks,
       'full',
       false,
@@ -148,7 +148,7 @@ export class ContextManager {
     );
 
     let sectionTokens = sumSectionTokens(affectedSections) + sumSectionTokens(adjacentSections);
-    let available = calculateAvailable(this.builder.maxTokens, this.builder.reservedForOutput);
+    const available = calculateAvailable(this.builder.maxTokens, this.builder.reservedForOutput);
     let historyBudget = available - fixedTokens - sectionTokens;
     let ratio = calculateRatio(historyBudget, available);
 
@@ -168,12 +168,12 @@ export class ContextManager {
     const maxTail = getTailLimit(ratio, this.thresholds);
     const trimmedConversation = this.trimConversation(conversation, historyBudget, maxTail);
 
-    let conversationMessages = trimmedConversation.messages;
-    let conversationTokens = trimmedConversation.tokens;
+    const conversationMessages = trimmedConversation.messages;
+    const conversationTokens = trimmedConversation.tokens;
 
-    let mode: ContextMode = ratio < this.thresholds.minimal ? 'minimal' : 'normal';
+    const mode: ContextMode = ratio < this.thresholds.minimal ? 'minimal' : 'normal';
 
-    let budget = this.buildBudget({
+    const budget = this.buildBudget({
       model: this.builder.model,
       maxTokens: this.builder.maxTokens,
       reservedForOutput: this.builder.reservedForOutput,
@@ -187,7 +187,7 @@ export class ContextManager {
       conversationTokens,
     });
 
-    let used = sumBudgetTokens(budget);
+    const used = sumBudgetTokens(budget);
 
     if (mode === 'minimal' || used > available) {
       const minimal = this.assembleMinimalBuildContext({
@@ -233,18 +233,18 @@ export class ContextManager {
       this.estimateTokens(backlogSummary);
 
     const available = calculateAvailable(this.chat.maxTokens, this.chat.reservedForOutput);
-    let historyBudget = available - fixedTokens;
-    let ratio = calculateRatio(historyBudget, available);
+    const historyBudget = available - fixedTokens;
+    const ratio = calculateRatio(historyBudget, available);
 
     const maxTail = getTailLimit(ratio, this.thresholds);
     const trimmedConversation = this.trimConversation(conversation, historyBudget, maxTail);
 
-    let conversationMessages = trimmedConversation.messages;
-    let conversationTokens = trimmedConversation.tokens;
+    const conversationMessages = trimmedConversation.messages;
+    const conversationTokens = trimmedConversation.tokens;
 
-    let mode: ContextMode = ratio < this.thresholds.minimal ? 'minimal' : 'normal';
+    const mode: ContextMode = ratio < this.thresholds.minimal ? 'minimal' : 'normal';
 
-    let budget = this.buildBudget({
+    const budget = this.buildBudget({
       model: this.chat.model,
       maxTokens: this.chat.maxTokens,
       reservedForOutput: this.chat.reservedForOutput,
@@ -258,7 +258,7 @@ export class ContextManager {
       conversationTokens,
     });
 
-    let used = sumBudgetTokens(budget);
+    const used = sumBudgetTokens(budget);
 
     if (mode === 'minimal' || used > available) {
       const minimal = this.assembleMinimalChatContext({
@@ -382,8 +382,14 @@ export class ContextManager {
     );
 
     let affectedDetail: SectionDetail = 'full';
-    let adjacentDetail: SectionDetail = 'signature';
+    const adjacentDetail: SectionDetail = 'signature';
     let conversationMessages = input.conversation.length > 0 ? [input.conversation[0]] : [];
+    if (input.conversation.length > 1 && conversationMessages[0]) {
+      conversationMessages = [
+        conversationMessages[0],
+        buildSummaryMessage(conversationMessages[0], input.conversation.length - 1),
+      ];
+    }
 
     let affectedSections = buildSectionContexts(
       input.affectedBlocks,
@@ -391,7 +397,7 @@ export class ContextManager {
       false,
       this.estimateTokens.bind(this),
     );
-    let adjacentSections = buildSectionContexts(
+    const adjacentSections = buildSectionContexts(
       input.adjacentBlocks,
       adjacentDetail,
       true,
@@ -490,12 +496,18 @@ export class ContextManager {
     const available = calculateAvailable(this.chat.maxTokens, this.chat.reservedForOutput);
     let backlogSummary = input.backlogSummary;
     let conversationMessages = input.conversation.length > 0 ? [input.conversation[0]] : [];
-    let conversationTokens = sumConversationTokens(
+    if (input.conversation.length > 1 && conversationMessages[0]) {
+      conversationMessages = [
+        conversationMessages[0],
+        buildSummaryMessage(conversationMessages[0], input.conversation.length - 1),
+      ];
+    }
+    const conversationTokens = sumConversationTokens(
       conversationMessages,
       this.estimateTokens.bind(this),
     );
 
-    let budget = this.buildBudget({
+    const budget = this.buildBudget({
       model: this.chat.model,
       maxTokens: this.chat.maxTokens,
       reservedForOutput: this.chat.reservedForOutput,

@@ -50,6 +50,7 @@ export class ClassificationEngine {
       'Rules:',
       '- Provide templateId only when path is "template".',
       `- If confidence < ${this.confidenceThreshold}, include a single clarifying question in "question".`,
+      '- For clearly commercial/professional website requests, choose the closest business/marketing template instead of asking for category clarification.',
       '- Confidence must be between 0.0 and 1.0.',
       'Template catalog:',
       catalogBlock,
@@ -69,6 +70,7 @@ export class ClassificationEngine {
       responseFormat: 'json',
       temperature: DEFAULT_TEMPERATURE,
       maxTokens: DEFAULT_MAX_TOKENS,
+      reasoningEffort: 'minimal',
     };
   }
 

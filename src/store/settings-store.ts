@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 
+import { runtimeConfig } from '../config/runtime-config';
 import { decrypt, encrypt, EncryptionError } from '../persistence/encryption';
 import {
   clearEncryptedSettings,
   readEncryptedSettings,
   writeEncryptedSettings,
 } from '../persistence/settings-storage';
+import type { OpenAIReasoningSetting } from '../types/llm';
 import type { LLMProviderName } from '../types/session';
 
 export type SettingsDeployHost = 'github' | 'cloudflare' | 'netlify' | 'vercel';
@@ -15,6 +17,11 @@ export interface ModelSelection {
   model: string;
 }
 
+export interface OpenAIThinkingSettings {
+  chat: OpenAIReasoningSetting;
+  builder: OpenAIReasoningSetting;
+}
+
 export interface SettingsPayload {
   version: 1;
   llmKeys: Record<LLMProviderName, string>;
@@ -22,6 +29,7 @@ export interface SettingsPayload {
     chat: ModelSelection;
     builder: ModelSelection;
   };
+  openaiThinking: OpenAIThinkingSettings;
   deployTokens: Record<SettingsDeployHost, string>;
   updatedAt: number;
 }
@@ -148,14 +156,34 @@ export const selectLlmKey = (provider: LLMProviderName) =>
   (state: SettingsStoreState) => state.settings.llmKeys[provider];
 
 function buildDefaultSettings(): SettingsPayload {
+  const defaults = runtimeConfig.settingsDefaults;
   return {
     version: 1,
-    llmKeys: { openai: '', anthropic: '', google: '' },
-    llmModels: {
-      chat: { provider: 'openai', model: 'gpt-4o-mini' },
-      builder: { provider: 'openai', model: 'gpt-4o-mini' },
+    llmKeys: {
+      openai: defaults.llmKeys.openai,
+      anthropic: defaults.llmKeys.anthropic,
+      google: defaults.llmKeys.google,
     },
-    deployTokens: { github: '', cloudflare: '', netlify: '', vercel: '' },
+    llmModels: {
+      chat: {
+        provider: defaults.chatProvider,
+        model: defaults.chatModel,
+      },
+      builder: {
+        provider: defaults.builderProvider,
+        model: defaults.builderModel,
+      },
+    },
+    openaiThinking: {
+      chat: defaults.openAIReasoning.chat,
+      builder: defaults.openAIReasoning.builder,
+    },
+    deployTokens: {
+      github: defaults.deployTokens.github,
+      cloudflare: defaults.deployTokens.cloudflare,
+      netlify: defaults.deployTokens.netlify,
+      vercel: defaults.deployTokens.vercel,
+    },
     updatedAt: 0,
   };
 }
@@ -182,6 +210,7 @@ function normalizeSettings(settings: SettingsPayload): SettingsPayload {
       chat: { ...settings.llmModels.chat },
       builder: { ...settings.llmModels.builder },
     },
+    openaiThinking: normalizeOpenAIThinking(settings.openaiThinking),
     deployTokens: { ...settings.deployTokens },
     updatedAt: now,
   };
@@ -195,6 +224,7 @@ function cloneSettings(settings: SettingsPayload): SettingsPayload {
       chat: { ...settings.llmModels.chat },
       builder: { ...settings.llmModels.builder },
     },
+    openaiThinking: normalizeOpenAIThinking(settings.openaiThinking),
     deployTokens: { ...settings.deployTokens },
     updatedAt: settings.updatedAt,
   };
@@ -203,7 +233,13 @@ function cloneSettings(settings: SettingsPayload): SettingsPayload {
 function parseSettingsPayload(payload: string): SettingsPayload | null {
   try {
     const parsed = JSON.parse(payload);
-    return isSettingsPayload(parsed) ? parsed : null;
+    if (!isSettingsPayload(parsed)) {
+      return null;
+    }
+    return {
+      ...parsed,
+      openaiThinking: normalizeOpenAIThinking(parsed.openaiThinking),
+    };
   } catch (error) {
     return null;
   }
@@ -240,6 +276,12 @@ function isSettingsPayload(value: unknown): value is SettingsPayload {
   if (!isModelSelection(value.llmModels.builder)) {
     return false;
   }
+  if (
+    hasValue(value, 'openaiThinking') &&
+    !isOpenAIThinkingSettings(value.openaiThinking)
+  ) {
+    return false;
+  }
   if (!isRecord(value.deployTokens)) {
     return false;
   }
@@ -256,6 +298,47 @@ function isSettingsPayload(value: unknown): value is SettingsPayload {
     return false;
   }
   return true;
+}
+
+function isOpenAIThinkingSettings(value: unknown): value is OpenAIThinkingSettings {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (!isOpenAIReasoningSetting(value.chat)) {
+    return false;
+  }
+  if (!isOpenAIReasoningSetting(value.builder)) {
+    return false;
+  }
+  return true;
+}
+
+function normalizeOpenAIThinking(value: unknown): OpenAIThinkingSettings {
+  const defaults = runtimeConfig.settingsDefaults.openAIReasoning;
+  if (!isRecord(value)) {
+    return {
+      chat: defaults.chat,
+      builder: defaults.builder,
+    };
+  }
+  return {
+    chat: isOpenAIReasoningSetting(value.chat) ? value.chat : defaults.chat,
+    builder: isOpenAIReasoningSetting(value.builder)
+      ? value.builder
+      : defaults.builder,
+  };
+}
+
+function isOpenAIReasoningSetting(value: unknown): value is OpenAIReasoningSetting {
+  return (
+    value === 'default' ||
+    value === 'none' ||
+    value === 'minimal' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh'
+  );
 }
 
 function isModelSelection(value: unknown): value is ModelSelection {
@@ -285,6 +368,13 @@ function isDeployToken(value: unknown): value is string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function hasValue(
+  record: Record<string, unknown>,
+  key: string,
+): boolean {
+  return record[key] !== undefined;
 }
 
 function isString(value: unknown): value is string {

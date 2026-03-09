@@ -1,12 +1,12 @@
 import type { ClassificationCustomization, ClassificationResult } from '../../types/chat';
-import type { LLMRequest, LLMResponse } from '../../types/llm';
+import type { LLMRequest, RawLLMResponse } from '../../types/llm';
 import type { ValidationIssue, ValidationResult } from '../../types/template';
 import type { AtomType, Effort, ReorderDecision, WorkItem } from '../../types/backlog';
 import type { TemplateConfig } from '../../types/template';
 
 const MAX_FILES_TOUCHED = 5;
 const MAX_LINES_CHANGED = 150;
-const DEFAULT_MAX_TOKENS = 1600;
+const DEFAULT_MAX_TOKENS = 900;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_SESSION_ID = 'session-unknown';
 
@@ -184,11 +184,12 @@ export function buildBacklogPrompt(
     responseFormat: 'json',
     temperature: DEFAULT_TEMPERATURE,
     maxTokens: DEFAULT_MAX_TOKENS,
+    reasoningEffort: 'minimal',
   };
 }
 
 export function parseBacklogResponse(
-  response: LLMResponse,
+  response: Pick<RawLLMResponse, 'content'>,
   options?: BacklogParseOptions,
 ): WorkItem[] {
   const now = options?.now ?? (() => Date.now());

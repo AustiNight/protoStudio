@@ -73,6 +73,7 @@ export interface TelemetryEventDataMap {
     model: string;
     maxTokens?: number;
     temperature?: number;
+    reasoningEffort?: string;
   };
   'llm.response': {
     role: TelemetryLLMRole;
@@ -136,7 +137,9 @@ export interface TelemetryEventRecord<E extends TelemetryEventName = TelemetryEv
   data: TelemetryEventDataMap[E];
 }
 
-export type TelemetryEvent = TelemetryEventRecord;
+export type TelemetryEvent = {
+  [E in TelemetryEventName]: TelemetryEventRecord<E>;
+}[TelemetryEventName];
 
 /**
  * Export bundle for telemetry downloads.
@@ -432,7 +435,16 @@ function validateLlmRequest(data: unknown): TelemetryValidationError | null {
   if (!record) {
     return recordError('llm.request');
   }
-  if (!hasOnlyKeys(record, ['role', 'provider', 'model', 'maxTokens', 'temperature'])) {
+  if (
+    !hasOnlyKeys(record, [
+      'role',
+      'provider',
+      'model',
+      'maxTokens',
+      'temperature',
+      'reasoningEffort',
+    ])
+  ) {
     return unexpectedKeys('llm.request');
   }
   if (!hasRequiredKeys(record, ['role', 'provider', 'model'])) {
@@ -452,6 +464,20 @@ function validateLlmRequest(data: unknown): TelemetryValidationError | null {
   }
   if (hasValue(record, 'temperature') && !isNumberInRange(record.temperature, 0, 2)) {
     return invalidField('llm.request', 'temperature');
+  }
+  if (
+    hasValue(record, 'reasoningEffort') &&
+    !isValueInList(record.reasoningEffort, [
+      'default',
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ])
+  ) {
+    return invalidField('llm.request', 'reasoningEffort');
   }
   return null;
 }

@@ -5,6 +5,7 @@ import { VirtualFileSystem } from './vfs';
 export interface PreviewPayload {
   pagePath: string;
   html: string;
+  routes: Record<string, string>;
 }
 
 export function buildPreviewHtml(
@@ -41,7 +42,12 @@ export function buildPreviewHtml(
     html = inlineScript(html, js);
   }
 
-  return okResult({ pagePath, html });
+  const routes = buildRoutes(vfs, css, js);
+  if (!(pagePath in routes)) {
+    routes[pagePath] = html;
+  }
+
+  return okResult({ pagePath, html, routes });
 }
 
 function resolvePreviewPath(
@@ -95,6 +101,35 @@ function inlineScript(html: string, script: string): string {
   }
 
   return `${html}\n${scriptTag}`;
+}
+
+function buildRoutes(
+  vfs: VirtualFileSystem,
+  css: string | null,
+  js: string | null,
+): Record<string, string> {
+  const routes: Record<string, string> = {};
+  const htmlFiles = vfs
+    .listFiles()
+    .filter((path) => path.toLowerCase().endsWith('.html'));
+
+  for (const path of htmlFiles) {
+    const file = vfs.getFile(path);
+    if (!file) {
+      continue;
+    }
+
+    let html = file.content;
+    if (css) {
+      html = inlineStylesheet(html, css);
+    }
+    if (js) {
+      html = inlineScript(html, js);
+    }
+    routes[path] = html;
+  }
+
+  return routes;
 }
 
 function okResult<T, E>(value: T): Result<T, E> {

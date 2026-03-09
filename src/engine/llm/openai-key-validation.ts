@@ -1,3 +1,5 @@
+import { resolveRuntimeFetch } from '../../utils/fetch';
+
 const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models';
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -90,7 +92,7 @@ export async function validateOpenAIKey(
   apiKey: string,
   options: ValidateOpenAIKeyOptions = {},
 ): Promise<OpenAIKeyValidationResult> {
-  const fetchFn = options.fetchFn ?? (typeof fetch === 'function' ? fetch : undefined);
+  const fetchFn = resolveRuntimeFetch(options.fetchFn);
   const now = options.now ?? (() => Date.now());
   if (!fetchFn) {
     return buildResult(

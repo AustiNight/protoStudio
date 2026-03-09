@@ -402,7 +402,7 @@ function extractDependencyUrlsFromHtml(html: string): string[] {
 function extractDependencyUrlsFromCss(css: string): string[] {
   const urls: string[] = [];
   const seen = new Set<string>();
-  const importRegex = /@import\s+(?:url\()?['"]?([^'"\)\s]+)['"]?\)?/gi;
+  const importRegex = /@import\s+(?:url\()?['"]?([^'")\s]+)['"]?\)?/gi;
   let match: RegExpExecArray | null = null;
   while ((match = importRegex.exec(css)) !== null) {
     const value = match[1]?.trim() ?? '';

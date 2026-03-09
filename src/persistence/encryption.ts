@@ -122,7 +122,7 @@ async function deriveKey(
   return cryptoRef.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt,
+      salt: toArrayBuffer(salt),
       iterations: PBKDF2_ITERATIONS,
       hash: 'SHA-256',
     },
@@ -163,4 +163,10 @@ function decodeBase64(value: string): Uint8Array {
       'Ciphertext payload is not valid base64.',
     );
   }
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
 }

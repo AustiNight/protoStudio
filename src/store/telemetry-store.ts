@@ -6,6 +6,7 @@ import {
   writeTelemetrySessionId,
 } from '../persistence/telemetry-session';
 import { TelemetryLog } from '../persistence/telemetry-log';
+import { studioLog } from '../utils/studio-logger';
 import type {
   LLMError,
   LLMGatewayTelemetry,
@@ -20,6 +21,7 @@ import type {
   TelemetryDeployHost,
   TelemetryDeployStatus,
   TelemetryEvent,
+  TelemetryEventRecord,
   TelemetryEventDataMap,
   TelemetryEventName,
   TelemetryExportBundle,
@@ -169,6 +171,16 @@ export const createTelemetryStore = () => {
     const appendEventInternal = async (event: TelemetryEvent): Promise<boolean> => {
       const result = await telemetryLog.append(event);
       if (!result.ok) {
+        studioLog({
+          level: 'error',
+          source: 'telemetry.store',
+          sessionId: event.sessionId,
+          message: 'Failed to append telemetry event.',
+          details: {
+            event: event.event,
+            error: result.error,
+          },
+        });
         return false;
       }
 
@@ -185,6 +197,15 @@ export const createTelemetryStore = () => {
           sessionId,
           events: nextEvents,
         };
+      });
+
+      studioLog({
+        level: event.event.endsWith('.error') ? 'error' : 'debug',
+        source: `telemetry.${event.event}`,
+        sessionId: event.sessionId,
+        timestamp: event.timestamp,
+        message: `Telemetry event: ${event.event}`,
+        details: event.data,
       });
 
       return true;
@@ -498,6 +519,7 @@ export const createTelemetryStore = () => {
                 model: selection.model,
                 maxTokens: request.maxTokens,
                 temperature: request.temperature,
+                reasoningEffort: request.reasoningEffort,
               },
             ),
           );
@@ -858,7 +880,7 @@ function buildTelemetryEvent<E extends TelemetryEventName>(
   timestamp: number,
   event: E,
   data: TelemetryEventDataMap[E],
-): TelemetryEvent {
+): TelemetryEventRecord<E> {
   return {
     sessionId,
     timestamp,

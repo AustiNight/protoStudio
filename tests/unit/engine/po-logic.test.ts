@@ -93,6 +93,8 @@ describe('po-logic', () => {
     expect(request.systemPrompt).toContain('Touches <= 5 files');
     expect(request.systemPrompt).toContain('Changes <= 150 lines');
     expect(request.systemPrompt).toContain('ONE CONCERN PER ATOM');
+    expect(request.maxTokens).toBe(900);
+    expect(request.reasoningEffort).toBe('minimal');
   });
 
   it('should parse valid backlog response into WorkItem array', () => {

@@ -1,5 +1,5 @@
 import type { AtomType, WorkItem } from '../../types/backlog';
-import type { BuildPhase, BuildState, PhaseTimeouts } from '../../types/build';
+import type { BuildState, PhaseTimeouts } from '../../types/build';
 
 export type StatusBarColor = 'green' | 'amber' | 'red' | 'gray';
 
@@ -36,7 +36,7 @@ export function getStatusBarText(state: BuildState): string {
 
   switch (state.phase) {
     case 'idle':
-      return 'Ready';
+      return 'Idle - waiting for next build';
     case 'assembling_context':
       return atom
         ? `Preparing to work on "${atom.title}"...`
@@ -144,8 +144,7 @@ export function getMilestoneChatMessage(
 
     return (
       '**First preview ready!**\n' +
-      `${urlLine} Take a look and let me know what you think. ` +
-      "I'm already working on the next improvement."
+      `${urlLine} Take a look and tell me what you want changed first.`
     );
   }
 

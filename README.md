@@ -23,6 +23,10 @@ npm install
 npm run dev
 ```
 
+## Environment
+- `.env.example` documents all runtime knobs (LLM mode, preview sandbox, logging, model defaults, optional keys/tokens).
+- `.env.local` is loaded by Vite for local overrides and is gitignored.
+
 ## Scripts
 - `npm run dev` — start dev server
 - `npm run build` — typecheck then build

@@ -65,7 +65,7 @@ with passing CI.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | — (start here) |
 | **Sprint** | 0 |
 | **Estimated effort** | S |
@@ -120,7 +120,7 @@ README.md
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-001 |
 | **Sprint** | 0 |
 | **Estimated effort** | S |
@@ -182,7 +182,7 @@ README.md
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-001 |
 | **Sprint** | 0 |
 | **Estimated effort** | M |
@@ -251,7 +251,7 @@ Transcribe them accurately into standalone Markdown files:
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-001 |
 | **Sprint** | 0 |
 | **Estimated effort** | M |
@@ -334,7 +334,7 @@ code imports React or DOM APIs.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004 |
 | **Sprint** | 1 |
 | **Estimated effort** | M |
@@ -402,7 +402,7 @@ should extract PP:FUNC anchor names from JS
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-005 |
 | **Sprint** | 1 |
 | **Estimated effort** | S |
@@ -448,7 +448,7 @@ should clear all snapshots
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-005 |
 | **Sprint** | 1 |
 | **Estimated effort** | L |
@@ -536,7 +536,7 @@ should increment VFS version on successful apply
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-005 |
 | **Sprint** | 1 |
 | **Estimated effort** | M |
@@ -604,7 +604,7 @@ should report unrepairable issues accurately
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-007, WI-008 |
 | **Sprint** | 1 |
 | **Estimated effort** | M |
@@ -667,7 +667,7 @@ should fail cssVariableUsage when new CSS contains hardcoded hex color
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004 |
 | **Sprint** | 1 |
 | **Estimated effort** | S |
@@ -716,7 +716,7 @@ should clear all breakers on reset
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004 |
 | **Sprint** | 1 |
 | **Estimated effort** | S |
@@ -769,7 +769,7 @@ should stop emitting after stop() is called
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004 |
 | **Sprint** | 1 |
 | **Estimated effort** | M |
@@ -834,7 +834,7 @@ should throw AuthenticationError on 401 response
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-012 |
 | **Sprint** | 1 |
 | **Estimated effort** | S |
@@ -887,7 +887,7 @@ should throw RateLimitError on 429
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-012 |
 | **Sprint** | 1 |
 | **Estimated effort** | M |
@@ -942,7 +942,7 @@ should handle empty conversation gracefully
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004 |
 | **Sprint** | 1 |
 | **Estimated effort** | M |
@@ -997,7 +997,7 @@ should generate milestone message with deploy URL
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004 |
 | **Sprint** | 1 |
 | **Estimated effort** | M |
@@ -1068,7 +1068,7 @@ should identify scratch path from "Build a zodiac greeting card maker"
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004 |
 | **Sprint** | 1 |
 | **Estimated effort** | S |
@@ -1116,7 +1116,7 @@ should handle very long input (4KB+ API key edge case)
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004 |
 | **Sprint** | 1 |
 | **Estimated effort** | M |
@@ -1184,7 +1184,7 @@ assemble into valid HTML/CSS with correct anchors.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004, WI-008 |
 | **Sprint** | 2 |
 | **Estimated effort** | L |
@@ -1266,7 +1266,7 @@ should reject a section definition missing required fields
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-019 |
 | **Sprint** | 2 |
 | **Estimated effort** | M |
@@ -1318,7 +1318,7 @@ should validate cta-banner section anchors and slots
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-005, WI-019 |
 | **Sprint** | 2 |
 | **Estimated effort** | M |
@@ -1376,7 +1376,7 @@ should assemble marketing template into valid VFS with correct
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-021 |
 | **Sprint** | 2 |
 | **Estimated effort** | S |
@@ -1416,7 +1416,7 @@ should assemble small-business template with scaffold score 100
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-019 |
 | **Sprint** | 2 |
 | **Estimated effort** | L |
@@ -1491,7 +1491,7 @@ should validate reviews-embed section anchors and slots
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-019 |
 | **Sprint** | 2 |
 | **Estimated effort** | L |
@@ -1587,7 +1587,7 @@ should validate multi-step-form conflicts with contact section
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-021, WI-023, WI-024 |
 | **Sprint** | 2 |
 | **Estimated effort** | S |
@@ -1641,7 +1641,7 @@ messages; loader animates; backlog cards are draggable.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-001 |
 | **Sprint** | 3 |
 | **Estimated effort** | M |
@@ -1679,7 +1679,7 @@ Use Tailwind utility classes for all studio UI styling.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-026 |
 | **Sprint** | 3 |
 | **Estimated effort** | M |
@@ -1724,7 +1724,7 @@ Visual specifications:
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004, WI-017, WI-018 |
 | **Sprint** | 3 |
 | **Estimated effort** | M |
@@ -1783,7 +1783,7 @@ should track pause/resume state in build store
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-026 |
 | **Sprint** | 3 |
 | **Estimated effort** | S |
@@ -1817,7 +1817,7 @@ types `margaret` in the chat input while the loader is visible.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-026, WI-029 |
 | **Sprint** | 3 |
 | **Estimated effort** | M |
@@ -1860,7 +1860,7 @@ src/components/preview/DeployButton.tsx
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-005 |
 | **Sprint** | 3 |
 | **Estimated effort** | M |
@@ -1910,7 +1910,7 @@ should resolve waitForLoad when load event fires
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-026, WI-028 |
 | **Sprint** | 3 |
 | **Estimated effort** | M |
@@ -1954,7 +1954,7 @@ Implement backlog panel per PRD §8.4.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-017, WI-026 |
 | **Sprint** | 3 |
 | **Estimated effort** | M |
@@ -2000,7 +2000,7 @@ Deploy Tokens.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-012, WI-026 |
 | **Sprint** | 3 |
 | **Estimated effort** | S |
@@ -2036,7 +2036,7 @@ build-store or a dedicated cost slice).
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-028, WI-029 |
 | **Sprint** | 3 |
 | **Estimated effort** | S |
@@ -2081,7 +2081,7 @@ Builder loop runs. Backlog interactions work.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-012, WI-016, WI-021, WI-031 |
 | **Sprint** | 4 |
 | **Estimated effort** | L |
@@ -2119,7 +2119,7 @@ should classify first message, assemble template, and produce VFS v1
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004, WI-015, WI-016 |
 | **Sprint** | 4 |
 | **Estimated effort** | M |
@@ -2163,7 +2163,7 @@ should deny a reorder that violates dependency ordering
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-032, WI-037 |
 | **Sprint** | 4 |
 | **Estimated effort** | S |
@@ -2181,7 +2181,7 @@ On Deck.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-007, WI-009, WI-010, WI-011, WI-014, WI-031 |
 | **Sprint** | 4 |
 | **Estimated effort** | L |
@@ -2231,7 +2231,7 @@ should skip atom after 3 failures and move to next
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-015, WI-030, WI-039 |
 | **Sprint** | 4 |
 | **Estimated effort** | M |
@@ -2252,7 +2252,7 @@ builds, chat messages on each swap, and backlog items progressing.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-032, WI-037 |
 | **Sprint** | 4 |
 | **Estimated effort** | M |
@@ -2272,7 +2272,7 @@ Wire the drag-and-drop reorder event to PO arbitration:
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-027, WI-032 |
 | **Sprint** | 4 |
 | **Estimated effort** | S |
@@ -2292,7 +2292,7 @@ When user clicks a backlog card:
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-018, WI-028 |
 | **Sprint** | 4 |
 | **Estimated effort** | M |
@@ -2324,7 +2324,7 @@ downloads.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004 |
 | **Sprint** | 5 |
 | **Estimated effort** | M |
@@ -2366,7 +2366,7 @@ should return the correct live URL
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004 |
 | **Sprint** | 5 |
 | **Estimated effort** | M |
@@ -2392,7 +2392,7 @@ Deploy to Netlify via their REST API.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-004 |
 | **Sprint** | 5 |
 | **Estimated effort** | M |
@@ -2418,7 +2418,7 @@ Deploy to Cloudflare Pages via the Cloudflare API.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-044, WI-045, WI-046 |
 | **Sprint** | 5 |
 | **Estimated effort** | M |
@@ -2461,7 +2461,7 @@ should complete deploy and return deployment record
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-005 |
 | **Sprint** | 5 |
 | **Estimated effort** | M |
@@ -2497,7 +2497,7 @@ should include correct deploy URL and host info
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-030, WI-047, WI-048 |
 | **Sprint** | 5 |
 | **Estimated effort** | M |
@@ -2514,7 +2514,7 @@ download link.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | All Sprint 4 items |
 | **Sprint** | 5 |
 | **Estimated effort** | M |
@@ -2540,7 +2540,7 @@ Use mocked LLM responses (intercept fetch in Playwright).
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | All Sprint 4 items |
 | **Sprint** | 5 |
 | **Estimated effort** | S |
@@ -2563,7 +2563,7 @@ builder stops → resume → builder continues.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-033 |
 | **Sprint** | 5 |
 | **Estimated effort** | S |
@@ -2587,7 +2587,7 @@ notes, and a `lastVerified` date field.
 
 | Field | Value |
 |---|---|
-| **Status** | ⬜ TODO |
+| **Status** | ✅ DONE (2026-03-03) |
 | **Depends on** | WI-012 |
 | **Sprint** | 5 |
 | **Estimated effort** | S |

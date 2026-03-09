@@ -12,6 +12,7 @@ describe('buildModelOptions', () => {
 
     expect(options.openai).toEqual(
       expect.arrayContaining([
+        'gpt-5.3-chat-latest',
         'gpt-5.2',
         'gpt-5.1',
         'gpt-5-mini',
@@ -56,7 +57,13 @@ describe('buildModelOptions', () => {
 
     const options = buildModelOptions(sampleModels);
 
-    expect(options.openai).toEqual(['gpt-5.2', 'o3']);
+    expect(options.openai).toEqual(
+      expect.arrayContaining([
+        'gpt-5.2',
+        'o3',
+        'gpt-5.3-chat-latest',
+      ]),
+    );
     expect(options.anthropic).toEqual(['claude-test']);
     expect(options.google).toEqual(['gemini-test']);
   });

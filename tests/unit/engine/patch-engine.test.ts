@@ -289,4 +289,200 @@ describe('PatchEngine', () => {
     const raw = readFixture('patches/invalid-malformed-json.txt');
     expect(() => JSON.parse(raw)).toThrow();
   });
+
+  it('should infer file path and ifVersion for section operations when omitted', async () => {
+    const vfs = await createVfsFromFixture();
+    const patch = {
+      workItemId: 'WI-missing-file-defaults',
+      targetVersion: 1,
+      operations: [
+        {
+          op: 'section.replace',
+          sectionId: 'hero',
+          html: '<section class="hero"><h1>Fallback Applied</h1></section>',
+        },
+      ],
+    } as unknown as BuildPatch;
+
+    const result = await engine.apply(vfs, patch);
+
+    expect(result.success).toBe(true);
+    const html = vfs.getFile('index.html')?.content ?? '';
+    expect(html).toContain('Fallback Applied');
+  });
+
+  it('should normalize aliased section fields from model output', async () => {
+    const vfs = await createVfsFromFixture();
+    const patch = {
+      workItemId: 'WI-alias-fields',
+      targetVersion: 1,
+      operations: [
+        {
+          op: 'section.replace',
+          section: 'hero',
+          content: '<section class="hero"><h1>Alias Applied</h1></section>',
+        },
+      ],
+    } as unknown as BuildPatch;
+
+    const result = await engine.apply(vfs, patch);
+
+    expect(result.success).toBe(true);
+    const html = vfs.getFile('index.html')?.content ?? '';
+    expect(html).toContain('Alias Applied');
+  });
+
+  it('should infer a section id from scaffold anchors when missing', async () => {
+    const vfs = await createVfsFromFixture();
+    const patch = {
+      workItemId: 'WI-infer-section-id',
+      targetVersion: 1,
+      operations: [
+        {
+          op: 'section.delete',
+          file: 'index.html',
+        },
+      ],
+    } as unknown as BuildPatch;
+
+    const result = await engine.apply(vfs, patch);
+
+    expect(result.success).toBe(true);
+  });
+
+  it('should infer insert marker and wrap section anchors for insert ops', async () => {
+    const vfs = await createVfsFromFixture();
+    const patch = {
+      workItemId: 'WI-infer-insert-marker',
+      targetVersion: 1,
+      operations: [
+        {
+          op: 'section.insert',
+          sectionId: 'auto-inserted',
+          html: '<section data-pp-section="auto-inserted"><h2>Auto Inserted</h2></section>',
+        },
+      ],
+    } as unknown as BuildPatch;
+
+    const result = await engine.apply(vfs, patch);
+
+    expect(result.success).toBe(true);
+    const html = vfs.getFile('index.html')?.content ?? '';
+    expect(html).toContain('PP:SECTION:auto-inserted');
+    expect(html).toContain('Auto Inserted');
+  });
+
+  it('should synthesize fallback html for replace ops missing html payload', async () => {
+    const vfs = await createVfsFromFixture();
+    const patch = {
+      workItemId: 'WI-replace-missing-html',
+      targetVersion: 1,
+      operations: [
+        {
+          op: 'section.replace',
+          sectionId: 'hero',
+        },
+      ],
+    } as unknown as BuildPatch;
+
+    const result = await engine.apply(vfs, patch);
+
+    expect(result.success).toBe(true);
+    const html = vfs.getFile('index.html')?.content ?? '';
+    expect(html).toContain('PP:SECTION:hero');
+  });
+
+  it('should strip duplicate section anchors from section.replace payloads', async () => {
+    const vfs = await createVfsFromFixture();
+    const patch = {
+      workItemId: 'WI-replace-strip-anchors',
+      targetVersion: 1,
+      operations: [
+        {
+          op: 'section.replace',
+          file: 'index.html',
+          sectionId: 'hero',
+          html: '<!-- PP:SECTION:hero --><section class="hero"><h1>Anchored Replace</h1></section><!-- /PP:SECTION:hero -->',
+          ifVersion: 1,
+        },
+      ],
+    } as unknown as BuildPatch;
+
+    const result = await engine.apply(vfs, patch);
+
+    expect(result.success).toBe(true);
+    const html = vfs.getFile('index.html')?.content ?? '';
+    const anchorMatches = html.match(/<!--\s*PP:SECTION:hero\s*-->/g) ?? [];
+    expect(anchorMatches.length).toBe(1);
+    expect(html).toContain('Anchored Replace');
+  });
+
+  it('should normalize legacy asset.create alias into file.create', async () => {
+    const vfs = await createVfsFromFixture();
+    const patch = {
+      workItemId: 'WI-asset-create-alias',
+      targetVersion: 1,
+      operations: [
+        {
+          op: 'asset.create',
+          path: 'robots.txt',
+          content: 'User-agent: *\nAllow: /\n',
+        },
+      ],
+    } as unknown as BuildPatch;
+
+    const result = await engine.apply(vfs, patch);
+
+    expect(result.success).toBe(true);
+    expect(vfs.hasFile('robots.txt')).toBe(true);
+    expect(vfs.getFile('robots.txt')?.content).toContain('User-agent: *');
+  });
+
+  it('should normalize css.append content by wrapping missing PP:BLOCK anchors', async () => {
+    const vfs = await createVfsFromFixture();
+    const patch = {
+      workItemId: 'WI-css-append-wrap',
+      targetVersion: 1,
+      operations: [
+        {
+          op: 'css.append',
+          file: 'styles.css',
+          blockId: 'perf-tuning',
+          css: '.perf-tuning{contain:layout paint;}',
+          ifVersion: 99,
+        },
+      ],
+    } as unknown as BuildPatch;
+
+    const result = await engine.apply(vfs, patch);
+
+    expect(result.success).toBe(true);
+    const css = vfs.getFile('styles.css')?.content ?? '';
+    expect(css).toContain('PP:BLOCK:perf-tuning');
+    expect(css).toContain('contain:layout paint;');
+  });
+
+  it('should normalize js.append content by wrapping missing PP:FUNC anchors', async () => {
+    const vfs = await createVfsFromFixture();
+    const patch = {
+      workItemId: 'WI-js-append-wrap',
+      targetVersion: 1,
+      operations: [
+        {
+          op: 'js.append',
+          file: 'main.js',
+          funcId: 'perf-init',
+          js: 'function perfInit(){return true;}',
+          ifVersion: 42,
+        },
+      ],
+    } as unknown as BuildPatch;
+
+    const result = await engine.apply(vfs, patch);
+
+    expect(result.success).toBe(true);
+    const js = vfs.getFile('main.js')?.content ?? '';
+    expect(js).toContain('PP:FUNC:perf-init');
+    expect(js).toContain('function perfInit(){return true;}');
+  });
 });

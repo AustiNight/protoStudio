@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoApp } from './utils/navigation';
 
 type SeedWorkItem = {
   id: string;
@@ -39,7 +40,7 @@ function buildItem(partial: Partial<SeedWorkItem> & Pick<SeedWorkItem, 'id' | 't
 }
 
 test('backlog interactions handle focus, pause, and reorder decisions', async ({ page }) => {
-  await page.goto('/');
+  await gotoApp(page);
 
   await page.waitForFunction(
     () => typeof window !== 'undefined' && Boolean(window.__protoStudioTest?.seedBacklog),
@@ -111,12 +112,12 @@ test('backlog interactions handle focus, pause, and reorder decisions', async ({
 
   const pauseButton = backlogPanel.getByRole('button', { name: 'Pause' });
   await pauseButton.click();
-  await expect(backlogPanel.getByText('Paused', { exact: true })).toBeVisible();
+  await expect(backlogPanel.getByRole('button', { name: 'Resume' })).toBeVisible();
   await expect(backlogPanel.getByRole('listitem').first()).toContainText('Paused');
 
   const resumeButton = backlogPanel.getByRole('button', { name: 'Resume' });
   await resumeButton.click();
-  await expect(backlogPanel.getByText('Paused', { exact: true })).toHaveCount(0);
+  await expect(backlogPanel.getByRole('button', { name: 'Pause' })).toBeVisible();
   await expect(backlogPanel.getByRole('listitem').first()).toContainText('Drag ready');
 
   const paletteCard = backlogPanel

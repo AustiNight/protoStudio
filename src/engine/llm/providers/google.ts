@@ -8,6 +8,7 @@ import type {
   RawLLMResponse,
 } from '../../../types/llm';
 import type { LLMProviderName } from '../../../types/session';
+import { resolveRuntimeFetch } from '../../../utils/fetch';
 
 const GOOGLE_GENERATE_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -48,8 +49,7 @@ export class GoogleProvider implements LLMProviderClient {
   private timeoutMs: number;
 
   constructor(options?: GoogleProviderOptions) {
-    this.fetchFn =
-      options?.fetchFn ?? (typeof fetch === 'function' ? fetch : undefined);
+    this.fetchFn = resolveRuntimeFetch(options?.fetchFn);
     this.now = options?.now ?? (() => Date.now());
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }

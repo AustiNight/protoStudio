@@ -5,7 +5,7 @@ export interface HeartbeatCallbacks {
   onTimeout: (phase: BuildPhase, elapsed: number) => void;
 }
 
-const CHECK_INTERVAL_MS = 1000;
+const CHECK_INTERVAL_MS = 500;
 const IGNORED_PHASES: Set<BuildPhase> = new Set([
   'idle',
   'retrying',

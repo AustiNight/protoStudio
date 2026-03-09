@@ -11,6 +11,7 @@ import type { WorkItem } from '../../src/types/backlog';
 import type { ChatMessage } from '../../src/types/chat';
 import type { LLMProviderClient, RawLLMResponse } from '../../src/types/llm';
 import type { BuildPatch } from '../../src/types/patch';
+import type { HostId } from '../../src/types/guardrails';
 import type { LLMConfig } from '../../src/types/session';
 import type { VfsMetadata } from '../../src/types/vfs';
 
@@ -184,10 +185,11 @@ function sortByOrder(items: WorkItem[]): WorkItem[] {
 
 function createGuardrailContext() {
   const headers = buildPreviewSecurityHeaders();
+  const availableHosts: HostId[] = ['github_pages', 'cloudflare_pages', 'netlify'];
   return {
     deploy: {
       selectedHost: 'github_pages' as const,
-      availableHosts: ['github_pages', 'cloudflare_pages', 'netlify'] as const,
+      availableHosts,
     },
     preview: {
       cspHeader: headers.csp,
@@ -285,6 +287,51 @@ describe('BuilderLoop', () => {
     expect(result.value.attempts).toBe(2);
     expect(getCallCount()).toBe(2);
     expect(preview.swapCount).toBe(1);
+  });
+
+  it('should normalize stale targetVersion from builder output and still succeed', async () => {
+    const vfs = await createVfsFromFixture();
+    const validPatch = readJsonFixture<BuildPatch>('patches/valid-section-replace.json');
+    const staleVersionPatch: BuildPatch = {
+      workItemId: validPatch.workItemId,
+      targetVersion: 99,
+      operations: validPatch.operations.map((op) => ({
+        ...((op as unknown) as Record<string, unknown>),
+        ifVersion: 99,
+      })) as BuildPatch['operations'],
+    };
+    const { gateway, getCallCount } = createGatewayWithResponses([
+      JSON.stringify(staleVersionPatch),
+    ]);
+    const contextManager = new ContextManager({
+      builder: { systemPrompt: 'Builder', patchFormat: 'Patch format' },
+    });
+
+    const backlog = new TestBacklog([
+      buildWorkItem({
+        id: validPatch.workItemId,
+        status: 'on_deck',
+        order: 1,
+      }),
+    ]);
+    const preview = new TestPreview();
+    const loop = new BuilderLoop({ gateway, contextManager });
+
+    const result = await loop.run({
+      vfs,
+      backlog,
+      conversation: [],
+      preview,
+      guardrails: createGuardrailContext(),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('success');
+    expect(result.value.attempts).toBe(1);
+    expect(getCallCount()).toBe(1);
+    expect(preview.swapCount).toBe(1);
+    expect(vfs.getVersion()).toBe(2);
   });
 
   it('should skip atom after 3 failures and move to next', async () => {

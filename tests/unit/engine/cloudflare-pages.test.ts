@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { deployToCloudflarePages } from '../../../src/engine/deploy/hosts/cloudflare-pages';
+import type { FetchFn } from '../../../src/engine/deploy/deploy-manager';
 import { VirtualFileSystem } from '../../../src/engine/vfs/vfs';
 import type { VfsMetadata } from '../../../src/types/vfs';
 
-type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type FetchArgs = [RequestInfo | URL, RequestInit?];
 
 function createMockResponse(status: number, body: unknown): Response {
   return {
@@ -15,7 +16,7 @@ function createMockResponse(status: number, body: unknown): Response {
     json: async () => body,
     text: async () =>
       typeof body === 'string' ? body : JSON.stringify(body),
-  } as Response;
+  } as unknown as Response;
 }
 
 async function buildVfs(): Promise<VirtualFileSystem> {
@@ -45,8 +46,8 @@ function createFetchMock(
   apiBaseUrl: string,
   accountId: string,
   projectName: string,
-): FetchFn {
-  return vi.fn(async (input, init) => {
+) {
+  return vi.fn<FetchArgs, Promise<Response>>(async (input, init) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
 
@@ -76,7 +77,7 @@ function createFetchMock(
     }
 
     return createMockResponse(404, { success: false, errors: [{ message: 'Not found' }] });
-  }) as unknown as FetchFn;
+  });
 }
 
 describe('deployToCloudflarePages', () => {
@@ -94,7 +95,7 @@ describe('deployToCloudflarePages', () => {
       vfs,
       sessionId: 'session-1',
       apiBaseUrl,
-      fetchFn,
+      fetchFn: fetchFn as unknown as FetchFn,
     });
 
     expect(result.ok).toBe(true);
@@ -140,7 +141,7 @@ describe('deployToCloudflarePages', () => {
       vfs,
       sessionId: 'session-2',
       apiBaseUrl,
-      fetchFn,
+      fetchFn: fetchFn as unknown as FetchFn,
     });
 
     expect(result.ok).toBe(true);

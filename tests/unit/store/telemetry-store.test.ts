@@ -9,7 +9,7 @@ import {
   createTelemetryStore,
 } from '../../../src/store/telemetry-store';
 import type { LLMModelSelection, LLMRequest, LLMResponse } from '../../../src/types/llm';
-import type { TelemetryExportBundle } from '../../../src/types/telemetry';
+import type { TelemetryEvent, TelemetryExportBundle } from '../../../src/types/telemetry';
 
 class MemoryStorage implements Storage {
   private store = new Map<string, string>();
@@ -86,7 +86,7 @@ function buildLlmResponseEvent(input: {
   cost: number;
   unknownModel?: boolean;
   timestamp: number;
-}) {
+}): TelemetryEvent {
   return {
     timestamp: input.timestamp,
     sessionId: input.sessionId,

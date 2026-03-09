@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { deployToGitHubPages } from '../../../src/engine/deploy/hosts/github-pages';
+import type { FetchFn } from '../../../src/engine/deploy/deploy-manager';
 import { VirtualFileSystem } from '../../../src/engine/vfs/vfs';
 import type { VfsMetadata } from '../../../src/types/vfs';
 
-type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type FetchArgs = [RequestInfo | URL, RequestInit?];
 
 function createMockResponse(
   status: number,
@@ -19,7 +20,7 @@ function createMockResponse(
     json: async () => body,
     text: async () =>
       typeof body === 'string' ? body : JSON.stringify(body),
-  } as Response;
+  } as unknown as Response;
 }
 
 async function buildVfs(): Promise<VirtualFileSystem> {
@@ -45,8 +46,8 @@ async function buildVfs(): Promise<VirtualFileSystem> {
   return vfs;
 }
 
-function createFetchMock(apiBaseUrl: string, owner: string, repo: string): FetchFn {
-  return vi.fn(async (input, init) => {
+function createFetchMock(apiBaseUrl: string, owner: string, repo: string) {
+  return vi.fn<FetchArgs, Promise<Response>>(async (input, init) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
 
@@ -78,7 +79,7 @@ function createFetchMock(apiBaseUrl: string, owner: string, repo: string): Fetch
     }
 
     return createMockResponse(404, { message: 'Not found' });
-  }) as unknown as FetchFn;
+  });
 }
 
 describe('deployToGitHubPages', () => {
@@ -95,7 +96,7 @@ describe('deployToGitHubPages', () => {
       vfs,
       sessionId: 'session-1',
       apiBaseUrl,
-      fetchFn,
+      fetchFn: fetchFn as unknown as FetchFn,
       poll: { intervalMs: 0, maxAttempts: 1 },
     });
 
@@ -137,7 +138,7 @@ describe('deployToGitHubPages', () => {
       vfs,
       sessionId: 'session-2',
       apiBaseUrl,
-      fetchFn,
+      fetchFn: fetchFn as unknown as FetchFn,
       poll: { intervalMs: 0, maxAttempts: 1 },
     });
 
@@ -167,7 +168,7 @@ describe('deployToGitHubPages', () => {
       vfs,
       sessionId: 'session-3',
       apiBaseUrl,
-      fetchFn,
+      fetchFn: fetchFn as unknown as FetchFn,
       poll: { intervalMs: 0, maxAttempts: 1 },
     });
 

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import pricingConfigRaw from '../../../src/config/model-pricing.json';
-import { calculateCost, getPricingLastUpdated } from '../../../src/engine/llm/cost';
+import {
+  calculateCost,
+  getPricingLastUpdated,
+  resolvePricingModelId,
+} from '../../../src/engine/llm/cost';
 import type { PricingConfig } from '../../../src/types/pricing';
 
 const pricingConfig = pricingConfigRaw as PricingConfig;
@@ -50,5 +54,23 @@ describe('calculateCost', () => {
 
     expect(result.unknownModel).toBe(true);
     expect(result.cost).toBe(0);
+  });
+
+  it('should resolve gpt-5.3-chat-latest using fallback pricing', () => {
+    const resolution = resolvePricingModelId('gpt-5.3-chat-latest');
+    const result = calculateCost('gpt-5.3-chat-latest', {
+      promptTokens: 1000,
+      completionTokens: 1000,
+    });
+
+    expect(resolution).toEqual({ modelId: 'gpt-5', estimated: true });
+    expect(result.unknownModel).toBe(false);
+    expect(result.cost).toBeCloseTo(0.01125, 6);
+  });
+
+  it('should resolve exact pricing when model exists directly', () => {
+    const resolution = resolvePricingModelId('gpt-5.2');
+
+    expect(resolution).toEqual({ modelId: 'gpt-5.2', estimated: false });
   });
 });

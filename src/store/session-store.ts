@@ -84,7 +84,7 @@ export const createSessionStore = () =>
       buildStore.resetBuild();
       telemetryStore.resetStore();
 
-      set((state) => ({
+      set(() => ({
         session: null,
         archivedSessions: [],
       }));

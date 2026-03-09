@@ -162,7 +162,7 @@ describe('guardrails', () => {
 
   it('should require alt text on images', () => {
     const input = buildBaseInput();
-    input.html = input.html.replace('alt=\"Hero image\"', '');
+    input.html = input.html.replace('alt="Hero image"', '');
     const report = runGuardrails(input);
     expect(report.pass).toBe(false);
     expect(report.violations.some((v) => v.id === 'a11y_img_alt')).toBe(true);
@@ -170,7 +170,7 @@ describe('guardrails', () => {
 
   it('should block image upload UI', () => {
     const input = buildBaseInput();
-    input.html = `${input.html}\n<form enctype=\"multipart/form-data\"><input type=\"file\" accept=\"image/*\" /></form>`;
+    input.html = `${input.html}\n<form enctype="multipart/form-data"><input type="file" accept="image/*" /></form>`;
     const report = runGuardrails(input);
     expect(report.pass).toBe(false);
     expect(report.violations.some((v) => v.id === 'content_image_upload')).toBe(

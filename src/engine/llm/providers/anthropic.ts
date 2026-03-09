@@ -8,6 +8,7 @@ import type {
   RawLLMResponse,
 } from '../../../types/llm';
 import type { LLMProviderName } from '../../../types/session';
+import { resolveRuntimeFetch } from '../../../utils/fetch';
 
 const ANTHROPIC_MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -43,8 +44,7 @@ export class AnthropicProvider implements LLMProviderClient {
   private defaultMaxTokens: number;
 
   constructor(options?: AnthropicProviderOptions) {
-    this.fetchFn =
-      options?.fetchFn ?? (typeof fetch === 'function' ? fetch : undefined);
+    this.fetchFn = resolveRuntimeFetch(options?.fetchFn);
     this.now = options?.now ?? (() => Date.now());
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.defaultMaxTokens = options?.defaultMaxTokens ?? DEFAULT_MAX_TOKENS;

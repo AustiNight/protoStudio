@@ -1,6 +1,7 @@
 import type { TokenUsage } from './pricing';
 import type { AppError, Result } from './result';
 import type { LLMModelSelection, LLMProviderName } from './session';
+export type { LLMModelSelection, LLMProviderName } from './session';
 
 /**
  * Supported LLM roles within the studio.
@@ -32,6 +33,22 @@ export interface LLMMessage {
 }
 
 /**
+ * OpenAI reasoning effort values supported by the platform.
+ */
+export type OpenAIReasoningEffort =
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh';
+
+/**
+ * Persisted OpenAI reasoning setting including model default passthrough.
+ */
+export type OpenAIReasoningSetting = 'default' | OpenAIReasoningEffort;
+
+/**
  * Request payload for a gateway call.
  */
 export interface LLMRequest {
@@ -59,6 +76,11 @@ export interface LLMRequest {
    * Temperature setting for the model.
    */
   temperature?: number;
+  /**
+   * Optional OpenAI reasoning effort override.
+   * Use "default" or omit to keep model defaults.
+   */
+  reasoningEffort?: OpenAIReasoningSetting;
 }
 
 /**
@@ -77,6 +99,10 @@ export interface LLMCallOptions {
    * Temperature setting for the model.
    */
   temperature?: number;
+  /**
+   * OpenAI reasoning effort passed through to the provider.
+   */
+  reasoningEffort?: OpenAIReasoningEffort;
   /**
    * Timeout budget in milliseconds.
    */

@@ -1,6 +1,7 @@
 import type { BuildState } from './build';
 import type { ChatMessage } from './chat';
 import type { Deployment } from './deploy';
+import type { OpenAIReasoningSetting } from './llm';
 import type { TelemetryEvent } from './telemetry';
 import type { VirtualFileSystem } from './vfs';
 import type { WorkItem } from './backlog';
@@ -54,6 +55,13 @@ export interface LLMConfig {
    * Model selection used for builder patch generation.
    */
   builderModel: LLMModelSelection;
+  /**
+   * Optional OpenAI reasoning defaults by role.
+   */
+  openAIReasoning?: {
+    chat: OpenAIReasoningSetting;
+    builder: OpenAIReasoningSetting;
+  };
 }
 
 /**

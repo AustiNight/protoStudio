@@ -1,6 +1,7 @@
 import type { Deployment } from '../../../types/deploy';
 import type { AppError, ErrorCategory, Result } from '../../../types/result';
 import type { VirtualFile, VirtualFileSystem } from '../../../types/vfs';
+import { resolveRuntimeFetch } from '../../../utils/fetch';
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -78,7 +79,7 @@ export async function deployToCloudflarePages(
     );
   }
 
-  const fetchFn = options.fetchFn ?? (typeof fetch === 'function' ? fetch : undefined);
+  const fetchFn = resolveRuntimeFetch(options.fetchFn);
   if (!fetchFn) {
     return errResult(
       buildError(

@@ -1,15 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { ExpandableGuide } from '@/components/settings/ExpandableGuide';
+import {
+  getOpenAIReasoningSettingOptionsForModel,
+  normalizeOpenAIReasoningSettingForModel,
+  supportsOpenAIReasoningForModel,
+} from '@/config/openai-reasoning';
 import pricingConfigRaw from '@/config/model-pricing.json';
 import { isOpenAIModelId } from '@/config/model-pricing-schema';
+import { runtimeConfig } from '@/config/runtime-config';
+import { DEPLOY_TOKEN_GUIDES, LLM_KEY_GUIDES } from '@/config/token-guides';
+import { resolvePricingModelId } from '@/engine/llm/cost';
 import { createOpenAIKeyValidationRunner } from '@/engine/llm/openai-key-validation';
 import {
   useSettingsStore,
   type ModelSelection,
+  type OpenAIThinkingSettings,
   type SettingsDeployHost as DeployHost,
   type SettingsPayload,
 } from '@/store/settings-store';
 import { useTelemetryStore } from '@/store/telemetry-store';
+import type { OpenAIReasoningSetting } from '@/types/llm';
 import type { PricingConfig } from '@/types/pricing';
 
 type ProviderName = ModelSelection['provider'];
@@ -45,9 +56,13 @@ const pricingConfig = pricingConfigRaw as PricingConfig;
 const NON_SELECTABLE_OPENAI_MODEL_PATTERNS: RegExp[] = [
   /^chatgpt-/i,
   /-chat-latest$/i,
+  /-codex$/i,
   /-preview$/i,
   /-search-preview$/i,
 ];
+
+// Keep this list in sync with OpenAI docs when pricing config trails newest releases.
+const MANUALLY_INCLUDED_OPENAI_MODEL_IDS = ['gpt-5.3-chat-latest'];
 
 function isSelectableOpenAIModelId(modelId: string): boolean {
   if (!isOpenAIModelId(modelId)) {
@@ -59,12 +74,26 @@ function isSelectableOpenAIModelId(modelId: string): boolean {
 
 const MODEL_OPTIONS = buildModelOptions(pricingConfig.models);
 
+const OPENAI_THINKING_LABELS: Record<OpenAIReasoningSetting, string> = {
+  default: 'Model default',
+  none: 'None',
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'XHigh',
+};
+
 const DEFAULT_SETTINGS: SettingsPayload = {
   version: 1,
   llmKeys: { openai: '', anthropic: '', google: '' },
   llmModels: {
     chat: { provider: 'openai', model: defaultModelFor('openai') },
     builder: { provider: 'openai', model: defaultModelFor('openai') },
+  },
+  openaiThinking: {
+    chat: runtimeConfig.settingsDefaults.openAIReasoning.chat,
+    builder: runtimeConfig.settingsDefaults.openAIReasoning.builder,
   },
   deployTokens: { github: '', cloudflare: '', netlify: '', vercel: '' },
   updatedAt: 0,
@@ -338,9 +367,21 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         { provider, model: current.llmModels[role].model },
         modelOptions,
       );
+      const nextThinking =
+        normalized.provider === 'openai' &&
+        supportsOpenAIReasoningForModel(normalized.model)
+          ? normalizeOpenAIReasoningSettingForModel(
+              normalized.model,
+              current.openaiThinking[role],
+            )
+          : current.openaiThinking[role];
       return {
         ...current,
         llmModels: { ...current.llmModels, [role]: normalized },
+        openaiThinking: {
+          ...current.openaiThinking,
+          [role]: nextThinking,
+        },
       };
     });
   };
@@ -351,6 +392,27 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       llmModels: {
         ...current.llmModels,
         [role]: { ...current.llmModels[role], model },
+      },
+      openaiThinking: {
+        ...current.openaiThinking,
+        [role]:
+          current.llmModels[role].provider === 'openai' &&
+          supportsOpenAIReasoningForModel(model)
+            ? normalizeOpenAIReasoningSettingForModel(model, current.openaiThinking[role])
+            : current.openaiThinking[role],
+      },
+    }));
+  };
+
+  const handleOpenAIThinkingChange = (
+    role: 'chat' | 'builder',
+    value: OpenAIReasoningSetting,
+  ) => {
+    updateRuntimeSettings((current) => ({
+      ...current,
+      openaiThinking: {
+        ...current.openaiThinking,
+        [role]: value,
       },
     }));
   };
@@ -605,30 +667,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-3">
-              <GuideCard
-                title="OpenAI key guide"
-                steps={[
-                  'Open the OpenAI dashboard and select API keys.',
-                  'Create a new key with least privilege.',
-                  'Paste it into the OpenAI field and click Ping.',
-                ]}
-              />
-              <GuideCard
-                title="Anthropic key guide"
-                steps={[
-                  'Open the Anthropic console and create a new API key.',
-                  'Copy the key and keep it somewhere safe.',
-                  'Paste it into the Anthropic field and click Ping.',
-                ]}
-              />
-              <GuideCard
-                title="Google key guide"
-                steps={[
-                  'Open Google AI Studio and generate an API key.',
-                  'Restrict the key to allowed origins if possible.',
-                  'Paste it into the Google field and click Ping.',
-                ]}
-              />
+              {LLM_KEY_GUIDES.map((guide) => (
+                <ExpandableGuide
+                  key={guide.id}
+                  title={guide.title}
+                  steps={guide.steps}
+                  urls={guide.urls}
+                  securityNotes={guide.securityNotes}
+                  lastVerified={guide.lastVerified}
+                />
+              ))}
             </div>
           </section>
 
@@ -640,6 +688,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 selection={settings.llmModels.chat}
                 onProviderChange={(provider) => handleModelProviderChange('chat', provider)}
                 onModelChange={(model) => handleModelChange('chat', model)}
+                thinkingLevel={settings.openaiThinking.chat}
+                onThinkingChange={(value) => handleOpenAIThinkingChange('chat', value)}
                 modelOptions={modelOptions}
               />
               <ModelCard
@@ -647,11 +697,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 selection={settings.llmModels.builder}
                 onProviderChange={(provider) => handleModelProviderChange('builder', provider)}
                 onModelChange={(model) => handleModelChange('builder', model)}
+                thinkingLevel={settings.openaiThinking.builder}
+                onThinkingChange={(value) => handleOpenAIThinkingChange('builder', value)}
                 modelOptions={modelOptions}
               />
             </div>
             <div className="mt-4 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 text-xs text-slate-400">
               Models listed here come from the pricing config (last updated {pricingConfig.lastUpdated}).
+              Options labeled <span className="text-amber-200">est.</span> use fallback pricing.
             </div>
           </section>
 
@@ -745,38 +798,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              <GuideCard
-                title="GitHub Pages token guide"
-                steps={[
-                  'Create a classic or fine-grained token with repo permissions.',
-                  'Enable workflow and Pages permissions for the repo.',
-                  'Paste the token into the GitHub field and ping it.',
-                ]}
-              />
-              <GuideCard
-                title="Cloudflare Pages token guide"
-                steps={[
-                  'Create an API token with Pages and account access.',
-                  'Copy the token and store it securely.',
-                  'Paste it into the Cloudflare field and ping it.',
-                ]}
-              />
-              <GuideCard
-                title="Netlify token guide"
-                steps={[
-                  'Generate a personal access token in the Netlify UI.',
-                  'Grant it access to deploy and manage sites.',
-                  'Paste it into the Netlify field and ping it.',
-                ]}
-              />
-              <GuideCard
-                title="Vercel token guide"
-                steps={[
-                  'Create a token in your Vercel account settings.',
-                  'Scope it to the projects you plan to use.',
-                  'Paste it into the Vercel field and ping it.',
-                ]}
-              />
+              {DEPLOY_TOKEN_GUIDES.map((guide) => (
+                <ExpandableGuide
+                  key={guide.id}
+                  title={guide.title}
+                  steps={guide.steps}
+                  urls={guide.urls}
+                  securityNotes={guide.securityNotes}
+                  lastVerified={guide.lastVerified}
+                />
+              ))}
             </div>
           </section>
 
@@ -941,6 +972,8 @@ type ModelCardProps = {
   selection: ModelSelection;
   onProviderChange: (provider: ProviderName) => void;
   onModelChange: (model: string) => void;
+  thinkingLevel: OpenAIReasoningSetting;
+  onThinkingChange: (value: OpenAIReasoningSetting) => void;
   modelOptions: Record<ProviderName, string[]>;
 };
 
@@ -949,9 +982,18 @@ function ModelCard({
   selection,
   onProviderChange,
   onModelChange,
+  thinkingLevel,
+  onThinkingChange,
   modelOptions,
 }: ModelCardProps) {
   const modelsForProvider = modelOptions[selection.provider];
+  const openAIThinkingOptions = buildOpenAIThinkingOptions(selection.model);
+  const showOpenAIThinking =
+    selection.provider === 'openai' && openAIThinkingOptions.length > 0;
+  const normalizedThinkingLevel = normalizeOpenAIReasoningSettingForModel(
+    selection.model,
+    thinkingLevel,
+  );
 
   return (
     <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
@@ -981,32 +1023,35 @@ function ModelCard({
         >
           {modelsForProvider.map((model) => (
             <option key={model} value={model}>
-              {model}
+              {formatModelOptionLabel(model)}
             </option>
           ))}
         </select>
+        {selection.provider === 'openai' && (
+          <ModelPricingStatusNotice modelId={selection.model} />
+        )}
+        {showOpenAIThinking && (
+          <>
+            <label className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+              Thinking
+            </label>
+            <select
+              value={normalizedThinkingLevel}
+              onChange={(event) =>
+                onThinkingChange(event.target.value as OpenAIReasoningSetting)
+              }
+              className="w-full rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
+            >
+              {openAIThinkingOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
     </div>
-  );
-}
-
-type GuideCardProps = {
-  title: string;
-  steps: string[];
-};
-
-function GuideCard({ title, steps }: GuideCardProps) {
-  return (
-    <details className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
-      <summary className="cursor-pointer text-sm font-semibold text-slate-100">
-        {title}
-      </summary>
-      <div className="mt-2 space-y-2 text-xs text-slate-400">
-        {steps.map((step) => (
-          <p key={step}>{step}</p>
-        ))}
-      </div>
-    </details>
   );
 }
 
@@ -1060,6 +1105,12 @@ export function buildModelOptions(
     }
   }
 
+  for (const model of MANUALLY_INCLUDED_OPENAI_MODEL_IDS) {
+    if (isOpenAIModelId(model) && !options.openai.includes(model)) {
+      options.openai.push(model);
+    }
+  }
+
   return options;
 }
 
@@ -1081,14 +1132,35 @@ function normalizeSettings(
       chat: { ...DEFAULT_SETTINGS.llmModels.chat, ...payload.llmModels?.chat },
       builder: { ...DEFAULT_SETTINGS.llmModels.builder, ...payload.llmModels?.builder },
     },
+    openaiThinking: normalizeOpenAIThinkingSettings(payload.openaiThinking),
     updatedAt: payload.updatedAt ?? DEFAULT_SETTINGS.updatedAt,
+  };
+
+  const llmModels = {
+    chat: normalizeModelSelection(merged.llmModels.chat, modelOptions),
+    builder: normalizeModelSelection(merged.llmModels.builder, modelOptions),
   };
 
   return {
     ...merged,
-    llmModels: {
-      chat: normalizeModelSelection(merged.llmModels.chat, modelOptions),
-      builder: normalizeModelSelection(merged.llmModels.builder, modelOptions),
+    llmModels,
+    openaiThinking: {
+      chat:
+        llmModels.chat.provider === 'openai' &&
+        supportsOpenAIReasoningForModel(llmModels.chat.model)
+          ? normalizeOpenAIReasoningSettingForModel(
+              llmModels.chat.model,
+              merged.openaiThinking.chat,
+            )
+          : merged.openaiThinking.chat,
+      builder:
+        llmModels.builder.provider === 'openai' &&
+        supportsOpenAIReasoningForModel(llmModels.builder.model)
+          ? normalizeOpenAIReasoningSettingForModel(
+              llmModels.builder.model,
+              merged.openaiThinking.builder,
+            )
+          : merged.openaiThinking.builder,
     },
   };
 }
@@ -1101,6 +1173,97 @@ function normalizeModelSelection(
   const models = modelOptions[provider];
   const model = models.includes(selection.model) ? selection.model : models[0] ?? '';
   return { provider, model };
+}
+
+function normalizeOpenAIThinkingSettings(
+  value: unknown,
+): OpenAIThinkingSettings {
+  const defaults = DEFAULT_SETTINGS.openaiThinking;
+  if (!isRecord(value)) {
+    return { ...defaults };
+  }
+  return {
+    chat: isOpenAIReasoningSetting(value.chat) ? value.chat : defaults.chat,
+    builder: isOpenAIReasoningSetting(value.builder) ? value.builder : defaults.builder,
+  };
+}
+
+function buildOpenAIThinkingOptions(
+  modelId: string,
+): Array<{ value: OpenAIReasoningSetting; label: string }> {
+  const options = getOpenAIReasoningSettingOptionsForModel(modelId);
+  return options.map((value) => ({
+    value,
+    label: OPENAI_THINKING_LABELS[value],
+  }));
+}
+
+type PricingStatusType = 'exact' | 'estimated' | 'unpriced';
+
+type PricingStatus = {
+  type: PricingStatusType;
+  resolvedModelId: string | null;
+};
+
+function resolvePricingStatus(modelId: string): PricingStatus {
+  const resolution = resolvePricingModelId(modelId);
+  if (!resolution) {
+    return {
+      type: 'unpriced',
+      resolvedModelId: null,
+    };
+  }
+
+  return {
+    type: resolution.estimated ? 'estimated' : 'exact',
+    resolvedModelId: resolution.modelId,
+  };
+}
+
+function formatModelOptionLabel(modelId: string): string {
+  const status = resolvePricingStatus(modelId);
+  if (status.type === 'unpriced') {
+    return `${modelId} (unpriced)`;
+  }
+  if (
+    status.type === 'estimated' &&
+    status.resolvedModelId &&
+    status.resolvedModelId !== modelId
+  ) {
+    return `${modelId} (est. via ${status.resolvedModelId})`;
+  }
+  if (status.type === 'estimated') {
+    return `${modelId} (estimated)`;
+  }
+  return modelId;
+}
+
+function ModelPricingStatusNotice({ modelId }: { modelId: string }) {
+  const status = resolvePricingStatus(modelId);
+
+  if (status.type === 'exact') {
+    return null;
+  }
+
+  if (status.type === 'unpriced') {
+    return (
+      <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-[11px] text-amber-100">
+        Pricing is unavailable for this model. Cost totals will mark this usage as
+        unknown.
+      </div>
+    );
+  }
+
+  const resolvedLabel =
+    status.resolvedModelId && status.resolvedModelId !== modelId
+      ? status.resolvedModelId
+      : 'a related model';
+
+  return (
+    <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-[11px] text-amber-100">
+      Cost totals for this model are estimated using rates for {resolvedLabel}.
+    </div>
+  );
 }
 
 function buildValidationMap<T extends string>(keys: T[]): Record<T, ValidationState> {
@@ -1202,6 +1365,22 @@ function delay(durationMs: number): Promise<void> {
 
 function isProvider(value: string): value is ProviderName {
   return value === 'openai' || value === 'anthropic' || value === 'google';
+}
+
+function isOpenAIReasoningSetting(value: unknown): value is OpenAIReasoningSetting {
+  return (
+    value === 'default' ||
+    value === 'none' ||
+    value === 'minimal' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh'
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function formatLongDate(timestamp: number): string {

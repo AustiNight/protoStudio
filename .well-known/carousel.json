@@ -1,0 +1,9 @@
+{
+  "title": "ProntoProto Studio",
+  "description": "Rapid prototyping studio for AI-first product concepts.",
+  "imageUrl": "https://prontoproto.studio/preview-carousel.png?v=1",
+  "tags": ["ai", "prototype", "studio"],
+  "projectKey": "prontoproto-studio",
+  "repoUrl": "https://github.com/AustiNight/prontoproto-studio",
+  "carouselText": "Focused on fast idea-to-demo loops, reusable prompt flows, and clean validation UX for early product testing."
+}

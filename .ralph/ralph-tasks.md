@@ -56,8 +56,8 @@
   - [x] Add automated tests: session-id rotation + telemetry session rollover, cost reset semantics, and e2e check that clicking `New Conversation` returns visible cost to `$0.00` for the fresh conversation.
   - [x] Acceptance: top-right cost ticker always represents only the active conversation, `New Conversation` reliably resets visible cost to zero, and recovery restores the resumed session’s own totals.
 
-- [ ] Epic: Regression Sweep and Verification
-  - [ ] Run targeted unit tests for settings/model/cost/chat changes and update failing fixtures/snapshots intentionally affected by model list/cost data changes.
-  - [ ] Run relevant e2e tests covering chat input, settings ping UX, and new-conversation cost reset behavior with mocked OpenAI validation responses.
-  - [ ] Add/update concise notes in `docs/DECISIONS.md` documenting: why key ping moved to engine-level API validation, model catalog source metadata requirements, settings source-of-truth decisions, and why cost is session-scoped.
-  - [ ] Acceptance: all targeted tests pass; no regressions in settings unlock/save flow, chat rendering, or header actions (`Settings`, `New Conversation`).
+- [x] Epic: Regression Sweep and Verification
+  - [x] Run targeted unit tests for settings/model/cost/chat changes and update failing fixtures/snapshots intentionally affected by model list/cost data changes.
+  - [x] Run relevant e2e tests covering chat input, settings ping UX, and new-conversation cost reset behavior with mocked OpenAI validation responses.
+  - [x] Add/update concise notes in `docs/DECISIONS.md` documenting: why key ping moved to engine-level API validation, model catalog source metadata requirements, settings source-of-truth decisions, and why cost is session-scoped.
+  - [x] Acceptance: all targeted tests pass; no regressions in settings unlock/save flow, chat rendering, or header actions (`Settings`, `New Conversation`).

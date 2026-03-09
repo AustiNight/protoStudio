@@ -420,7 +420,7 @@ function hasMatchingSectionAttribute(
   }
   const slice = content.slice(start, end);
   const escaped = escapeRegExp(open.id);
-  const regex = new RegExp(`data-pp-section\\s*=\\s*[\"']${escaped}[\"']`);
+  const regex = new RegExp(`data-pp-section\\s*=\\s*["']${escaped}["']`);
   return regex.test(slice);
 }
 

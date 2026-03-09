@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { gotoApp } from './utils/navigation';
 
 type TestSettingsSnapshot = {
   llmKeys: Record<'openai' | 'anthropic' | 'google', string>;
@@ -23,7 +24,7 @@ async function readSettingsSnapshot(page: Page) {
 test('settings updates flow through store-backed runtime consumers without refresh', async ({
   page,
 }) => {
-  await page.goto('/');
+  await gotoApp(page);
   await page.waitForFunction(
     () =>
       typeof window !== 'undefined' &&
@@ -40,9 +41,8 @@ test('settings updates flow through store-backed runtime consumers without refre
   await dialog.getByPlaceholder('sk-...').fill('sk-runtime-openai-0123456789');
 
   await dialog.getByRole('tab', { name: 'Models' }).click();
-  const chatModelCard = dialog.locator('div.rounded-2xl', {
-    has: dialog.getByRole('heading', { name: 'Chat model' }),
-  });
+  const modelPanel = dialog.locator('section[role="tabpanel"]:not([hidden])');
+  const chatModelCard = modelPanel.getByRole('heading', { name: 'Chat model' }).locator('..');
   const chatProviderSelect = chatModelCard.locator('select').first();
   const chatModelSelect = chatModelCard.locator('select').nth(1);
   await chatProviderSelect.selectOption('anthropic');

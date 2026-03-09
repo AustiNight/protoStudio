@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { gotoApp } from './utils/navigation';
 
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
@@ -14,7 +15,7 @@ const OPENAI_STALE_FIRST_KEY = 'sk-stale-first-key-0123456789';
 const OPENAI_STALE_SECOND_KEY = 'sk-stale-second-key-0123456789';
 
 async function openSettings(page: Page): Promise<Locator> {
-  await page.goto('/');
+  await gotoApp(page);
   await page.getByRole('button', { name: 'Settings' }).click();
   const dialog = page.getByRole('dialog', { name: 'Settings' });
   await expect(dialog).toBeVisible();
@@ -94,9 +95,7 @@ test('openai key ping maps auth, rate-limit, and service outcomes from API respo
 }) => {
   const dialog = await openSettings(page);
   const openaiInput = dialog.getByPlaceholder('sk-...');
-  const openaiField = dialog.locator('div.rounded-2xl', {
-    has: dialog.getByRole('heading', { name: 'OpenAI' }),
-  });
+  const openaiField = openaiInput.locator('..').locator('..');
   const pingButton = openaiField.getByRole('button', { name: 'Ping' });
 
   await openaiInput.fill(OPENAI_VALID_KEY);
@@ -123,9 +122,7 @@ test('openai key ping maps auth, rate-limit, and service outcomes from API respo
 test('openai key ping suppresses stale responses when a newer ping starts', async ({ page }) => {
   const dialog = await openSettings(page);
   const openaiInput = dialog.getByPlaceholder('sk-...');
-  const openaiField = dialog.locator('div.rounded-2xl', {
-    has: dialog.getByRole('heading', { name: 'OpenAI' }),
-  });
+  const openaiField = openaiInput.locator('..').locator('..');
   const pingButton = openaiField.getByRole('button', { name: 'Ping' });
 
   await openaiInput.fill(OPENAI_STALE_FIRST_KEY);

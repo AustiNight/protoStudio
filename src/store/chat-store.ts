@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import type { ChatMessage, MessageSender } from '../types/chat';
 import type { TelemetryMessageRole } from '../types/telemetry';
 import { useTelemetryStore } from './telemetry-store';
+import { studioLog } from '../utils/studio-logger';
 
 export interface ChatStoreState {
   messages: ChatMessage[];
@@ -24,6 +25,13 @@ export const createChatStore = () =>
       set((state) => ({
         messages: [...state.messages, message],
       }));
+      studioLog({
+        level: message.sender === 'system' ? 'warn' : 'info',
+        source: `chat.${message.sender}`,
+        sessionId: message.sessionId,
+        timestamp: message.timestamp,
+        message: message.content,
+      });
       const role = toTelemetryRole(message.sender);
       if (role) {
         const telemetry = useTelemetryStore.getState();
@@ -39,6 +47,15 @@ export const createChatStore = () =>
       set((state) => ({
         messages: [...state.messages, ...messages],
       }));
+      for (const message of messages) {
+        studioLog({
+          level: message.sender === 'system' ? 'warn' : 'info',
+          source: `chat.${message.sender}`,
+          sessionId: message.sessionId,
+          timestamp: message.timestamp,
+          message: message.content,
+        });
+      }
       const telemetry = useTelemetryStore.getState();
       for (const message of messages) {
         const role = toTelemetryRole(message.sender);

@@ -153,4 +153,65 @@ describe('LLMGateway', () => {
     expect(provider.lastCall?.apiKey).toBe('builder-key');
     expect(provider.lastCall?.model).toBe('model-id');
   });
+
+  it('applies configured OpenAI reasoning effort by role when request does not override it', async () => {
+    const provider = new StubProvider('openai');
+    const config = buildConfigForProvider('openai');
+    config.chatModel.model = 'gpt-5.2';
+    config.builderModel.model = 'gpt-5.1';
+    config.openAIReasoning = { chat: 'high', builder: 'low' };
+    const gateway = new LLMGateway(config, {
+      providers: { openai: provider },
+    });
+
+    await gateway.send(buildRequest('chat'));
+    expect(provider.lastCall?.options.reasoningEffort).toBe('high');
+
+    await gateway.send(buildRequest('builder'));
+    expect(provider.lastCall?.options.reasoningEffort).toBe('low');
+  });
+
+  it('downgrades unsupported OpenAI reasoning efforts for the selected model', async () => {
+    const provider = new StubProvider('openai');
+    const config = buildConfigForProvider('openai');
+    config.chatModel.model = 'gpt-5.1';
+    config.openAIReasoning = { chat: 'xhigh', builder: 'xhigh' };
+    const gateway = new LLMGateway(config, {
+      providers: { openai: provider },
+    });
+
+    await gateway.send(buildRequest('chat'));
+    expect(provider.lastCall?.options.reasoningEffort).toBe('high');
+  });
+
+  it('omits reasoning effort for OpenAI models that do not support reasoning', async () => {
+    const provider = new StubProvider('openai');
+    const config = buildConfigForProvider('openai');
+    config.chatModel.model = 'gpt-4o';
+    config.openAIReasoning = { chat: 'xhigh', builder: 'xhigh' };
+    const gateway = new LLMGateway(config, {
+      providers: { openai: provider },
+    });
+
+    await gateway.send(buildRequest('chat'));
+    expect(provider.lastCall?.options.reasoningEffort).toBeUndefined();
+  });
+
+  it('returns a user-action error for Responses-only OpenAI codex models', async () => {
+    const provider = new StubProvider('openai');
+    const config = buildConfigForProvider('openai');
+    config.chatModel.model = 'gpt-5.3-codex';
+    const gateway = new LLMGateway(config, {
+      providers: { openai: provider },
+    });
+
+    const result = await gateway.send(buildRequest('chat'));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.category).toBe('user_action');
+      expect(result.error.code).toBe('provider_error');
+      expect(result.error.message).toContain('Responses API');
+    }
+    expect(provider.lastCall).toBeNull();
+  });
 });

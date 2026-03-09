@@ -1,6 +1,7 @@
 import type { Deployment } from '../../../types/deploy';
 import type { AppError, ErrorCategory, Result } from '../../../types/result';
 import type { VirtualFile, VirtualFileSystem } from '../../../types/vfs';
+import { resolveRuntimeFetch } from '../../../utils/fetch';
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -57,7 +58,7 @@ export async function deployToNetlify(
     );
   }
 
-  const fetchFn = options.fetchFn ?? (typeof fetch === 'function' ? fetch : undefined);
+  const fetchFn = resolveRuntimeFetch(options.fetchFn);
   if (!fetchFn) {
     return errResult(
       buildError(
@@ -370,7 +371,7 @@ async function hashContent(content: string): Promise<string> {
   if (cryptoRef?.subtle) {
     try {
       const data = encodeUtf8(content);
-      const digest = await cryptoRef.subtle.digest('SHA-1', data);
+      const digest = await cryptoRef.subtle.digest('SHA-1', toArrayBuffer(data));
       return bufferToHex(digest);
     } catch {
       // Fall back to a deterministic hash if SHA-1 is unavailable.
@@ -421,6 +422,12 @@ function encodeUtf8(value: string): Uint8Array {
     bytes[i] = value.charCodeAt(i) & 0xff;
   }
   return bytes;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
 }
 
 function normalizePath(path: string): string {

@@ -14,7 +14,7 @@ function createMockResponse(status: number): Response {
     headers: {
       get: () => null,
     },
-  } as Response;
+  } as unknown as Response;
 }
 
 function createAbortError(): Error {
