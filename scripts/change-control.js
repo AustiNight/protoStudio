@@ -1,5 +1,6 @@
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
+const path = require('path');
 
 const allowedModules = new Set([
   'chat',
@@ -15,21 +16,64 @@ const allowedModules = new Set([
   'docs',
 ]);
 
-function run(command) {
-  return execSync(command, { encoding: 'utf8' }).trim();
+function runGit(args, cwd = process.cwd()) {
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
+function tryRunGit(args, cwd = process.cwd()) {
+  try {
+    return runGit(args, cwd);
+  } catch (error) {
+    return null;
+  }
+}
+
+function refExists(ref, cwd = process.cwd()) {
+  return Boolean(
+    tryRunGit(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], cwd)
+  );
+}
+
+function getParentRef(ref, cwd = process.cwd()) {
+  return tryRunGit(['rev-parse', '--verify', '--quiet', `${ref}^`], cwd);
+}
+
+function resolveComparisonBaseRef(baseRef, headRef, cwd = process.cwd()) {
+  if (!baseRef) {
+    return { baseRef: null, warning: null };
+  }
+
+  if (refExists(baseRef, cwd)) {
+    return { baseRef, warning: null };
+  }
+
+  const parentRef = getParentRef(headRef, cwd);
+  if (parentRef) {
+    return {
+      baseRef: parentRef,
+      warning: `Change control base "${baseRef}" is unavailable; falling back to "${parentRef}".`,
+    };
+  }
+
+  return {
+    baseRef: null,
+    warning: `Change control base "${baseRef}" is unavailable; linting HEAD only.`,
+  };
 }
 
 function isZeroSha(value) {
   return typeof value === 'string' && /^0+$/.test(value);
 }
 
-function getCommitSubjects(baseRef, headRef) {
-  const range = baseRef ? `${baseRef}..${headRef}` : null;
-  const logCommand = baseRef
-    ? `git log --format=%s ${range}`
-    : `git log -1 --format=%s ${headRef}`;
+function getCommitSubjects(baseRef, headRef, cwd = process.cwd()) {
+  const output = baseRef
+    ? runGit(['log', '--format=%s', `${baseRef}..${headRef}`], cwd)
+    : runGit(['log', '-1', '--format=%s', headRef], cwd);
 
-  const output = run(logCommand);
   if (!output) {
     return [];
   }
@@ -59,9 +103,9 @@ function lintCommitMessages(subjects) {
   return errors;
 }
 
-function readPackageJsonAt(ref) {
+function readPackageJsonAt(ref, cwd = process.cwd()) {
   try {
-    const content = run(`git show ${ref}:package.json`);
+    const content = runGit(['show', `${ref}:package.json`], cwd);
     return JSON.parse(content);
   } catch (error) {
     return null;
@@ -100,18 +144,19 @@ function getAddedDependencies(basePkg, headPkg) {
   return added;
 }
 
-function lintDependencyDecisions(baseRef, headRef) {
+function lintDependencyDecisions(baseRef, headRef, cwd = process.cwd()) {
   const errors = [];
-  if (!fs.existsSync('package.json')) {
+  const packageJsonPath = path.join(cwd, 'package.json');
+  if (!fs.existsSync(packageJsonPath)) {
     return errors;
   }
 
-  const basePkg = baseRef ? readPackageJsonAt(baseRef) : null;
+  const basePkg = baseRef ? readPackageJsonAt(baseRef, cwd) : null;
   if (!basePkg) {
     return errors;
   }
 
-  const headPkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  const headPkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
   const addedDeps = getAddedDependencies(basePkg, headPkg);
 
   if (addedDeps.length === 0) {
@@ -120,7 +165,7 @@ function lintDependencyDecisions(baseRef, headRef) {
 
   let diffFiles = '';
   try {
-    diffFiles = run(`git diff --name-only ${baseRef}..${headRef}`);
+    diffFiles = runGit(['diff', '--name-only', `${baseRef}..${headRef}`], cwd);
   } catch (error) {
     errors.push('Unable to determine changed files for dependency decision check.');
     return errors;
@@ -140,23 +185,47 @@ function lintDependencyDecisions(baseRef, headRef) {
   return errors;
 }
 
-function main() {
-  const baseRefRaw = process.env.CHANGE_CONTROL_BASE || '';
-  const headRef = process.env.CHANGE_CONTROL_HEAD || 'HEAD';
+function collectChangeControlResult(options = {}) {
+  const baseRefRaw =
+    options.baseRefRaw ?? process.env.CHANGE_CONTROL_BASE ?? '';
+  const headRef = options.headRef ?? process.env.CHANGE_CONTROL_HEAD ?? 'HEAD';
+  const cwd = options.cwd ?? process.cwd();
   const baseRef = baseRefRaw && !isZeroSha(baseRefRaw) ? baseRefRaw : null;
   const errors = [];
+  const warnings = [];
+  const comparisonBase = resolveComparisonBaseRef(baseRef, headRef, cwd);
 
-  try {
-    const subjects = getCommitSubjects(baseRef, headRef);
-    errors.push(...lintCommitMessages(subjects));
-  } catch (error) {
-    errors.push('Unable to read commit messages for change-control lint.');
+  if (!refExists(headRef, cwd)) {
+    errors.push(`Change control head "${headRef}" is unavailable.`);
   }
 
-  try {
-    errors.push(...lintDependencyDecisions(baseRef, headRef));
-  } catch (error) {
-    errors.push('Dependency decision lint encountered an unexpected error.');
+  if (comparisonBase.warning) {
+    warnings.push(comparisonBase.warning);
+  }
+
+  if (errors.length === 0) {
+    try {
+      const subjects = getCommitSubjects(comparisonBase.baseRef, headRef, cwd);
+      errors.push(...lintCommitMessages(subjects));
+    } catch (error) {
+      errors.push('Unable to read commit messages for change-control lint.');
+    }
+
+    try {
+      errors.push(...lintDependencyDecisions(comparisonBase.baseRef, headRef, cwd));
+    } catch (error) {
+      errors.push('Dependency decision lint encountered an unexpected error.');
+    }
+  }
+
+  return { errors, warnings };
+}
+
+function main() {
+  const { errors, warnings } = collectChangeControlResult();
+
+  for (const warning of warnings) {
+    console.warn(warning);
   }
 
   if (errors.length > 0) {
@@ -170,4 +239,19 @@ function main() {
   console.log('Change control checks passed.');
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  collectChangeControlResult,
+  getAddedDependencies,
+  getCommitSubjects,
+  getParentRef,
+  isZeroSha,
+  lintCommitMessages,
+  lintDependencyDecisions,
+  readPackageJsonAt,
+  refExists,
+  resolveComparisonBaseRef,
+};
