@@ -17,7 +17,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version-file: '.node-version'
           cache: 'npm'
       - name: Set change control refs
         run: |
@@ -45,14 +45,37 @@ jobs:
         run: npm run build
       - name: Bundle size gate
         run: |
-          if [ ! -d dist ]; then
-            echo "dist missing"
+          if [ ! -d dist/assets ]; then
+            echo "dist/assets missing"
             exit 1
           fi
-          size_kb=$(du -sk dist | awk '{print $1}')
-          echo "dist size: ${size_kb} KB"
-          max_kb=512
-          if [ "$size_kb" -gt "$max_kb" ]; then
-            echo "Bundle size ${size_kb}KB exceeds ${max_kb}KB"
-            exit 1
-          fi
+          node <<'NODE'
+          const { gzipSync } = require('node:zlib');
+          const { readdirSync, readFileSync, statSync } = require('node:fs');
+          const { join } = require('node:path');
+
+          const assetsDir = join(process.cwd(), 'dist', 'assets');
+          const files = readdirSync(assetsDir)
+            .filter((file) => /\.(css|js)$/.test(file))
+            .map((file) => join(assetsDir, file))
+            .filter((file) => statSync(file).isFile());
+
+          if (files.length === 0) {
+            console.error('No JS/CSS assets found in dist/assets.');
+            process.exit(1);
+          }
+
+          const gzipBytes = files.reduce(
+            (total, file) => total + gzipSync(readFileSync(file)).length,
+            0,
+          );
+          const gzipKb = Math.ceil(gzipBytes / 1024);
+          const maxKb = 256;
+
+          console.log(`gzipped app bundle: ${gzipKb} KB`);
+
+          if (gzipKb > maxKb) {
+            console.error(`Gzipped app bundle ${gzipKb}KB exceeds ${maxKb}KB`);
+            process.exit(1);
+          }
+          NODE

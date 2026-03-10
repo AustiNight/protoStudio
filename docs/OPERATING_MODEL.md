@@ -36,9 +36,7 @@ Designed for both human understanding and AI agent context-loading:
 📁 prontoproto-studio/
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml                  ← Runs on every push/PR
-│       ├── deploy-preview.yml      ← Deploys preview on PR
-│       └── deploy-production.yml   ← Deploys to production on main merge
+│       └── ci.yml                  ← Runs on every push/PR (CI only)
 │
 ├── docs/                           ← Agent context documents
 │   ├── ARCHITECTURE.md             ← High-level system design (from PRD §2, §5)
@@ -270,48 +268,24 @@ Developer + AI Agent
         │ PR merged to main
         ▼
 ┌──────────────────────────────────────────────────┐
-│  GitHub Actions: deploy-production.yml            │
+│  Cloudflare Pages Git Integration                 │
 │                                                    │
-│  1. Run full CI (above)                           │
-│  2. vite build                                    │
-│  3. Deploy to Cloudflare Pages (production)       │
-│     via wrangler pages deploy                     │
-│  4. Smoke test: curl production URL, check 200    │
-│  5. Tag release: v0.1.x                           │
+│  1. Watches the production branch                 │
+│  2. Runs the configured build command             │
+│  3. Publishes the built `dist/` output            │
+│  4. Serves preview and production deploys         │
+│  5. Custom domain points at the Pages project     │
 └──────────────────────────────────────────────────┘
 ```
 
-### 3.2 Preview Deployments on PRs
+### 3.2 Cloudflare Pages Deployments
 
-```yaml
-# .github/workflows/deploy-preview.yml
-name: Preview Deploy
-on:
-  pull_request:
-    branches: [main]
+Cloudflare Pages owns production hosting for this repo.
 
-jobs:
-  preview:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run build
-      - name: Deploy Preview
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=prontoproto-studio --branch=${{ github.head_ref }}
-      # Cloudflare Pages auto-creates a preview URL:
-      # https://<branch>.prontoproto-studio.pages.dev
-```
-
-Every PR gets a live preview URL. You can test the studio in a real browser before merging. This is free on Cloudflare Pages.
+- The current bootstrap path is direct upload to the `prontoproto-studio` Pages project.
+- Local redeploy command: `npm run deploy:pages`.
+- GitHub Actions remain CI-only and should not duplicate deploy ownership.
+- Native Git integration remains a valid follow-up once domain/account access is consolidated.
 
 ### 3.3 CI Workflow (Full)
 
@@ -666,7 +640,7 @@ These must be done first and are sequential. They establish the scaffold that ev
 | WI | Title | Files | Tests | Depends On |
 |---|---|---|---|---|
 | **WI-001** | Initialize Vite + React + TypeScript project with Tailwind | `package.json`, `vite.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `.eslintrc.cjs`, `.prettierrc`, `index.html`, `src/app/main.tsx` | Build succeeds; lint passes | — |
-| **WI-002** | Create CI pipeline (GitHub Actions) | `.github/workflows/ci.yml`, `.github/workflows/deploy-preview.yml`, `.github/workflows/deploy-production.yml` | CI runs and passes on push | WI-001 |
+| **WI-002** | Create CI pipeline (GitHub Actions) | `.github/workflows/ci.yml` | CI runs and passes on push | WI-001 |
 | **WI-003** | Write foundational docs | `docs/CONVENTIONS.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/PATCH-PROTOCOL.md`, `docs/SECTION-SCHEMA.md` | Docs exist and are referenced by CI readme check | WI-001 |
 | **WI-004** | Define all TypeScript interfaces | `src/types/session.ts`, `chat.ts`, `backlog.ts`, `vfs.ts`, `patch.ts`, `build.ts`, `deploy.ts`, `template.ts` | `tsc --noEmit` passes; no implementations | WI-001 |
 
@@ -754,7 +728,7 @@ For the first two weeks — the most critical period:
 
 | Day | Focus | Work Items | Milestone |
 |---|---|---|---|
-| **Day 1** | Project init + CI | WI-001, WI-002, WI-003 | ✅ Empty app builds and deploys to Cloudflare Pages preview |
+| **Day 1** | Project init + CI | WI-001, WI-002, WI-003 | ✅ Empty app builds and is ready for Cloudflare Pages Git integration |
 | **Day 2** | Type definitions + first engine module | WI-004, WI-005 | ✅ All interfaces defined; VFS core tested |
 | **Day 3** | VFS snapshots + patch engine | WI-006, WI-007 | ✅ Can apply patches to VFS with validation |
 | **Day 4** | Scaffold health + continuity | WI-008, WI-009 | ✅ Scaffold auditing and continuity checks pass |

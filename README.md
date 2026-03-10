@@ -33,6 +33,12 @@ npm run dev
 - `npm run lint` — run ESLint
 - `npm run test` — run Vitest
 
+## Deployment
+- Production hosting is Cloudflare Pages.
+- The current bootstrap deployment path is direct upload to the `prontoproto-studio` Pages project via `npm run deploy:pages`.
+- GitHub Actions are CI-only and do not own preview or production deploys.
+- Custom domain target: `https://prontoproto.studio`
+
 ## Guardrails (Short)
 - Client-only studio and static output; zero-cost hosting priority.
 - Keys and tokens are encrypted in-browser; no third-party trackers; no eval.

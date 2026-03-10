@@ -129,8 +129,6 @@ README.md
 
 ```
 .github/workflows/ci.yml
-.github/workflows/deploy-preview.yml
-.github/workflows/deploy-production.yml
 ```
 
 **Agent instructions:**
@@ -143,17 +141,12 @@ README.md
      size < 512KB
    - `integration-tests` (needs build): npm ci → vitest run tests/integration/
      (empty initially)
-2. `deploy-preview.yml` runs on PR to `main`. Uses
-   `cloudflare/wrangler-action@v3` to deploy `dist/` to Cloudflare Pages
-   with the branch name. Requires secrets: `CLOUDFLARE_API_TOKEN`,
-   `CLOUDFLARE_ACCOUNT_ID`.
-3. `deploy-production.yml` runs on push to `main` only. Runs full CI
-   first, then deploys to Cloudflare Pages production. Tags the commit
-   with an auto-incrementing patch version (`v0.0.x`).
-4. Add `vitest` as a dev dependency. Create `vitest.config.ts` that
+2. Cloudflare Pages should be connected directly to the repo via native
+   Git integration for preview and production deploys.
+3. Add `vitest` as a dev dependency. Create `vitest.config.ts` that
    mirrors the Vite config. Create empty `tests/unit/` and
    `tests/integration/` directories with a `.gitkeep` in each.
-5. Add scripts to `package.json`:
+4. Add scripts to `package.json`:
    ```
    "test:unit": "vitest run tests/unit/",
    "test:integration": "vitest run tests/integration/",
@@ -165,9 +158,7 @@ README.md
 **Acceptance criteria:**
 
 - [ ] Pushing to a feature branch triggers `ci.yml`; all jobs pass
-- [ ] Opening a PR triggers `deploy-preview.yml` (may fail until CF
-      secrets are configured — that's expected; the workflow file must be
-      syntactically valid)
+- [ ] Cloudflare Pages can build the repo from the connected branch
 - [ ] `npm run test:unit` exits 0 (no tests, no failures)
 - [ ] `npm run build` still succeeds after adding vitest
 
