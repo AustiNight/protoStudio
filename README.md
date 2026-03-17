@@ -38,6 +38,12 @@ npm run dev
 - The current bootstrap deployment path is direct upload to the `prontoproto-studio` Pages project via `npm run deploy:pages`.
 - GitHub Actions are CI-only and do not own preview or production deploys.
 - Custom domain target: `https://prontoproto.studio`
+- OpenAI requests in production are routed through a Pages Function at `/api/openai/*`.
+- Configure the server secret before deploying:
+  `npx wrangler@4.71.0 pages secret put OPENAI_API_KEY --project-name prontoproto-studio`
+- If `VITE_OPENAI_PROXY_BASE_URL` points to a different origin, also set
+  `OPENAI_PROXY_ALLOWED_ORIGINS` (comma-separated), for example:
+  `https://prontoproto.studio,https://www.prontoproto.studio`
 
 ## Guardrails (Short)
 - Client-only studio and static output; zero-cost hosting priority.

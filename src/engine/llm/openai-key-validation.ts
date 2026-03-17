@@ -1,7 +1,9 @@
 import { resolveRuntimeFetch } from '../../utils/fetch';
+import type { OpenAIRequestMode } from '../../config/runtime-config';
 
 const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models';
 const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_PROXY_BASE_URL = '/api/openai';
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -29,12 +31,14 @@ type ValidateOpenAIKeyOptions = {
   now?: () => number;
   timeoutMs?: number;
   signal?: AbortSignal;
+  requestMode?: OpenAIRequestMode;
+  proxyBaseUrl?: string;
 };
 
 type OpenAIKeyValidationRunnerOptions = Omit<ValidateOpenAIKeyOptions, 'signal'>;
 
 export type OpenAIKeyValidationRunner = {
-  validate: (apiKey: string) => Promise<OpenAIKeyValidationResult>;
+  validate: (apiKey?: string) => Promise<OpenAIKeyValidationResult>;
   cancel: () => void;
   dispose: () => void;
 };
@@ -53,7 +57,7 @@ export function createOpenAIKeyValidationRunner(
   };
 
   return {
-    validate: async (apiKey: string) => {
+    validate: async (apiKey?: string) => {
       activeRequestId += 1;
       const requestId = activeRequestId;
 
@@ -89,7 +93,7 @@ export function createOpenAIKeyValidationRunner(
 }
 
 export async function validateOpenAIKey(
-  apiKey: string,
+  apiKey = '',
   options: ValidateOpenAIKeyOptions = {},
 ): Promise<OpenAIKeyValidationResult> {
   const fetchFn = resolveRuntimeFetch(options.fetchFn);
@@ -104,6 +108,13 @@ export async function validateOpenAIKey(
   }
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const requestMode = options.requestMode ?? 'direct';
+  const requestUrl =
+    requestMode === 'proxy'
+      ? `${normalizeProxyBaseUrl(options.proxyBaseUrl)}/v1/models`
+      : OPENAI_MODELS_URL;
+  const headers =
+    requestMode === 'proxy' ? undefined : { Authorization: `Bearer ${apiKey}` };
   const controller = buildAbortController();
   const signal = controller?.signal ?? options.signal;
 
@@ -118,11 +129,9 @@ export async function validateOpenAIKey(
       : null;
 
   try {
-    const response = await fetchFn(OPENAI_MODELS_URL, {
+    const response = await fetchFn(requestUrl, {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers,
       signal,
     });
 
@@ -159,6 +168,17 @@ export async function validateOpenAIKey(
     }
     detachExternalAbort();
   }
+}
+
+function normalizeProxyBaseUrl(value?: string): string {
+  if (!value) {
+    return DEFAULT_PROXY_BASE_URL;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_PROXY_BASE_URL;
+  }
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 }
 
 function mapStatusToValidation(

@@ -10,15 +10,19 @@ import type {
 } from '../../../types/llm';
 import type { LLMProviderName } from '../../../types/session';
 import { resolveRuntimeFetch } from '../../../utils/fetch';
+import type { OpenAIRequestMode } from '../../../config/runtime-config';
 
 const OPENAI_CHAT_COMPLETIONS_URL =
   'https://api.openai.com/v1/chat/completions';
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_PROXY_BASE_URL = '/api/openai';
 
 interface OpenAIProviderOptions {
   fetchFn?: FetchFn;
   now?: () => number;
   timeoutMs?: number;
+  requestMode?: OpenAIRequestMode;
+  proxyBaseUrl?: string;
 }
 
 interface OpenAIChatRequest {
@@ -40,11 +44,15 @@ export class OpenAIProvider implements LLMProviderClient {
   private fetchFn?: FetchFn;
   private now: () => number;
   private timeoutMs: number;
+  private requestMode: OpenAIRequestMode;
+  private proxyBaseUrl: string;
 
   constructor(options?: OpenAIProviderOptions) {
     this.fetchFn = resolveRuntimeFetch(options?.fetchFn);
     this.now = options?.now ?? (() => Date.now());
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.requestMode = options?.requestMode ?? 'direct';
+    this.proxyBaseUrl = normalizeProxyBaseUrl(options?.proxyBaseUrl);
   }
 
   async call(
@@ -64,6 +72,8 @@ export class OpenAIProvider implements LLMProviderClient {
     }
 
     const payload = buildPayload(model, messages, options);
+    const requestUrl = this.resolveRequestUrl();
+    const headers = this.buildRequestHeaders(apiKey);
     const controller = buildAbortController();
     const timeoutId = controller
       ? setTimeout(() => controller.abort(), options.timeoutMs ?? this.timeoutMs)
@@ -73,12 +83,9 @@ export class OpenAIProvider implements LLMProviderClient {
 
     let response: Response;
     try {
-      response = await this.fetchFn(OPENAI_CHAT_COMPLETIONS_URL, {
+      response = await this.fetchFn(requestUrl, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(payload),
         signal: controller?.signal,
       });
@@ -121,12 +128,9 @@ export class OpenAIProvider implements LLMProviderClient {
       );
       if (retryPayload) {
         try {
-          response = await this.fetchFn(OPENAI_CHAT_COMPLETIONS_URL, {
+          response = await this.fetchFn(requestUrl, {
             method: 'POST',
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              'Content-Type': 'application/json',
-            },
+            headers,
             body: JSON.stringify(retryPayload),
             signal: controller?.signal,
           });
@@ -192,6 +196,25 @@ export class OpenAIProvider implements LLMProviderClient {
     }
 
     return okResult(parsed.value);
+  }
+
+  private resolveRequestUrl(): string {
+    if (this.requestMode === 'proxy') {
+      return `${this.proxyBaseUrl}/v1/chat/completions`;
+    }
+    return OPENAI_CHAT_COMPLETIONS_URL;
+  }
+
+  private buildRequestHeaders(apiKey: string): Record<string, string> {
+    if (this.requestMode === 'proxy') {
+      return {
+        'Content-Type': 'application/json',
+      };
+    }
+    return {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    };
   }
 }
 
@@ -584,6 +607,17 @@ function shouldRetryWithoutTemperature(bodyText: string | null): boolean {
     (normalized.includes('temperature') &&
       normalized.includes('only the default (1) value is supported'))
   );
+}
+
+function normalizeProxyBaseUrl(value?: string): string {
+  if (!value) {
+    return DEFAULT_PROXY_BASE_URL;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_PROXY_BASE_URL;
+  }
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 }
 
 const OPENAI_REASONING_ORDER: OpenAIReasoningEffort[] = [

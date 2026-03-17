@@ -50,6 +50,7 @@ type SettingsModalProps = {
 const MIN_PASSPHRASE_LENGTH = 12;
 const VALIDATION_DELAY_MS = 800;
 const OPENAI_KEY_VALIDATION_TIMEOUT_MS = 10_000;
+const OPENAI_SERVER_MANAGED = runtimeConfig.openAIRequestMode === 'proxy';
 
 const pricingConfig = pricingConfigRaw as PricingConfig;
 
@@ -183,6 +184,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     () =>
       createOpenAIKeyValidationRunner({
         timeoutMs: OPENAI_KEY_VALIDATION_TIMEOUT_MS,
+        requestMode: runtimeConfig.openAIRequestMode,
+        proxyBaseUrl: runtimeConfig.openAIProxyBaseUrl,
       }),
     [],
   );
@@ -419,7 +422,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   const runKeyValidation = async (provider: ProviderName) => {
     const value = useSettingsStore.getState().settings.llmKeys[provider].trim();
-    if (!value) {
+    if (!value && !(provider === 'openai' && OPENAI_SERVER_MANAGED)) {
       setKeyStatus((prev) => ({
         ...prev,
         [provider]: { status: 'invalid', message: 'Key is empty.' },
@@ -428,14 +431,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     }
 
     if (provider === 'openai') {
-      const formatHint = getOpenAIFormatHint(value);
+      const formatHint = OPENAI_SERVER_MANAGED ? null : getOpenAIFormatHint(value);
       setKeyStatus((prev) => ({
         ...prev,
         [provider]: {
           status: 'validating',
-          message: formatHint
-            ? `${formatHint} Checking with OpenAI...`
-            : 'Checking with OpenAI...',
+          message: OPENAI_SERVER_MANAGED
+            ? 'Checking server-side OpenAI gateway...'
+            : formatHint
+              ? `${formatHint} Checking with OpenAI...`
+              : 'Checking with OpenAI...',
         },
       }));
 
@@ -639,9 +644,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             <div className="mt-4 grid gap-4 lg:grid-cols-3">
               <SecretField
                 label="OpenAI"
-                description="Chat + builder calls routed to OpenAI."
+                description={
+                  OPENAI_SERVER_MANAGED
+                    ? 'Chat + builder calls use the server-side OpenAI gateway. Key is managed in Cloudflare.'
+                    : 'Chat + builder calls routed directly to OpenAI.'
+                }
                 value={settings.llmKeys.openai}
-                placeholder="sk-..."
+                placeholder={OPENAI_SERVER_MANAGED ? 'Server-managed in production' : 'sk-...'}
                 status={keyStatus.openai}
                 onChange={(value) => handleLlmKeyChange('openai', value)}
                 onValidate={() => runKeyValidation('openai')}

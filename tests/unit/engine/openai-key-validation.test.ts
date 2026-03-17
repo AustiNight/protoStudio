@@ -71,6 +71,24 @@ describe('validateOpenAIKey', () => {
     );
   });
 
+  it('uses proxy endpoint without bearer auth in proxy mode', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createMockResponse(200));
+    const fetchFn = fetchMock as unknown as FetchFn;
+
+    const result = await validateOpenAIKey('', {
+      fetchFn,
+      requestMode: 'proxy',
+      proxyBaseUrl: '/api/openai',
+      now: () => 4321,
+    });
+
+    expect(result.status).toBe('valid');
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0] ?? [];
+    expect(requestUrl).toBe('/api/openai/v1/models');
+    expect((requestInit as RequestInit).method).toBe('GET');
+    expect(readHeader((requestInit as RequestInit).headers, 'Authorization')).toBeUndefined();
+  });
+
   it('maps status 401/403 to invalid auth results', async () => {
     const fetchMock401 = vi.fn().mockResolvedValue(createMockResponse(401));
     const fetchMock403 = vi.fn().mockResolvedValue(createMockResponse(403));

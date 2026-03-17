@@ -17,6 +17,8 @@ interface RuntimeSettingsDefaults {
   };
 }
 
+export type OpenAIRequestMode = 'direct' | 'proxy';
+
 export interface RuntimeConfig {
   useRealLlm: boolean;
   debugLogs: boolean;
@@ -26,6 +28,8 @@ export interface RuntimeConfig {
   previewSwapDurationMs: number;
   previewValidationDurationMs: number;
   previewIframeSandbox: string;
+  openAIRequestMode: OpenAIRequestMode;
+  openAIProxyBaseUrl: string;
   settingsDefaults: RuntimeSettingsDefaults;
 }
 
@@ -49,6 +53,11 @@ export const runtimeConfig: RuntimeConfig = {
     readEnv('VITE_PREVIEW_IFRAME_SANDBOX'),
     DEFAULT_IFRAME_SANDBOX,
   ),
+  openAIRequestMode: parseOpenAIRequestMode(
+    readEnv('VITE_OPENAI_REQUEST_MODE'),
+    import.meta.env.PROD ? 'proxy' : 'direct',
+  ),
+  openAIProxyBaseUrl: normalizePath(readEnv('VITE_OPENAI_PROXY_BASE_URL'), '/api/openai'),
   settingsDefaults: {
     llmKeys: {
       openai: readEnvString('VITE_OPENAI_API_KEY', ''),
@@ -174,4 +183,32 @@ function parseOpenAIReasoning(
   }
 
   return fallback;
+}
+
+function parseOpenAIRequestMode(
+  value: EnvValue,
+  fallback: OpenAIRequestMode,
+): OpenAIRequestMode {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'proxy') {
+    return 'proxy';
+  }
+  if (normalized === 'direct') {
+    return 'direct';
+  }
+  return fallback;
+}
+
+function normalizePath(value: EnvValue, fallback: string): string {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 }

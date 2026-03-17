@@ -26,6 +26,7 @@ import {
 import { buildPreviewSecurityHeaders } from '@/engine/guardrails/guardrails';
 import { ContextManager } from '@/engine/llm/context';
 import { LLMGateway } from '@/engine/llm/gateway';
+import { OpenAIProvider } from '@/engine/llm/providers/openai';
 import { TEMPLATE_CATALOG } from '@/engine/templates/catalog';
 import { buildPreviewHtml } from '@/engine/vfs/preview';
 import { VirtualFileSystem } from '@/engine/vfs/vfs';
@@ -261,6 +262,25 @@ function buildLlmConfigFromSettings(settings: SettingsPayload): LLMConfig {
       builder: settings.openaiThinking.builder,
     },
   };
+}
+
+function shouldRequireClientApiKey(providerName: LLMProviderName): boolean {
+  if (providerName !== 'openai') {
+    return true;
+  }
+  return runtimeConfig.openAIRequestMode !== 'proxy';
+}
+
+function createRuntimeGateway(config: LLMConfig): LLMGateway {
+  return new LLMGateway(config, {
+    providers: {
+      openai: new OpenAIProvider({
+        requestMode: runtimeConfig.openAIRequestMode,
+        proxyBaseUrl: runtimeConfig.openAIProxyBaseUrl,
+      }),
+    },
+    telemetry: useTelemetryStore.getState().createGatewayTelemetry(),
+  });
 }
 
 function toChatContextMessages(messages: ChatMessage[]): LLMMessage[] {
@@ -1095,7 +1115,7 @@ export function Layout() {
       }
 
       const apiKey = settings.llmKeys[providerName].trim();
-      if (!apiKey) {
+      if (shouldRequireClientApiKey(providerName) && !apiKey) {
         addFocusedMessage(
           buildNarrationMessage(
             requestSessionId,
@@ -1106,10 +1126,7 @@ export function Layout() {
         return;
       }
 
-      const telemetry = useTelemetryStore.getState();
-      const gateway = new LLMGateway(buildLlmConfigFromSettings(settings), {
-        telemetry: telemetry.createGatewayTelemetry(),
-      });
+      const gateway = createRuntimeGateway(buildLlmConfigFromSettings(settings));
       const contextMessages = toChatContextMessages(latestMessages);
       const userContextCount = contextMessages.filter((message) => message.role === 'user').length;
       const assistantContextCount = contextMessages.length - userContextCount;
@@ -1420,7 +1437,7 @@ export function Layout() {
       });
     } else {
       const apiKey = settings.llmKeys[providerName].trim();
-      if (!apiKey) {
+      if (shouldRequireClientApiKey(providerName) && !apiKey) {
         addFocusedMessage(
           buildNarrationMessage(
             requestSessionId,
@@ -1430,9 +1447,7 @@ export function Layout() {
         );
         return;
       }
-      gateway = new LLMGateway(llmConfig, {
-        telemetry: telemetry.createGatewayTelemetry(),
-      });
+      gateway = createRuntimeGateway(llmConfig);
     }
 
     const guardrailsHeaders = buildPreviewSecurityHeaders();
@@ -1632,7 +1647,6 @@ export function Layout() {
 
       const llmConfig = buildLlmConfigFromSettings(settings);
       const telemetry = useTelemetryStore.getState();
-
       try {
         let gateway: LLMGateway;
         if (USE_MOCK_LLM) {
@@ -1642,7 +1656,7 @@ export function Layout() {
           });
         } else {
           const apiKey = settings.llmKeys[providerName].trim();
-          if (!apiKey) {
+          if (shouldRequireClientApiKey(providerName) && !apiKey) {
             addFocusedMessage(
               buildNarrationMessage(
                 requestSessionId,
@@ -1652,9 +1666,7 @@ export function Layout() {
             );
             return;
           }
-          gateway = new LLMGateway(llmConfig, {
-            telemetry: telemetry.createGatewayTelemetry(),
-          });
+          gateway = createRuntimeGateway(llmConfig);
         }
 
         const firstPath = new FirstMessagePath({

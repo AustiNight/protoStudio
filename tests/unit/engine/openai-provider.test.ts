@@ -21,6 +21,25 @@ function createMockResponse(
   } as Response;
 }
 
+function readHeader(
+  headers: HeadersInit | undefined,
+  key: string,
+): string | undefined {
+  if (!headers) {
+    return undefined;
+  }
+  if (headers instanceof Headers) {
+    return headers.get(key) ?? undefined;
+  }
+  if (Array.isArray(headers)) {
+    const found = headers.find(([header]) => header.toLowerCase() === key.toLowerCase());
+    return found?.[1];
+  }
+
+  const record = headers as Record<string, string | undefined>;
+  return record[key] ?? record[key.toLowerCase()];
+}
+
 const baseMessages: LLMMessage[] = [{ role: 'user', content: 'Hello' }];
 
 describe('OpenAIProvider', () => {
@@ -229,6 +248,31 @@ describe('OpenAIProvider', () => {
     const parsedBody = call?.body ? JSON.parse(String(call.body)) : null;
     expect(parsedBody?.max_tokens).toBe(123);
     expect(parsedBody?.max_completion_tokens).toBeUndefined();
+  });
+
+  it('routes through proxy mode without bearer auth header', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        createMockResponse(200, {
+          model: 'gpt-4o',
+          choices: [{ message: { content: 'ok' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      );
+    const fetchFn = fetchMock as unknown as FetchFn;
+
+    const provider = new OpenAIProvider({
+      fetchFn,
+      requestMode: 'proxy',
+      proxyBaseUrl: '/api/openai',
+    });
+    const result = await provider.call('', 'gpt-4o', baseMessages, {});
+
+    expect(result.ok).toBe(true);
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0] ?? [];
+    expect(requestUrl).toBe('/api/openai/v1/chat/completions');
+    expect(readHeader((requestInit as RequestInit).headers, 'Authorization')).toBeUndefined();
   });
 
   it('retries with max_completion_tokens after unsupported max_tokens 400', async () => {

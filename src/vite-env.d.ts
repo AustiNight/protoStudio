@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_PREVIEW_SWAP_DURATION_MS?: string;
   readonly VITE_PREVIEW_VALIDATION_DURATION_MS?: string;
   readonly VITE_PREVIEW_IFRAME_SANDBOX?: string;
+  readonly VITE_OPENAI_REQUEST_MODE?: string;
+  readonly VITE_OPENAI_PROXY_BASE_URL?: string;
   readonly VITE_DEFAULT_CHAT_PROVIDER?: string;
   readonly VITE_DEFAULT_CHAT_MODEL?: string;
   readonly VITE_DEFAULT_BUILDER_PROVIDER?: string;
