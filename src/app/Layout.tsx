@@ -34,7 +34,6 @@ import { SessionCheckpoint } from '@/persistence/checkpoint';
 import { useBacklogStore } from '@/store/backlog-store';
 import { useBuildStore } from '@/store/build-store';
 import { useChatStore } from '@/store/chat-store';
-import { useLogStore } from '@/store/log-store';
 import type { SettingsPayload } from '@/store/settings-store';
 import { useSettingsStore } from '@/store/settings-store';
 import { buildSessionCostSummary, useTelemetryStore } from '@/store/telemetry-store';
@@ -377,15 +376,6 @@ function sanitizeIdentifier(value: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return normalized.length > 0 ? normalized : 'update';
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 function pickMockTemplateId(message: string): string {
@@ -839,7 +829,7 @@ function buildPreviewSwapPayload(
 }
 
 export function Layout() {
-  const [activePanel, setActivePanel] = useState<PanelKey>('chat');
+  const [, setActivePanel] = useState<PanelKey>('chat');
   const [activeSessionId, setActiveSessionId] = useState(() => createSessionId());
   const [chatDraft, setChatDraft] = useState('');
   const [recoveryState, setRecoveryState] = useState<RecoveryState | null>(null);
@@ -888,7 +878,6 @@ export function Layout() {
   const togglePause = useBuildStore((state) => state.togglePause);
   const resetBuild = useBuildStore((state) => state.resetBuild);
   const telemetryEvents = useTelemetryStore((state) => state.events);
-  const logEntries = useLogStore((state) => state.entries);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [pendingReorder, setPendingReorder] = useState<PendingReorder | null>(null);
@@ -906,13 +895,6 @@ export function Layout() {
   const deniedTimerRef = useRef<number | null>(null);
   const telemetryInitializedRef = useRef(false);
   const isReorderPending = pendingReorder !== null;
-  const visiblePanels = useMemo(
-    () =>
-      runtimeConfig.logViewerEnabled
-        ? panels
-        : panels.filter((panel) => panel.id !== 'logs'),
-    [],
-  );
 
   const triggerRevertPulse = () => {
     if (revertTimerRef.current) {

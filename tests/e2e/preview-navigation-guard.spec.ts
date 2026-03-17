@@ -36,7 +36,6 @@ test('preview iframe blocks internal navigation and stays on srcdoc', async ({ p
 
   const liveSlot = await page.evaluate(() => {
     const blue = document.querySelector('iframe[title="Preview slot blue"]');
-    const green = document.querySelector('iframe[title="Preview slot green"]');
     const isVisible = (element: Element | null) => {
       if (!(element instanceof HTMLElement)) {
         return false;
