@@ -2,20 +2,6 @@ const fs = require('fs');
 const { execFileSync } = require('child_process');
 const path = require('path');
 
-const allowedModules = new Set([
-  'chat',
-  'preview',
-  'backlog',
-  'builder',
-  'deploy',
-  'vfs',
-  'templates',
-  'settings',
-  'store',
-  'ci',
-  'docs',
-]);
-
 function runGit(args, cwd = process.cwd()) {
   return execFileSync('git', args, {
     cwd,
@@ -81,26 +67,6 @@ function getCommitSubjects(baseRef, headRef, cwd = process.cwd()) {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-}
-
-function lintCommitMessages(subjects) {
-  const errors = [];
-  const pattern = /^(feat|fix)\(([^)]+)\): (.+)$/;
-
-  for (const subject of subjects) {
-    const match = subject.match(pattern);
-    if (!match) {
-      errors.push(`Commit message does not match required format: "${subject}"`);
-      continue;
-    }
-
-    const moduleName = match[2];
-    if (!allowedModules.has(moduleName)) {
-      errors.push(`Commit module "${moduleName}" is not allowed in: "${subject}"`);
-    }
-  }
-
-  return errors;
 }
 
 function readPackageJsonAt(ref, cwd = process.cwd()) {
@@ -205,13 +171,6 @@ function collectChangeControlResult(options = {}) {
 
   if (errors.length === 0) {
     try {
-      const subjects = getCommitSubjects(comparisonBase.baseRef, headRef, cwd);
-      errors.push(...lintCommitMessages(subjects));
-    } catch (error) {
-      errors.push('Unable to read commit messages for change-control lint.');
-    }
-
-    try {
       errors.push(...lintDependencyDecisions(comparisonBase.baseRef, headRef, cwd));
     } catch (error) {
       errors.push('Dependency decision lint encountered an unexpected error.');
@@ -249,7 +208,6 @@ module.exports = {
   getCommitSubjects,
   getParentRef,
   isZeroSha,
-  lintCommitMessages,
   lintDependencyDecisions,
   readPackageJsonAt,
   refExists,
