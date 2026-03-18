@@ -21,6 +21,7 @@ import {
   buildBacklogPrompt,
   evaluateReorder,
   parseBacklogResponse,
+  parseWorkItemsResponse,
   validateAtomSizing,
 } from '@/engine/chat/po-logic';
 import { buildPreviewSecurityHeaders } from '@/engine/guardrails/guardrails';
@@ -90,6 +91,11 @@ const CHAT_SYSTEM_PROMPT = [
 const MAX_CHAT_CONTEXT_MESSAGES = 20;
 const CHAT_RESPONSE_MAX_TOKENS = 600;
 const CHAT_EMPTY_RETRY_MAX_TOKENS = 1800;
+const AUTO_CRITIC_MAX_ROUNDS = 10;
+const AUTO_CRITIC_MIN_ACCEPTABLE_SCORE = 94;
+const AUTO_CRITIC_COOLDOWN_MS = 12_000;
+const AUTO_CRITIC_MIN_DIMENSION_SCORE = 88;
+const AUTO_CRITIC_MAX_NOOP_ROUNDS = 3;
 const USE_MOCK_LLM =
   import.meta.env.MODE === 'e2e' ||
   (import.meta.env.DEV && !runtimeConfig.useRealLlm);
@@ -786,6 +792,114 @@ function defaultFilesForAtomType(atomType: AtomType): string[] {
   }
 }
 
+function splitRequestIntoClauses(value: string): string[] {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return [];
+  }
+  const split = normalized
+    .split(/\b(?:and then|then|also|plus)\b|[.;]+/i)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (split.length === 0) {
+    return [normalized];
+  }
+  return split.slice(0, 4);
+}
+
+type AutonomousCriticEnvelope = {
+  score: number;
+  done: boolean;
+  summary: string;
+  dimensions: {
+    ux: number;
+    visual: number;
+    accessibility: number;
+    trust: number;
+    conversion: number;
+    performance: number;
+  } | null;
+  items: WorkItem[];
+};
+
+function extractJsonPayload(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return trimmed;
+  }
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    return fenced[1].trim();
+  }
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+  return null;
+}
+
+function parseAutonomousCriticEnvelope(
+  content: string,
+  sessionId: string,
+): AutonomousCriticEnvelope | null {
+  const payload = extractJsonPayload(content);
+  if (!payload) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(payload) as {
+      score?: unknown;
+      done?: unknown;
+      summary?: unknown;
+      dimensions?: unknown;
+      items?: unknown;
+    };
+    const score =
+      typeof parsed.score === 'number' && Number.isFinite(parsed.score)
+        ? Math.max(0, Math.min(100, Math.round(parsed.score)))
+        : 0;
+    const done = parsed.done === true;
+    const summary =
+      typeof parsed.summary === 'string' ? parsed.summary.trim() : 'No summary provided.';
+    const rawDimensions =
+      parsed.dimensions && typeof parsed.dimensions === 'object' ? parsed.dimensions : null;
+    const parseDimension = (value: unknown) =>
+      typeof value === 'number' && Number.isFinite(value)
+        ? Math.max(0, Math.min(100, Math.round(value)))
+        : 0;
+    const dimensions = rawDimensions
+      ? {
+          ux: parseDimension((rawDimensions as Record<string, unknown>).ux),
+          visual: parseDimension((rawDimensions as Record<string, unknown>).visual),
+          accessibility: parseDimension((rawDimensions as Record<string, unknown>).accessibility),
+          trust: parseDimension((rawDimensions as Record<string, unknown>).trust),
+          conversion: parseDimension((rawDimensions as Record<string, unknown>).conversion),
+          performance: parseDimension((rawDimensions as Record<string, unknown>).performance),
+        }
+      : null;
+    const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+    const items = parseWorkItemsResponse(
+      {
+        content: JSON.stringify(rawItems),
+      },
+      { sessionId },
+    );
+    return {
+      score,
+      done,
+      summary,
+      dimensions,
+      items,
+    };
+  } catch {
+    return null;
+  }
+}
+
 type PreviewRouteMap = Record<string, string>;
 
 type PreviewSwapPayload = {
@@ -870,6 +984,7 @@ export function Layout() {
   const focusedItemId = useBacklogStore((state) => state.focusedItemId);
   const focusItem = useBacklogStore((state) => state.focusItem);
   const promoteNext = useBacklogStore((state) => state.promoteNext);
+  const insertItemsAfterActive = useBacklogStore((state) => state.insertItemsAfterActive);
   const setBacklogItems = useBacklogStore((state) => state.setItems);
   const updateBacklogItem = useBacklogStore((state) => state.updateItem);
   const moveBacklogItemToEnd = useBacklogStore((state) => state.moveToEnd);
@@ -892,11 +1007,18 @@ export function Layout() {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [previewResetKey, setPreviewResetKey] = useState(0);
+  const [previewAutomationPaused, setPreviewAutomationPaused] = useState(false);
   const [autoFocusOnDeck, setAutoFocusOnDeck] = useState(true);
+  const [blockedTrayOpen, setBlockedTrayOpen] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const revertTimerRef = useRef<number | null>(null);
   const deniedTimerRef = useRef<number | null>(null);
   const telemetryInitializedRef = useRef(false);
+  const autonomousCriticRunningRef = useRef(false);
+  const autonomousCriticRoundsRef = useRef(0);
+  const autonomousCriticNoopRoundsRef = useRef(0);
+  const autonomousCriticCooldownUntilRef = useRef(0);
+  const autonomousCriticStoppedRef = useRef(false);
   const isReorderPending = pendingReorder !== null;
 
   const triggerRevertPulse = () => {
@@ -949,6 +1071,11 @@ export function Layout() {
     setPreviewHasStaged(false);
     builderCycleRef.current = 0;
     builderRunningRef.current = false;
+    autonomousCriticRunningRef.current = false;
+    autonomousCriticRoundsRef.current = 0;
+    autonomousCriticNoopRoundsRef.current = 0;
+    autonomousCriticCooldownUntilRef.current = 0;
+    autonomousCriticStoppedRef.current = false;
     setHasPreview(false);
   }, [activeSessionId]);
 
@@ -972,6 +1099,17 @@ export function Layout() {
     return () => {
       window.removeEventListener(PREVIEW_ACTIVE_SLOT_EVENT, onPreviewActiveSlot as EventListener);
     };
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.shiftKey && event.altKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        setPreviewAutomationPaused((current) => !current);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   useEffect(() => {
@@ -1352,6 +1490,286 @@ export function Layout() {
     },
     [addFocusedMessage],
   );
+
+  const planUserRequestBacklogItems = useCallback(
+    async (rawContent: string): Promise<WorkItem[]> => {
+      const content = rawContent.trim();
+      if (!content) {
+        return [];
+      }
+      const now = Date.now();
+      const buildFallback = () => {
+        const clauses = splitRequestIntoClauses(content);
+        const items = clauses.map((clause, index) => {
+          const atomType = inferAtomTypeFromRequest(clause);
+          const title = summarizeUserRequest(clause);
+          const id = `user-${now}-${index}-${sanitizeIdentifier(title).slice(0, 36)}`;
+          return {
+            id,
+            sessionId: activeSessionId,
+            title,
+            description: clause,
+            effort: 'M' as Effort,
+            status: 'backlog' as WorkItemStatus,
+            order: index + 1,
+            dependencies: [],
+            rationale: 'Directly requested by the user in chat.',
+            createdAt: now,
+            atomType,
+            filesTouch: defaultFilesForAtomType(atomType),
+            estimatedLines: 65,
+            visibleChange: `Implements: ${title}`,
+          };
+        });
+        return items;
+      };
+
+      if (USE_MOCK_LLM) {
+        return buildFallback();
+      }
+
+      try {
+        const settings = useSettingsStore.getState().settings;
+        const llmConfig = buildLlmConfigFromSettings(settings);
+        const providerName = settings.llmModels.chat.provider;
+        const apiKey = settings.llmKeys[providerName].trim();
+        if (shouldRequireClientApiKey(providerName) && !apiKey) {
+          return buildFallback();
+        }
+        const gateway = createRuntimeGateway(llmConfig);
+        const response = await gateway.send({
+          role: 'chat',
+          systemPrompt: [
+            'You are a backlog planner for prontoproto.studio.',
+            'Rewrite the user request into concise, implementation-ready Builder atoms.',
+            'If the request mixes concerns, split into multiple atoms with dependencies.',
+            'Keep total output text roughly similar in length to the user input.',
+            'Return JSON array only, no prose.',
+          ].join('\n'),
+          messages: [
+            {
+              role: 'user',
+              content: [
+                `Session request: ${content}`,
+                'Output item schema:',
+                '{ "title": "...", "description": "...", "atomType": "structure|content|style|behavior|integration", "filesTouch": ["..."], "estimatedLines": 40, "visibleChange": "...", "dependencies": [] }',
+              ].join('\n'),
+            },
+          ],
+          responseFormat: 'json',
+          temperature: 0.2,
+          maxTokens: 900,
+        });
+        if (!response.ok) {
+          return buildFallback();
+        }
+        const parsed = parseWorkItemsResponse(response.value, {
+          sessionId: activeSessionId,
+        });
+        return parsed.length > 0 ? parsed : buildFallback();
+      } catch {
+        return buildFallback();
+      }
+    },
+    [activeSessionId],
+  );
+
+  const runAutonomousCriticCycle = useCallback(async () => {
+    const now = Date.now();
+    if (autonomousCriticRunningRef.current || autonomousCriticStoppedRef.current) {
+      return;
+    }
+    if (now < autonomousCriticCooldownUntilRef.current) {
+      return;
+    }
+    if (autonomousCriticRoundsRef.current >= AUTO_CRITIC_MAX_ROUNDS) {
+      autonomousCriticStoppedRef.current = true;
+      addFocusedMessage(
+        buildNarrationMessage(
+          activeSessionId,
+          'system',
+          'Autonomous quality loop reached max rounds. Continuing only on explicit user requests.',
+        ),
+      );
+      return;
+    }
+    const vfs = workingVfsRef.current;
+    if (!vfs) {
+      return;
+    }
+
+    autonomousCriticRunningRef.current = true;
+    autonomousCriticRoundsRef.current += 1;
+    const round = autonomousCriticRoundsRef.current;
+    const requestSessionId = activeSessionIdRef.current;
+
+    try {
+      let envelope: AutonomousCriticEnvelope | null = null;
+
+      if (USE_MOCK_LLM) {
+        envelope = {
+          score: round >= 2 ? 92 : 76,
+          done: round >= 2,
+          summary:
+            round >= 2
+              ? 'Mock critic found no remaining high-impact issues.'
+              : 'Mock critic recommends one additional polish pass.',
+          dimensions:
+            round >= 2
+              ? {
+                  ux: 93,
+                  visual: 94,
+                  accessibility: 92,
+                  trust: 93,
+                  conversion: 91,
+                  performance: 90,
+                }
+              : {
+                  ux: 74,
+                  visual: 76,
+                  accessibility: 71,
+                  trust: 73,
+                  conversion: 72,
+                  performance: 75,
+                },
+          items:
+            round >= 2
+              ? []
+              : [
+                  {
+                    id: `critic-${now}-0`,
+                    sessionId: requestSessionId,
+                    title: 'Refine visual hierarchy for primary CTA',
+                    description: 'Increase CTA prominence and tighten nearby spacing for clearer conversion focus.',
+                    effort: 'S',
+                    status: 'backlog',
+                    order: 1,
+                    dependencies: [],
+                    rationale: 'Autonomous quality critic recommendation.',
+                    createdAt: now,
+                    atomType: 'style',
+                    filesTouch: ['styles.css', 'index.html'],
+                    estimatedLines: 45,
+                    visibleChange: 'Primary CTA stands out more clearly against surrounding content.',
+                  },
+                ],
+        };
+      } else {
+        const settings = useSettingsStore.getState().settings;
+        const llmConfig = buildLlmConfigFromSettings(settings);
+        const providerName = settings.llmModels.chat.provider;
+        const apiKey = settings.llmKeys[providerName].trim();
+        if (shouldRequireClientApiKey(providerName) && !apiKey) {
+          return;
+        }
+        const gateway = createRuntimeGateway(llmConfig);
+        const preview = buildPreviewHtml(vfs);
+        const manifest = JSON.stringify(vfs.toManifest(), null, 2);
+        const html = preview.ok ? preview.value.html.slice(0, 20_000) : '';
+        const css = vfs.getFile('styles.css')?.content.slice(0, 20_000) ?? '';
+
+        const criticResult = await gateway.send({
+          role: 'chat',
+          systemPrompt: [
+            'You are an autonomous website quality critic for prontoproto.studio.',
+            'Assess MVP maturity with rigor across UX, visual polish, accessibility, trust signals, and conversion clarity.',
+            'Return strict JSON with shape:',
+            '{ "score": 0-100, "done": boolean, "summary": "...", "dimensions": { "ux": 0-100, "visual": 0-100, "accessibility": 0-100, "trust": 0-100, "conversion": 0-100, "performance": 0-100 }, "items": [WorkItemLike] }',
+            'Only set done=true when the site is mature and production-worthy for MVP quality.',
+            `Do not set done=true unless score >= ${AUTO_CRITIC_MIN_ACCEPTABLE_SCORE}, each dimension >= ${AUTO_CRITIC_MIN_DIMENSION_SCORE}, and items is empty.`,
+            'If not done, return 1-4 actionable, implementation-ready items.',
+            'No markdown.',
+          ].join('\n'),
+          messages: [
+            {
+              role: 'user',
+              content: [
+                `Round: ${round}/${AUTO_CRITIC_MAX_ROUNDS}`,
+                `Target done score: ${AUTO_CRITIC_MIN_ACCEPTABLE_SCORE}`,
+                'Site manifest:',
+                manifest,
+                'Rendered HTML snapshot:',
+                html,
+                'Styles snapshot:',
+                css,
+                'Work item item schema:',
+                '{ "title": "...", "description": "...", "atomType": "structure|content|style|behavior|integration", "filesTouch": ["..."], "estimatedLines": 40, "visibleChange": "...", "dependencies": [] }',
+              ].join('\n\n'),
+            },
+          ],
+          responseFormat: 'json',
+          temperature: 0.2,
+          maxTokens: 1200,
+        });
+
+        if (!criticResult.ok) {
+          return;
+        }
+        envelope = parseAutonomousCriticEnvelope(criticResult.value.content, requestSessionId);
+      }
+
+      if (!envelope) {
+        autonomousCriticNoopRoundsRef.current += 1;
+        return;
+      }
+
+      const validation = validateAtomSizing(envelope.items);
+      const safeItems = validation.valid ? envelope.items : envelope.items.slice(0, 1);
+
+      if (safeItems.length > 0) {
+        insertItemsAfterActive(safeItems);
+        autonomousCriticNoopRoundsRef.current = 0;
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'chat_ai',
+            `Autonomous quality review ${round}/${AUTO_CRITIC_MAX_ROUNDS} (score ${envelope.score}) queued ${safeItems.length} improvement task${safeItems.length === 1 ? '' : 's'}.`,
+            safeItems[0]?.id ?? null,
+          ),
+        );
+      } else {
+        autonomousCriticNoopRoundsRef.current += 1;
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'chat_ai',
+            `Autonomous quality review ${round}/${AUTO_CRITIC_MAX_ROUNDS}: ${envelope.summary}`,
+          ),
+        );
+      }
+
+      const dimensionsMeetFloor =
+        envelope.dimensions === null ||
+        Object.values(envelope.dimensions).every(
+          (dimensionScore) => dimensionScore >= AUTO_CRITIC_MIN_DIMENSION_SCORE,
+        );
+      const doneByScore =
+        envelope.score >= AUTO_CRITIC_MIN_ACCEPTABLE_SCORE &&
+        safeItems.length === 0 &&
+        dimensionsMeetFloor;
+      const doneByReviewer =
+        envelope.done &&
+        envelope.score >= AUTO_CRITIC_MIN_ACCEPTABLE_SCORE &&
+        safeItems.length === 0 &&
+        dimensionsMeetFloor;
+      const doneByNoop =
+        autonomousCriticNoopRoundsRef.current >= AUTO_CRITIC_MAX_NOOP_ROUNDS &&
+        envelope.score >= AUTO_CRITIC_MIN_ACCEPTABLE_SCORE - 2;
+      if (doneByScore || doneByReviewer || doneByNoop) {
+        autonomousCriticStoppedRef.current = true;
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'system',
+            `Autonomous quality loop complete at score ${envelope.score}.`,
+          ),
+        );
+      }
+    } finally {
+      autonomousCriticCooldownUntilRef.current = Date.now() + AUTO_CRITIC_COOLDOWN_MS;
+      autonomousCriticRunningRef.current = false;
+    }
+  }, [activeSessionId, addFocusedMessage, insertItemsAfterActive]);
 
   const runBuilderCycle = useCallback(async () => {
     if (builderRunningRef.current) {
@@ -1886,62 +2304,66 @@ export function Layout() {
     return () => window.clearTimeout(timer);
   }, [buildPhase, hasPreview, isPaused, onDeckItem?.id, previewHasStaged, runBuilderCycle]);
 
+  useEffect(() => {
+    if (!hasPreview || isPaused || previewHasStaged) {
+      return;
+    }
+    if (onDeckItem) {
+      return;
+    }
+    if (builderRunningRef.current) {
+      return;
+    }
+    if (autonomousCriticStoppedRef.current) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (!builderRunningRef.current) {
+        void runAutonomousCriticCycle();
+      }
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [hasPreview, isPaused, onDeckItem, previewHasStaged, runAutonomousCriticCycle]);
+
   const queueUserRequestAsBacklogItem = useCallback(
-    (rawContent: string) => {
+    async (rawContent: string) => {
       const content = rawContent.trim();
       if (!content) {
-        return null;
+        return [];
       }
 
-      const now = Date.now();
-      const atomType = inferAtomTypeFromRequest(content);
-      const title = summarizeUserRequest(content);
-      const workItemId = `user-${now}-${sanitizeIdentifier(title).slice(0, 40)}`;
-      const workItem: WorkItem = {
-        id: workItemId,
-        sessionId: activeSessionId,
-        title,
-        description: content,
-        effort: 'M',
-        status: 'backlog',
-        order: 1,
-        dependencies: [],
-        rationale: 'Directly requested by the user in chat.',
-        createdAt: now,
-        atomType,
-        filesTouch: defaultFilesForAtomType(atomType),
-        estimatedLines: 65,
-        visibleChange: `Implements: ${title}`,
-      };
+      const plannedItems = await planUserRequestBacklogItems(content);
+      if (plannedItems.length === 0) {
+        return [];
+      }
 
-      const backlog = useBacklogStore.getState();
-      backlog.addItem(workItem);
-      backlog.setOnDeck(workItem.id);
-      backlog.focusItem(workItem.id);
+      insertItemsAfterActive(plannedItems);
+      focusItem(plannedItems[0]?.id ?? null);
       setAutoFocusOnDeck(true);
       studioLog({
         level: 'info',
         source: 'planner.user-request.queued',
         sessionId: activeSessionId,
-        message: 'Queued user request as On Deck backlog item.',
+        message: 'Queued user request behind active work items.',
         details: {
-          workItemId: workItem.id,
-          title: workItem.title,
-          atomType: workItem.atomType,
-          filesTouch: workItem.filesTouch,
+          count: plannedItems.length,
+          firstWorkItemId: plannedItems[0]?.id ?? null,
+          titles: plannedItems.map((item) => item.title),
         },
       });
       addFocusedMessage(
         buildNarrationMessage(
           activeSessionId,
           'chat_ai',
-          `Added to backlog and set On Deck: "${workItem.title}". Building now.`,
-          workItem.id,
+          plannedItems.length > 1
+            ? `I split that into ${plannedItems.length} focused tasks and queued them right after active work.`
+            : `Queued: "${plannedItems[0]?.title}". It will run after active work.`,
+          plannedItems[0]?.id ?? null,
         ),
       );
-      return workItem;
+      return plannedItems;
     },
-    [activeSessionId, addFocusedMessage],
+    [activeSessionId, addFocusedMessage, focusItem, insertItemsAfterActive, planUserRequestBacklogItems],
   );
 
   const handleFocusToggle = useCallback(
@@ -1955,6 +2377,83 @@ export function Layout() {
       setAutoFocusOnDeck(true);
     },
     [focusItem, focusedItemId],
+  );
+
+  const retryBlockedItem = useCallback(
+    (item: WorkItem) => {
+      updateBacklogItem(item.id, {
+        status: 'backlog',
+        description: `STRICT RETRY: ${item.description}`,
+        blockedCode: undefined,
+        blockedReason: undefined,
+      });
+      setBlockedTrayOpen(false);
+      addFocusedMessage(
+        buildNarrationMessage(
+          activeSessionId,
+          'chat_ai',
+          `Retry queued for "${item.title}" with stricter instructions.`,
+          item.id,
+        ),
+      );
+    },
+    [activeSessionId, addFocusedMessage, updateBacklogItem],
+  );
+
+  const splitBlockedItem = useCallback(
+    (item: WorkItem) => {
+      const clauses = splitRequestIntoClauses(item.description);
+      const now = Date.now();
+      const splitItems: WorkItem[] = clauses.slice(0, 3).map((clause, index) => {
+        const atomType = inferAtomTypeFromRequest(clause);
+        const title = summarizeUserRequest(clause);
+        return {
+          id: `split-${now}-${index}-${sanitizeIdentifier(title).slice(0, 30)}`,
+          sessionId: activeSessionId,
+          title,
+          description: clause,
+          effort: 'S',
+          status: 'backlog',
+          order: index + 1,
+          dependencies: [],
+          rationale: `Split from blocked item "${item.title}".`,
+          createdAt: now,
+          atomType,
+          filesTouch: defaultFilesForAtomType(atomType),
+          estimatedLines: 40,
+          visibleChange: `Implements: ${title}`,
+        };
+      });
+      if (splitItems.length > 0) {
+        insertItemsAfterActive(splitItems);
+      }
+      updateBacklogItem(item.id, { status: 'done' });
+      setBlockedTrayOpen(false);
+      addFocusedMessage(
+        buildNarrationMessage(
+          activeSessionId,
+          'chat_ai',
+          `Split "${item.title}" into ${Math.max(1, splitItems.length)} smaller tasks.`,
+          splitItems[0]?.id ?? item.id,
+        ),
+      );
+    },
+    [activeSessionId, addFocusedMessage, insertItemsAfterActive, updateBacklogItem],
+  );
+
+  const skipBlockedItem = useCallback(
+    (item: WorkItem) => {
+      updateBacklogItem(item.id, { status: 'done' });
+      addFocusedMessage(
+        buildNarrationMessage(
+          activeSessionId,
+          'chat_ai',
+          `Skipped blocked task "${item.title}" for now.`,
+          item.id,
+        ),
+      );
+    },
+    [activeSessionId, addFocusedMessage, updateBacklogItem],
   );
 
   const submitChatDraft = useCallback(() => {
@@ -1974,7 +2473,8 @@ export function Layout() {
     }
 
     if (hasPreview) {
-      queueUserRequestAsBacklogItem(content);
+      autonomousCriticStoppedRef.current = false;
+      void queueUserRequestAsBacklogItem(content);
       return true;
     }
 
@@ -2076,7 +2576,7 @@ export function Layout() {
 
   const queueItems = useMemo(() => {
     const baseQueue = [...backlogItems]
-      .filter((item) => item.status !== 'done' && item.id !== onDeckItem?.id)
+      .filter((item) => item.status === 'backlog' && item.id !== onDeckItem?.id)
       .sort((a, b) => a.order - b.order);
 
     if (!queueOrderOverride || queueOrderOverride.length === 0) {
@@ -2106,6 +2606,10 @@ export function Layout() {
   }, [backlogItems, onDeckItem?.id, queueOrderOverride]);
   const completedItems = useMemo(
     () => backlogItems.filter((item) => item.status === 'done'),
+    [backlogItems],
+  );
+  const blockedItems = useMemo(
+    () => backlogItems.filter((item) => item.status === 'blocked'),
     [backlogItems],
   );
   const hasBacklog = useMemo(
@@ -2157,8 +2661,27 @@ export function Layout() {
     }
 
     if (buildPhase === 'skipping') {
+      const loweredError = (buildError ?? '').toLowerCase();
+      const shouldBlock =
+        loweredError.includes('intent validation failed') ||
+        loweredError.includes('exceeded') ||
+        loweredError.includes('color change');
+      if (shouldBlock) {
+        if (current.status !== 'blocked') {
+          updateBacklogItem(current.id, {
+            status: 'blocked',
+            blockedCode: 'intent_unmet',
+            blockedReason: buildError ?? 'Validation failed repeatedly.',
+          });
+        }
+        return;
+      }
       if (current.status !== 'backlog') {
-        updateBacklogItem(current.id, { status: 'backlog' });
+        updateBacklogItem(current.id, {
+          status: 'backlog',
+          blockedCode: undefined,
+          blockedReason: undefined,
+        });
       }
       if (backlogItems[backlogItems.length - 1]?.id !== current.id) {
         moveBacklogItemToEnd(current.id);
@@ -2183,6 +2706,7 @@ export function Layout() {
     backlogItems,
     buildAtom,
     buildPhase,
+    buildError,
     moveBacklogItemToEnd,
     onDeckItem?.id,
     promoteNext,
@@ -2417,6 +2941,82 @@ export function Layout() {
         onConfirm={handleConfirmReset}
         isWorking={isResetting}
       />
+      {blockedTrayOpen && (
+        <div className="fixed inset-0 z-40">
+          <button
+            type="button"
+            aria-label="Close blocked tray"
+            className="absolute inset-0 bg-slate-950/60"
+            onClick={() => setBlockedTrayOpen(false)}
+          />
+          <aside className="absolute right-0 top-0 h-full w-[min(460px,92vw)] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.6)]">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-['JetBrains_Mono'] text-sm font-semibold uppercase tracking-[0.22em] text-slate-200">
+                Blocked Tasks
+              </h3>
+              <button
+                type="button"
+                onClick={() => setBlockedTrayOpen(false)}
+                className="rounded-full border border-slate-800/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300"
+              >
+                Close
+              </button>
+            </div>
+            {blockedItems.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-800/80 bg-slate-900/50 p-3 text-xs text-slate-400">
+                No blocked tasks.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {blockedItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-3"
+                  >
+                    <div className="text-sm font-semibold text-slate-100">{item.title}</div>
+                    <div className="mt-1 text-[11px] text-slate-300">
+                      {item.blockedReason ?? 'Validation failed repeatedly.'}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => retryBlockedItem(item)}
+                        className="rounded-full border border-emerald-300/50 bg-emerald-300/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-200"
+                      >
+                        Retry stricter
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => splitBlockedItem(item)}
+                        className="rounded-full border border-sky-300/50 bg-sky-300/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-sky-200"
+                      >
+                        Split
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          focusItem(item.id);
+                          setBlockedTrayOpen(false);
+                        }}
+                        className="rounded-full border border-slate-700/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300"
+                      >
+                        Edit request
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => skipBlockedItem(item)}
+                        className="rounded-full border border-rose-300/50 bg-rose-300/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-rose-200"
+                      >
+                        Skip for now
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
 
       <main className="relative z-10 mx-auto w-full max-w-[1800px] px-4 pb-10 pt-20">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -2598,6 +3198,10 @@ export function Layout() {
               key={previewResetKey}
               label={panels[1].label}
               sessionId={activeSessionId}
+              automationPaused={previewAutomationPaused}
+              onToggleAutomationPause={() =>
+                setPreviewAutomationPaused((current) => !current)
+              }
             />
           </section>
 
@@ -2621,6 +3225,13 @@ export function Layout() {
                   className="rounded-full border border-slate-800/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300 transition hover:border-emerald-300/70 hover:text-emerald-200"
                 >
                   {isPaused ? 'Resume' : 'Pause'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBlockedTrayOpen(true)}
+                  className="rounded-full border border-slate-800/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300 transition hover:border-rose-300/70 hover:text-rose-200"
+                >
+                  Blocked {blockedItems.length}
                 </button>
               </div>
             </header>
@@ -2726,7 +3337,7 @@ export function Layout() {
                   ) : (
                     <div
                       role="list"
-                      className={`flex flex-col gap-3 ${
+                      className={`flex flex-col gap-2 ${
                         isPaused ? 'opacity-70' : ''
                       } ${revertPulse ? 'animate-backlog-revert' : ''}`}
                     >
@@ -2884,7 +3495,7 @@ export function Layout() {
                               setDraggedId(null);
                               setDragOverId(null);
                             }}
-                            className={`rounded-2xl border border-slate-800/80 bg-slate-900/60 px-4 py-3 transition ${
+                            className={`rounded-xl border border-slate-800/80 bg-slate-900/60 px-3 py-2 transition ${
                               isFocused ? 'ring-2 ring-emerald-300/60' : ''
                             } ${isDenied ? 'ring-2 ring-rose-400/70' : ''} ${
                               isDragTarget ? 'border-emerald-300/70' : ''
@@ -2912,10 +3523,10 @@ export function Layout() {
                                     </span>
                                   )}
                                 </div>
-                                <h4 className="mt-2 text-sm font-semibold text-slate-100">
+                                <h4 className="mt-1.5 text-sm font-semibold leading-tight text-slate-100">
                                   {item.title}
                                 </h4>
-                                <p className="mt-1 text-xs text-slate-300">
+                                <p className="mt-0.5 line-clamp-3 text-[11px] leading-snug text-slate-300">
                                   {item.description}
                                 </p>
                               </div>
@@ -2931,7 +3542,7 @@ export function Layout() {
                                 </span>
                               </div>
                             </div>
-                            <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                            <div className="mt-2 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-slate-500">
                               <span>Priority {index + 1}</span>
                               <span>
                                 {isPaused

@@ -192,12 +192,21 @@ export function parseBacklogResponse(
   response: Pick<RawLLMResponse, 'content'>,
   options?: BacklogParseOptions,
 ): WorkItem[] {
+  const baseItems = parseWorkItemsResponse(response, options);
+  const now = options?.now ?? (() => Date.now());
+  const sessionId = options?.sessionId ?? DEFAULT_SESSION_ID;
+  return appendSeoItems(baseItems, sessionId, now);
+}
+
+export function parseWorkItemsResponse(
+  response: Pick<RawLLMResponse, 'content'>,
+  options?: BacklogParseOptions,
+): WorkItem[] {
   const now = options?.now ?? (() => Date.now());
   const sessionId = options?.sessionId ?? DEFAULT_SESSION_ID;
   const parsed = parseJsonArray(response.content);
   const rawItems = Array.isArray(parsed) ? parsed : [];
-  const baseItems = normalizeWorkItems(rawItems, sessionId, now);
-  return appendSeoItems(baseItems, sessionId, now);
+  return normalizeWorkItems(rawItems, sessionId, now);
 }
 
 export function validateAtomSizing(items: WorkItem[]): ValidationResult {

@@ -9,6 +9,7 @@ export interface BacklogStoreState {
   focusedItemId: string | null;
   addItem: (item: WorkItem) => void;
   addItems: (items: WorkItem[]) => void;
+  insertItemsAfterActive: (items: WorkItem[]) => void;
   setItems: (items: WorkItem[]) => void;
   reorderItems: (fromIndex: number, toIndex: number) => void;
   setOnDeck: (itemId: string | null) => void;
@@ -70,6 +71,45 @@ export const createBacklogStore = () =>
           timestamp: Date.now(),
         });
       }
+    },
+    insertItemsAfterActive: (items) => {
+      if (items.length === 0) {
+        return;
+      }
+      set((state) => {
+        const nextIncoming = items.map((item) => ({ ...item, status: 'backlog' as const }));
+        const ordered = sortByOrder(state.items);
+        const insertAfterIndex = ordered.reduce((lastIndex, item, index) => {
+          if (item.status === 'in_progress' || item.status === 'on_deck') {
+            return index;
+          }
+          return lastIndex;
+        }, -1);
+
+        const prefix = ordered.slice(0, insertAfterIndex + 1);
+        const suffix = ordered.slice(insertAfterIndex + 1);
+        let cursor = getNextOrder(prefix);
+        const inserted = nextIncoming.map((item) => {
+          const next = { ...item, order: cursor };
+          cursor += 1;
+          return next;
+        });
+        const shiftedSuffix = suffix.map((item) => {
+          const next = { ...item, order: cursor };
+          cursor += 1;
+          return next;
+        });
+
+        return {
+          items: normalizeOrder([...prefix, ...inserted, ...shiftedSuffix]),
+        };
+      });
+      const telemetry = useTelemetryStore.getState();
+      void telemetry.recordBacklogAdded({
+        sessionId: items[0]?.sessionId,
+        count: items.length,
+        timestamp: Date.now(),
+      });
     },
     setItems: (items) => {
       set(() => ({

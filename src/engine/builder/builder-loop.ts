@@ -402,6 +402,19 @@ export class BuilderLoop {
         return okResult(outcome);
       }
 
+      const intentValidationError = validateIntentSatisfaction(atom, before, sandbox);
+      if (intentValidationError) {
+        const reason = `Intent validation failed: ${intentValidationError}`;
+        const decision = this.recordFailure(atom, reason, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
+        if (decision.action === 'retry') {
+          retryContext = { reason };
+          continue;
+        }
+        const outcome = this.skipAtom(atom, input.backlog, reason, attempt);
+        return okResult(outcome);
+      }
+
       commitSandbox(input.vfs, sandbox);
       const nextVersion = input.vfs.getVersion();
       input.backlog.updateItem(atom.id, {
@@ -668,6 +681,50 @@ function validatePatch(
     return `Patch target version ${patch.targetVersion} does not match VFS version ${vfs.getVersion()}.`;
   }
   return null;
+}
+
+function validateIntentSatisfaction(
+  atom: WorkItem,
+  before: VirtualFileSystem,
+  after: VirtualFileSystem,
+): string | null {
+  const intentText = `${atom.title} ${atom.description} ${atom.visibleChange}`.toLowerCase();
+  const isStyleIntent =
+    atom.atomType === 'style' ||
+    /\b(color|theme|background|palette|contrast|dark|light|font|typography)\b/.test(intentText);
+  if (!isStyleIntent) {
+    return null;
+  }
+
+  const beforeCss = before.getFile('styles.css')?.content ?? '';
+  const afterCss = after.getFile('styles.css')?.content ?? '';
+  if (beforeCss === afterCss) {
+    return 'styles.css did not change for a style-focused task.';
+  }
+
+  const requestsBackgroundChange = /\b(background|bg|dark|lighter|darker|black|white)\b/.test(
+    intentText,
+  );
+  if (requestsBackgroundChange) {
+    const beforeBg = extractRootVariable(beforeCss, '--color-bg');
+    const afterBg = extractRootVariable(afterCss, '--color-bg');
+    if (beforeBg === afterBg) {
+      return 'Requested background color change was not reflected in --color-bg.';
+    }
+  }
+
+  return null;
+}
+
+function extractRootVariable(css: string, variableName: string): string | null {
+  const rootMatch = css.match(/:root\s*{[\s\S]*?}/);
+  if (!rootMatch) {
+    return null;
+  }
+  const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`${escapedName}\\s*:\\s*([^;]+);`, 'i');
+  const match = rootMatch[0].match(regex);
+  return match?.[1]?.trim() ?? null;
 }
 
 function collectPreviewFiles(vfs: VirtualFileSystem, pagePath: string): {

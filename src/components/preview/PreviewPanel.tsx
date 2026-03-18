@@ -48,6 +48,8 @@ type DeploySummary = {
 type PreviewPanelProps = {
   label: string;
   sessionId: string;
+  automationPaused?: boolean;
+  onToggleAutomationPause?: () => void;
 };
 
 type PreviewRouteMap = Record<string, string>;
@@ -425,6 +427,8 @@ async function delay(ms: number): Promise<void> {
 export function PreviewPanel({
   label,
   sessionId,
+  automationPaused = false,
+  onToggleAutomationPause,
 }: PreviewPanelProps) {
   const [activeSlot, setActiveSlot] = useState<PreviewSlot>('blue');
   const [slotDocs, setSlotDocs] = useState<Record<PreviewSlot, string>>(() => ({
@@ -609,6 +613,25 @@ export function PreviewPanel({
       setValidationState('passed');
     }, VALIDATION_DURATION_MS);
   };
+
+  useEffect(() => {
+    if (!hasStagedPreview || automationPaused || validationState !== 'pending' || isSwapping) {
+      return;
+    }
+    if (validationTimer.current) {
+      clearTimeout(validationTimer.current);
+    }
+    setValidationState('validating');
+    validationTimer.current = setTimeout(() => {
+      setValidationState('passed');
+    }, VALIDATION_DURATION_MS);
+    return () => {
+      if (validationTimer.current) {
+        clearTimeout(validationTimer.current);
+        validationTimer.current = null;
+      }
+    };
+  }, [automationPaused, hasStagedPreview, isSwapping, validationState]);
 
   const performSwapTo = useCallback(
     (nextSlot: PreviewSlot) => {
@@ -858,6 +881,13 @@ export function PreviewPanel({
     if (!canSwap || !stagedSlot) return;
     performSwapTo(stagedSlot);
   };
+
+  useEffect(() => {
+    if (automationPaused || !canSwap || !stagedSlot) {
+      return;
+    }
+    performSwapTo(stagedSlot);
+  }, [automationPaused, canSwap, performSwapTo, stagedSlot]);
 
   useEffect(() => {
     const onPreviewSwap = (event: Event) => {
@@ -1189,25 +1219,42 @@ export function PreviewPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleValidate}
-              disabled={!hasStagedPreview || validationState === 'validating' || isSwapping}
-              className="rounded-full border border-slate-800/80 bg-slate-900/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-amber-300/60 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {validationState === 'passed' ? 'Validated' : 'Validate'}
-            </button>
-            <button
-              type="button"
-              onClick={handleSwap}
-              disabled={!canSwap}
-              className="rounded-full bg-emerald-300/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-950 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isSwapping ? 'Swapping' : 'Swap'}
-            </button>
+            {automationPaused ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleValidate}
+                  disabled={!hasStagedPreview || validationState === 'validating' || isSwapping}
+                  className="rounded-full border border-slate-800/80 bg-slate-900/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-amber-300/60 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {validationState === 'passed' ? 'Validated' : 'Validate'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSwap}
+                  disabled={!canSwap}
+                  className="rounded-full bg-emerald-300/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-950 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSwapping ? 'Swapping' : 'Swap'}
+                </button>
+              </>
+            ) : (
+              <span className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-200">
+                Auto validate + swap
+              </span>
+            )}
             <span className="rounded-full border border-slate-800/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-400">
               {hasStagedPreview ? 'Staged build ready' : 'No staged build queued'}
             </span>
+            <button
+              type="button"
+              onClick={onToggleAutomationPause}
+              className="rounded-full border border-transparent px-2 py-1 text-[9px] uppercase tracking-[0.2em] text-slate-600 opacity-0 transition hover:border-slate-800/80 hover:opacity-100 focus:opacity-100"
+              aria-label={automationPaused ? 'Resume automation' : 'Pause automation'}
+              title={automationPaused ? 'Resume automation' : 'Pause automation'}
+            >
+              {automationPaused ? 'Resume auto' : 'Pause auto'}
+            </button>
             <DeployButton
               disabled={!hasDeployTokens}
               isDeploying={deployState === 'deploying'}

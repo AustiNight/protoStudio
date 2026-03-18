@@ -95,6 +95,14 @@ export interface WorkItem {
    * Short description of the visible change the user should notice.
    */
   visibleChange: string;
+  /**
+   * Optional machine-readable reason code when work is blocked.
+   */
+  blockedCode?: string;
+  /**
+   * Human-readable reason when work is blocked.
+   */
+  blockedReason?: string;
 }
 
 /**
