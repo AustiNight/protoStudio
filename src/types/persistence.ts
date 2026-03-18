@@ -19,6 +19,10 @@ export interface CheckpointRecord {
    * Unix timestamp (ms) when the checkpoint was captured.
    */
   lastSavedAt: number;
+  /**
+   * Unix timestamp (ms) when this checkpoint expires and is no longer recoverable.
+   */
+  expiresAt?: number;
 }
 
 /**
@@ -55,4 +59,8 @@ export interface RecoveryState {
    * Count of backlog items still remaining.
    */
   backlogRemaining: number;
+  /**
+   * Unix timestamp (ms) when this recovery window expires.
+   */
+  expiresAt?: number;
 }

@@ -45,8 +45,9 @@ import type { LLMMessage, LLMProviderClient, RawLLMResponse } from '@/types/llm'
 import type { BuildPhase } from '@/types/build';
 import type { RecoveryState } from '@/types/persistence';
 import type { TelemetrySessionPath } from '@/types/telemetry';
-import type { LLMConfig, LLMProviderName } from '@/types/session';
+import type { LLMConfig, LLMProviderName, Session, SessionPath, StudioState } from '@/types/session';
 import type { TemplateConfig } from '@/types/template';
+import type { VfsSnapshot } from '@/types/vfs';
 import { studioLog } from '@/utils/studio-logger';
 import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
 
@@ -79,7 +80,7 @@ const panelShell =
   'relative flex flex-col gap-3 rounded-3xl border border-slate-800/70 bg-slate-900/60 p-4 shadow-[0_20px_40px_rgba(0,0,0,0.35)] backdrop-blur';
 const previewPanelShell = `${panelShell} min-h-[50vh] lg:min-h-[56vh]`;
 const workPanelShell =
-  `${panelShell} h-[460px] sm:h-[500px] lg:h-[540px] xl:h-[42vh] xl:min-h-[430px] xl:max-h-[560px]`;
+  `${panelShell} h-[780px] sm:h-[840px] lg:h-[880px] xl:h-[76vh] xl:min-h-[780px] xl:max-h-[980px]`;
 const logsPanelShell = `${panelShell} min-h-[300px] xl:min-h-[320px]`;
 
 const CHAT_SYSTEM_PROMPT = [
@@ -91,6 +92,8 @@ const CHAT_SYSTEM_PROMPT = [
 const MAX_CHAT_CONTEXT_MESSAGES = 20;
 const CHAT_RESPONSE_MAX_TOKENS = 600;
 const CHAT_EMPTY_RETRY_MAX_TOKENS = 1800;
+const CHECKPOINT_AUTOSAVE_INTERVAL_MS = 45_000;
+const CHECKPOINT_CHANGE_DEBOUNCE_MS = 1_500;
 const AUTO_CRITIC_MAX_ROUNDS = 10;
 const AUTO_CRITIC_MIN_ACCEPTABLE_SCORE = 94;
 const AUTO_CRITIC_COOLDOWN_MS = 12_000;
@@ -945,6 +948,15 @@ function buildPreviewSwapPayload(
   };
 }
 
+function hydrateVfsFromSnapshot(snapshot: VfsSnapshot): VirtualFileSystem {
+  return new VirtualFileSystem({
+    metadata: snapshot.metadata,
+    templateId: snapshot.templateId,
+    version: snapshot.version,
+    files: snapshot.files,
+  });
+}
+
 export function Layout() {
   const [, setActivePanel] = useState<PanelKey>('chat');
   const [activeSessionId, setActiveSessionId] = useState(() => createSessionId());
@@ -996,6 +1008,7 @@ export function Layout() {
   const togglePause = useBuildStore((state) => state.togglePause);
   const resetBuild = useBuildStore((state) => state.resetBuild);
   const telemetryEvents = useTelemetryStore((state) => state.events);
+  const telemetrySessionId = useTelemetryStore((state) => state.sessionId);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [pendingReorder, setPendingReorder] = useState<PendingReorder | null>(null);
@@ -1019,6 +1032,9 @@ export function Layout() {
   const autonomousCriticNoopRoundsRef = useRef(0);
   const autonomousCriticCooldownUntilRef = useRef(0);
   const autonomousCriticStoppedRef = useRef(false);
+  const sessionCreatedAtRef = useRef(Date.now());
+  const sessionPathRef = useRef<SessionPath>('scratch');
+  const sessionTemplateIdRef = useRef<string | undefined>(undefined);
   const isReorderPending = pendingReorder !== null;
 
   const triggerRevertPulse = () => {
@@ -2142,6 +2158,8 @@ export function Layout() {
         }
 
         workingVfsRef.current = firstResult.value.vfs;
+        sessionPathRef.current = 'template';
+        sessionTemplateIdRef.current = firstResult.value.template.id;
         studioLog({
           level: 'info',
           source: 'first-message.preview',
@@ -2528,6 +2546,65 @@ export function Layout() {
     [],
   );
 
+  const buildCheckpointState = useCallback((): StudioState | null => {
+    const vfs = workingVfsRef.current;
+    if (!vfs) {
+      return null;
+    }
+
+    const settings = useSettingsStore.getState().settings;
+    const llmConfig = buildLlmConfigFromSettings(settings);
+    const telemetry = useTelemetryStore.getState();
+    const totalCost = buildSessionCostSummary(telemetry.events, activeSessionId).totalCost;
+
+    const session: Session = {
+      id: activeSessionId,
+      createdAt: sessionCreatedAtRef.current,
+      path: sessionPathRef.current,
+      templateId: sessionTemplateIdRef.current,
+      status: 'active',
+      llmConfig,
+      totalCost,
+    };
+
+    return {
+      session,
+      conversation: useChatStore
+        .getState()
+        .messages.filter((message) => message.sessionId === activeSessionId),
+      backlog: useBacklogStore.getState().items,
+      vfs,
+      buildState: useBuildStore.getState().buildState,
+      deployments: [],
+      telemetry: telemetry.events.filter((event) => event.sessionId === activeSessionId),
+      llmConfig,
+    };
+  }, [activeSessionId]);
+
+  const saveCheckpoint = useCallback(
+    async (reason: string) => {
+      const state = buildCheckpointState();
+      if (!state) {
+        return;
+      }
+      const checkpoint = new SessionCheckpoint();
+      const result = await checkpoint.save(state);
+      if (!result.ok) {
+        studioLog({
+          level: 'warn',
+          source: 'checkpoint.save.failed',
+          sessionId: activeSessionId,
+          message: 'Checkpoint autosave failed.',
+          details: {
+            reason,
+            error: result.error,
+          },
+        });
+      }
+    },
+    [activeSessionId, buildCheckpointState],
+  );
+
   useEffect(() => {
     let isMounted = true;
     const checkpoint = new SessionCheckpoint();
@@ -2562,6 +2639,61 @@ export function Layout() {
       startedAt: Date.now(),
     });
   }, [activeSessionId, activateTelemetrySession, recoveryChecked, recoveryState]);
+
+  const latestSessionMessageTs =
+    sessionMessages.length > 0 ? sessionMessages[sessionMessages.length - 1]?.timestamp : 0;
+
+  useEffect(() => {
+    if (!recoveryChecked || isRecoveryOpen) {
+      return;
+    }
+    if (!workingVfsRef.current) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void saveCheckpoint('state-change');
+    }, CHECKPOINT_CHANGE_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeSessionId,
+    backlogItems,
+    buildPhase,
+    hasPreview,
+    isRecoveryOpen,
+    latestSessionMessageTs,
+    previewHasStaged,
+    recoveryChecked,
+    saveCheckpoint,
+  ]);
+
+  useEffect(() => {
+    if (!recoveryChecked) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void saveCheckpoint('interval');
+    }, CHECKPOINT_AUTOSAVE_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [recoveryChecked, saveCheckpoint]);
+
+  useEffect(() => {
+    const flush = () => {
+      void saveCheckpoint('lifecycle');
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flush();
+      }
+    };
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', flush);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('beforeunload', flush);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [saveCheckpoint]);
 
   useEffect(() => {
     return () => {
@@ -2627,10 +2759,28 @@ export function Layout() {
     ? `Ask about ${focusedItem.title}...`
     : 'Type your next instruction...';
   const canSendDraft = chatDraft.trim().length > 0;
-  const sessionCostSummary = useMemo(
-    () => buildSessionCostSummary(telemetryEvents, activeSessionId),
-    [activeSessionId, telemetryEvents],
-  );
+  const sessionCostSummary = useMemo(() => {
+    const activeSummary = buildSessionCostSummary(telemetryEvents, activeSessionId);
+    if (activeSummary.roles.length > 0) {
+      return activeSummary;
+    }
+
+    if (telemetrySessionId && telemetrySessionId !== activeSessionId) {
+      const telemetrySummary = buildSessionCostSummary(telemetryEvents, telemetrySessionId);
+      if (telemetrySummary.roles.length > 0) {
+        return telemetrySummary;
+      }
+    }
+
+    const latestResponseSessionId = [...telemetryEvents]
+      .reverse()
+      .find((event) => event.event === 'llm.response')?.sessionId;
+    if (latestResponseSessionId) {
+      return buildSessionCostSummary(telemetryEvents, latestResponseSessionId);
+    }
+
+    return activeSummary;
+  }, [activeSessionId, telemetryEvents, telemetrySessionId]);
 
   useEffect(() => {
     if (!onDeckItem && hasBacklog) {
@@ -2849,6 +2999,9 @@ export function Layout() {
     resetBuild();
     resetTransientUi();
     narrationRef.current = null;
+    sessionCreatedAtRef.current = Date.now();
+    sessionPathRef.current = 'scratch';
+    sessionTemplateIdRef.current = undefined;
     setActiveSessionId(nextSessionId);
     telemetryInitializedRef.current = true;
     await activateTelemetrySession(nextSessionId, {
@@ -2883,7 +3036,10 @@ export function Layout() {
       return;
     }
 
-    const { session, backlog, conversation } = loadResult.value;
+    const { session, backlog, conversation, vfs: vfsSnapshot } = loadResult.value;
+    sessionCreatedAtRef.current = session.createdAt;
+    sessionPathRef.current = session.path;
+    sessionTemplateIdRef.current = session.templateId;
     setActiveSessionId(session.id);
     telemetryInitializedRef.current = true;
     await activateTelemetrySession(session.id, {
@@ -2894,6 +3050,16 @@ export function Layout() {
     setMessages(conversation);
     setChatDraft('');
     setBacklogItems(backlog);
+    const restoredVfs = hydrateVfsFromSnapshot(vfsSnapshot);
+    workingVfsRef.current = restoredVfs;
+    const restoredPreview = buildPreviewHtml(restoredVfs);
+    if (restoredPreview.ok) {
+      emitPreviewSwap({
+        html: restoredPreview.value.html,
+        pagePath: restoredPreview.value.pagePath,
+        routes: buildPreviewRouteMap(restoredVfs),
+      });
+    }
     resetBuild();
     resetTransientUi();
     narrationRef.current = null;
@@ -3239,7 +3405,7 @@ export function Layout() {
               <div className="flex min-h-0 flex-1 flex-col gap-3">
                 {onDeckItem ? (
                   <div
-                    className={`rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900/70 to-slate-950/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.45)] ${
+                    className={`rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900/70 to-slate-950/80 p-3 shadow-[0_10px_22px_rgba(15,23,42,0.4)] ${
                       focusedItemId === onDeckItem.id
                         ? 'ring-2 ring-emerald-300/70'
                         : ''
@@ -3276,13 +3442,13 @@ export function Layout() {
                         </span>
                       </div>
                     </div>
-                    <h3 className="mt-3 text-base font-semibold text-slate-100">
+                    <h3 className="mt-1.5 line-clamp-1 text-sm font-semibold text-slate-100">
                       {onDeckItem.title}
                     </h3>
-                    <p className="mt-1 text-sm text-slate-300">
+                    <p className="mt-0.5 line-clamp-1 text-xs text-slate-300">
                       {onDeckItem.description}
                     </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-slate-400">
                       <span className="rounded-full border border-slate-800/80 px-2 py-1">
                         {formatAtomType(onDeckItem.atomType)}
                       </span>
@@ -3296,21 +3462,16 @@ export function Layout() {
                         ETA {estimateEta(onDeckItem.effort, onDeckItem.estimatedLines)}m
                       </span>
                     </div>
-                    <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
-                      <span className="font-['JetBrains_Mono'] uppercase tracking-[0.2em]">
-                        Visible
-                      </span>
-                      <span className="text-slate-200">
-                        {onDeckItem.visibleChange}
-                      </span>
+                    <div className="mt-1.5 line-clamp-1 text-[11px] text-slate-300">
+                      {onDeckItem.visibleChange}
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-800/80 bg-slate-950/40 p-4 text-sm text-slate-400">
+                  <div className="rounded-2xl border border-dashed border-slate-800/80 bg-slate-950/40 p-3 text-sm text-slate-400">
                     <div className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.3em] text-slate-500">
                       On Deck
                     </div>
-                    <p className="mt-2 text-slate-300">
+                    <p className="mt-1 text-slate-300">
                       No active work item yet. Start a conversation to populate the backlog.
                     </p>
                   </div>

@@ -81,6 +81,8 @@ const HOST_LABELS: Record<DeployHost, string> = {
 
 const SWAP_DURATION_MS = runtimeConfig.previewSwapDurationMs;
 const VALIDATION_DURATION_MS = runtimeConfig.previewValidationDurationMs;
+const STAGED_WATCHDOG_INTERVAL_MS = 2_000;
+const STAGED_WATCHDOG_STALL_MS = Math.max(9_000, VALIDATION_DURATION_MS * 5);
 const PREVIEW_SWAP_EVENT = 'preview:swap';
 const PREVIEW_ACTIVE_SLOT_EVENT = 'preview:active-slot';
 const PREVIEW_STAGED_STATE_EVENT = 'preview:staged-state';
@@ -464,6 +466,8 @@ export function PreviewPanel({
 
   const validationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stagedSinceRef = useRef<number | null>(null);
+  const lastWatchdogActionAtRef = useRef<number>(0);
   const guardedDocuments = useRef(new WeakSet<Document>());
   const pendingHashBySlotRef = useRef<Record<PreviewSlot, string | null>>({
     blue: null,
@@ -576,6 +580,8 @@ export function PreviewPanel({
       blue: null,
       green: null,
     };
+    stagedSinceRef.current = null;
+    lastWatchdogActionAtRef.current = 0;
     setStagedSlot(null);
     setHasGeneratedPreview(false);
     setValidationState('pending');
@@ -631,7 +637,7 @@ export function PreviewPanel({
         validationTimer.current = null;
       }
     };
-  }, [automationPaused, hasStagedPreview, isSwapping, validationState]);
+  }, [automationPaused, hasStagedPreview, isSwapping]);
 
   const performSwapTo = useCallback(
     (nextSlot: PreviewSlot) => {
@@ -649,6 +655,7 @@ export function PreviewPanel({
         setActiveSlot(nextSlot);
         setIsSwapping(false);
         setStagedSlot(null);
+        stagedSinceRef.current = null;
         setValidationState('pending');
         setHasGeneratedPreview(true);
         if (typeof window !== 'undefined') {
@@ -890,6 +897,45 @@ export function PreviewPanel({
   }, [automationPaused, canSwap, performSwapTo, stagedSlot]);
 
   useEffect(() => {
+    if (automationPaused || !hasStagedPreview || !stagedSlot || isSwapping) {
+      return;
+    }
+
+    if (stagedSinceRef.current === null) {
+      stagedSinceRef.current = Date.now();
+    }
+
+    const timer = window.setInterval(() => {
+      if (automationPaused || !hasStagedPreview || !stagedSlot || isSwapping) {
+        return;
+      }
+      const now = Date.now();
+      const stagedSince = stagedSinceRef.current ?? now;
+      const stalledForMs = now - stagedSince;
+      const sinceLastAction = now - lastWatchdogActionAtRef.current;
+      if (stalledForMs < STAGED_WATCHDOG_STALL_MS || sinceLastAction < STAGED_WATCHDOG_STALL_MS) {
+        return;
+      }
+
+      lastWatchdogActionAtRef.current = now;
+      studioLog({
+        level: 'warn',
+        source: 'preview.swap.watchdog',
+        sessionId,
+        message: 'Auto-swap watchdog detected staged preview stall. Forcing validation pass.',
+        details: {
+          stalledForMs,
+          validationState,
+          stagedSlot,
+        },
+      });
+      setValidationState('passed');
+    }, STAGED_WATCHDOG_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [automationPaused, hasStagedPreview, isSwapping, sessionId, stagedSlot, validationState]);
+
+  useEffect(() => {
     const onPreviewSwap = (event: Event) => {
       const customEvent = event as CustomEvent<PreviewSwapDetail>;
       const html = customEvent.detail?.html;
@@ -978,6 +1024,7 @@ export function PreviewPanel({
       }));
 
       setStagedSlot(nextSlot);
+      stagedSinceRef.current = Date.now();
       setValidationState((current) => (current === 'pending' ? 'pending' : current));
       studioLog({
         level: 'info',

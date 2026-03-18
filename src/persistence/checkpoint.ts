@@ -6,6 +6,7 @@ import { getStudioDb } from './db';
 
 const CHECKPOINT_KEY = 'active';
 const MAX_CONVERSATION_MESSAGES = 20;
+const MIN_RECOVERY_WINDOW_MS = 8 * 60 * 60 * 1000;
 
 export class SessionCheckpoint {
   async save(state: StudioState): Promise<Result<void, AppError>> {
@@ -28,6 +29,7 @@ export class SessionCheckpoint {
       session: state.session,
       backlog: state.backlog,
       lastSavedAt: Date.now(),
+      expiresAt: Date.now() + MIN_RECOVERY_WINDOW_MS,
     };
     const vfsSnapshot = serializeVfs(state.vfs);
     const conversation = state.conversation.slice(-MAX_CONVERSATION_MESSAGES);
@@ -74,6 +76,15 @@ export class SessionCheckpoint {
         return ok(null);
       }
 
+      const expiresAt =
+        typeof record.expiresAt === 'number' && Number.isFinite(record.expiresAt)
+          ? record.expiresAt
+          : null;
+      if (expiresAt !== null && expiresAt <= Date.now()) {
+        await this.clear();
+        return ok(null);
+      }
+
       return ok({
         ...record,
         vfs,
@@ -113,6 +124,7 @@ export class SessionCheckpoint {
       lastSavedAt: checkpoint.lastSavedAt,
       vfsVersion: checkpoint.vfs.version,
       backlogRemaining,
+      expiresAt: checkpoint.expiresAt,
     });
   }
 

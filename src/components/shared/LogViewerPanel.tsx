@@ -29,6 +29,7 @@ type ChartSeries = {
 type LlmResponseSample = {
   index: number;
   role: 'chat' | 'builder';
+  model: string;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
@@ -134,6 +135,7 @@ function buildResponseSamples(events: TelemetryEvent[], sessionId: string | null
     return {
       index: index + 1,
       role: event.data.role,
+      model: event.data.model,
       promptTokens,
       completionTokens,
       totalTokens: promptTokens + completionTokens,
@@ -181,9 +183,18 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
     });
   }, [entries, searchQuery, selectedLevels, selectedSources]);
 
+  const resolvedTelemetrySessionId = useMemo(() => {
+    if (telemetrySessionId) {
+      return telemetrySessionId;
+    }
+    return [...telemetryEvents]
+      .reverse()
+      .find((event) => event.event === 'llm.response')?.sessionId ?? null;
+  }, [telemetryEvents, telemetrySessionId]);
+
   const tokenSamples = useMemo(
-    () => buildResponseSamples(telemetryEvents, telemetrySessionId),
-    [telemetryEvents, telemetrySessionId],
+    () => buildResponseSamples(telemetryEvents, resolvedTelemetrySessionId),
+    [resolvedTelemetrySessionId, telemetryEvents],
   );
 
   const chartSeries = useMemo<ChartSeries[]>(() => {
@@ -248,6 +259,45 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
       builderCalls,
       chatCalls,
     };
+  }, [tokenSamples]);
+
+  const modelBreakdown = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        model: string;
+        role: 'chat' | 'builder';
+        calls: number;
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+        cost: number;
+      }
+    >();
+    for (const sample of tokenSamples) {
+      const key = `${sample.role}::${sample.model}`;
+      const current = map.get(key) ?? {
+        model: sample.model,
+        role: sample.role,
+        calls: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        cost: 0,
+      };
+      current.calls += 1;
+      current.promptTokens += sample.promptTokens;
+      current.completionTokens += sample.completionTokens;
+      current.totalTokens += sample.totalTokens;
+      current.cost += sample.cost;
+      map.set(key, current);
+    }
+    return Array.from(map.values()).sort(
+      (left, right) =>
+        right.cost - left.cost ||
+        right.totalTokens - left.totalTokens ||
+        right.calls - left.calls,
+    );
   }, [tokenSamples]);
 
   const isAllLevelsSelected = selectedLevels.length === LOG_LEVELS.length;
@@ -533,7 +583,7 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
         <section className="min-h-0 flex-1 space-y-3 rounded-2xl border border-slate-800/80 bg-slate-950/50 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-slate-500">
-              Session {telemetrySessionId ?? 'N/A'}
+              Session {resolvedTelemetrySessionId ?? 'N/A'}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -718,6 +768,48 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
                   </span>
                 </div>
               </>
+            )}
+          </div>
+
+          <div className="space-y-2 rounded-xl border border-slate-800/80 bg-slate-950/70 p-2">
+            <div className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-slate-500">
+              Per-model breakdown
+            </div>
+            {modelBreakdown.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-800/80 bg-slate-900/60 p-3 text-xs text-slate-400">
+                No model usage recorded yet.
+              </div>
+            ) : (
+              <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-800/80 bg-slate-950/80">
+                <table className="w-full border-collapse text-xs">
+                  <thead className="sticky top-0 bg-slate-900/90 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                    <tr>
+                      <th className="px-2 py-2 text-left">Role</th>
+                      <th className="px-2 py-2 text-left">Model</th>
+                      <th className="px-2 py-2 text-right">Calls</th>
+                      <th className="px-2 py-2 text-right">Tokens</th>
+                      <th className="px-2 py-2 text-right">Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modelBreakdown.map((row) => (
+                      <tr key={`${row.role}-${row.model}`} className="border-t border-slate-800/70 text-slate-300">
+                        <td className="px-2 py-2">
+                          <span className="rounded-full border border-slate-700/80 px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
+                            {row.role}
+                          </span>
+                        </td>
+                        <td className="px-2 py-2 font-['JetBrains_Mono'] text-[11px] text-slate-200">
+                          {row.model}
+                        </td>
+                        <td className="px-2 py-2 text-right">{row.calls}</td>
+                        <td className="px-2 py-2 text-right">{toRounded(row.totalTokens)}</td>
+                        <td className="px-2 py-2 text-right">{toCurrency(row.cost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </section>
