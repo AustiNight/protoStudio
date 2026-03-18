@@ -84,7 +84,13 @@ export class LLMGateway {
       return result;
     }
 
-    const costResult = calculateCost(result.value.model, result.value.usage);
+    let costResult = calculateCost(result.value.model, result.value.usage);
+    if (costResult.unknownModel) {
+      const fallbackCost = calculateCost(selection.model, result.value.usage);
+      if (!fallbackCost.unknownModel) {
+        costResult = fallbackCost;
+      }
+    }
     const response: LLMResponse = {
       ...result.value,
       cost: costResult.cost,

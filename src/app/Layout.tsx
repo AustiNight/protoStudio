@@ -1202,6 +1202,7 @@ export function Layout() {
   const buildAtom = useBuildStore((state) => state.buildState.currentAtom);
   const buildError = useBuildStore((state) => state.buildState.lastError);
   const togglePause = useBuildStore((state) => state.togglePause);
+  const pauseBuild = useBuildStore((state) => state.pauseBuild);
   const resetBuild = useBuildStore((state) => state.resetBuild);
   const telemetryEvents = useTelemetryStore((state) => state.events);
   const telemetrySessionId = useTelemetryStore((state) => state.sessionId);
@@ -1219,6 +1220,8 @@ export function Layout() {
   const [previewAutomationPaused, setPreviewAutomationPaused] = useState(false);
   const [autoFocusOnDeck, setAutoFocusOnDeck] = useState(true);
   const [blockedTrayOpen, setBlockedTrayOpen] = useState(false);
+  const [manualCriticQueued, setManualCriticQueued] = useState(false);
+  const [manualCriticRunning, setManualCriticRunning] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const revertTimerRef = useRef<number | null>(null);
   const deniedTimerRef = useRef<number | null>(null);
@@ -1288,6 +1291,8 @@ export function Layout() {
     autonomousCriticNoopRoundsRef.current = 0;
     autonomousCriticCooldownUntilRef.current = 0;
     autonomousCriticStoppedRef.current = false;
+    setManualCriticQueued(false);
+    setManualCriticRunning(false);
     setHasPreview(false);
   }, [activeSessionId]);
 
@@ -2549,6 +2554,57 @@ export function Layout() {
     return () => window.clearTimeout(timer);
   }, [hasPreview, isPaused, onDeckItem, previewHasStaged, runAutonomousCriticCycle]);
 
+  const queueManualCriticCycle = useCallback(() => {
+    if (!hasPreview || !workingVfsRef.current) {
+      addFocusedMessage(
+        buildNarrationMessage(
+          activeSessionId,
+          'chat_ai',
+          'Manual critic review requires an active preview.',
+        ),
+      );
+      return;
+    }
+    if (!isPaused) {
+      pauseBuild();
+    }
+    autonomousCriticStoppedRef.current = false;
+    autonomousCriticCooldownUntilRef.current = 0;
+    setManualCriticQueued(true);
+    addFocusedMessage(
+      buildNarrationMessage(
+        activeSessionId,
+        'chat_ai',
+        'Backlog paused. I will run one manual critic review as soon as the active build settles.',
+      ),
+    );
+  }, [activeSessionId, addFocusedMessage, hasPreview, isPaused, pauseBuild]);
+
+  useEffect(() => {
+    if (!manualCriticQueued || manualCriticRunning) {
+      return;
+    }
+    if (!isPaused) {
+      return;
+    }
+    const buildSettled =
+      buildPhase === 'idle' &&
+      !builderRunningRef.current &&
+      !previewHasStagedRef.current;
+    if (!buildSettled) {
+      return;
+    }
+    setManualCriticRunning(true);
+    setManualCriticQueued(false);
+    void (async () => {
+      try {
+        await runAutonomousCriticCycle();
+      } finally {
+        setManualCriticRunning(false);
+      }
+    })();
+  }, [buildPhase, isPaused, manualCriticQueued, manualCriticRunning, runAutonomousCriticCycle]);
+
   const queueUserRequestAsBacklogItem = useCallback(
     async (rawContent: string) => {
       const content = rawContent.trim();
@@ -3597,6 +3653,22 @@ export function Layout() {
                   className="rounded-full border border-slate-800/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300 transition hover:border-emerald-300/70 hover:text-emerald-200"
                 >
                   {isPaused ? 'Resume' : 'Pause'}
+                </button>
+                <button
+                  type="button"
+                  onClick={queueManualCriticCycle}
+                  disabled={manualCriticQueued || manualCriticRunning || !hasPreview}
+                  className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.2em] transition ${
+                    manualCriticQueued || manualCriticRunning || !hasPreview
+                      ? 'cursor-not-allowed border-slate-800/80 text-slate-500'
+                      : 'border-slate-800/80 text-slate-300 hover:border-fuchsia-300/70 hover:text-fuchsia-200'
+                  }`}
+                >
+                  {manualCriticRunning
+                    ? 'Critic Running'
+                    : manualCriticQueued
+                      ? 'Critic Queued'
+                      : 'Run Critic'}
                 </button>
                 <button
                   type="button"

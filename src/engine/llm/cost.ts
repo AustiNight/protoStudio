@@ -98,7 +98,31 @@ function resolvePricingModel(model: string): ResolvedPricingModel | null {
     }
   }
 
-  const familyFallback = resolveOpenAIFamilyFallback(trimmedLatest);
+  const strippedVersion = stripNumericVersionSuffix(trimmedLatest);
+  if (strippedVersion !== trimmedLatest) {
+    const versionRates = pricingConfig.models[strippedVersion];
+    if (versionRates) {
+      return {
+        modelId: strippedVersion,
+        estimated: true,
+        rates: versionRates,
+      };
+    }
+  }
+
+  const prefixFallback = resolveLongestKnownPrefix(strippedVersion);
+  if (prefixFallback) {
+    const prefixRates = pricingConfig.models[prefixFallback];
+    if (prefixRates) {
+      return {
+        modelId: prefixFallback,
+        estimated: true,
+        rates: prefixRates,
+      };
+    }
+  }
+
+  const familyFallback = resolveOpenAIFamilyFallback(strippedVersion);
   if (familyFallback) {
     const familyRates = pricingConfig.models[familyFallback];
     if (familyRates) {
@@ -119,6 +143,25 @@ function normalizeModelId(model: string): string {
 
 function stripLatestSuffix(model: string): string {
   return model.replace(/-chat-latest$/i, '').replace(/-latest$/i, '');
+}
+
+function stripNumericVersionSuffix(model: string): string {
+  let candidate = model;
+  while (/-\d{2,}$/i.test(candidate)) {
+    const next = candidate.replace(/-\d{2,}$/i, '');
+    candidate = next;
+    if (candidate in pricingConfig.models) {
+      return candidate;
+    }
+  }
+  return candidate;
+}
+
+function resolveLongestKnownPrefix(model: string): string | null {
+  const candidates = Object.keys(pricingConfig.models)
+    .filter((known) => model.startsWith(`${known}-`))
+    .sort((left, right) => right.length - left.length);
+  return candidates[0] ?? null;
 }
 
 function resolveOpenAIFamilyFallback(model: string): string | null {

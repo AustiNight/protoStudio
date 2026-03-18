@@ -73,4 +73,16 @@ describe('calculateCost', () => {
 
     expect(resolution).toEqual({ modelId: 'gpt-5.2', estimated: false });
   });
+
+  it('should resolve o-series date-suffixed model ids to base pricing', () => {
+    const resolution = resolvePricingModelId('o4-mini-2026-03-10');
+    const result = calculateCost('o4-mini-2026-03-10', {
+      promptTokens: 1000,
+      completionTokens: 1000,
+    });
+
+    expect(resolution).toEqual({ modelId: 'o4-mini', estimated: true });
+    expect(result.unknownModel).toBe(false);
+    expect(result.cost).toBeCloseTo(0.0055, 6);
+  });
 });

@@ -41,6 +41,31 @@ class StubProvider implements LLMProviderClient {
   }
 }
 
+class StubProviderWithModelOverride extends StubProvider {
+  private overrideModel: string;
+
+  constructor(overrideModel: string) {
+    super('openai');
+    this.overrideModel = overrideModel;
+  }
+
+  async call(
+    apiKey: string,
+    model: string,
+    messages: LLMMessage[],
+    options: LLMCallOptions,
+  ) {
+    this.lastCall = { apiKey, model, messages, options };
+    const response: RawLLMResponse = {
+      content: 'ok',
+      usage: { promptTokens: 1000, completionTokens: 0 },
+      model: this.overrideModel,
+      latencyMs: 10,
+    };
+    return { ok: true, value: response } as const;
+  }
+}
+
 function buildConfig(): LLMConfig {
   const openaiChat: LLMProvider = {
     name: 'openai',
@@ -213,5 +238,19 @@ describe('LLMGateway', () => {
       expect(result.error.message).toContain('Responses API');
     }
     expect(provider.lastCall).toBeNull();
+  });
+
+  it('falls back to configured model pricing when provider model id is unknown', async () => {
+    const provider = new StubProviderWithModelOverride('unpriced-model-id');
+    const gateway = new LLMGateway(buildConfig(), {
+      providers: { openai: provider },
+    });
+
+    const result = await gateway.send(buildRequest('chat'));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.unknownModel).toBe(false);
+      expect(result.value.cost).toBeCloseTo(0.00015, 6);
+    }
   });
 });
