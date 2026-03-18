@@ -32,13 +32,11 @@ test('settings updates flow through store-backed runtime consumers without refre
   );
 
   const deployButton = page.getByRole('button', { name: 'Deploy', exact: true });
-  await expect(deployButton).toBeDisabled();
+  await expect(deployButton).toBeVisible();
 
   await page.getByRole('button', { name: 'Settings' }).click();
   const dialog = page.getByRole('dialog', { name: 'Settings' });
   await expect(dialog).toBeVisible();
-
-  await dialog.getByPlaceholder('sk-...').fill('sk-runtime-openai-0123456789');
 
   await dialog.getByRole('tab', { name: 'Models' }).click();
   const modelPanel = dialog.locator('section[role="tabpanel"]:not([hidden])');
@@ -60,7 +58,7 @@ test('settings updates flow through store-backed runtime consumers without refre
 
   const snapshot = await readSettingsSnapshot(page);
   expect(snapshot).not.toBeNull();
-  expect(snapshot?.llmKeys.openai).toBe('sk-runtime-openai-0123456789');
+  expect(snapshot?.llmKeys.openai).toBe('');
   expect(snapshot?.llmModels.chat.provider).toBe('anthropic');
   expect(snapshot?.llmModels.chat.model).toBe(selectedChatModel);
   expect(snapshot?.deployTokens.github).toBe('github_pat_runtime01234567890123');

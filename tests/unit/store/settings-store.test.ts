@@ -102,7 +102,7 @@ describe('settings-store', () => {
 
     const decrypted = await decrypt(storedCiphertext, passphrase);
     const parsed = JSON.parse(decrypted) as SettingsPayload;
-    expect(parsed.llmKeys.openai).toBe('sk-openai');
+    expect(parsed.llmKeys.openai).toBe('');
     expect(parsed.deployTokens.github).toBe('ghp-token');
   });
 
@@ -147,7 +147,7 @@ describe('settings-store', () => {
     }));
 
     const nextSettings = store.getState().settings;
-    expect(nextSettings.llmKeys.openai).toBe('sk-runtime-openai');
+    expect(nextSettings.llmKeys.openai).toBe('');
     expect(nextSettings.llmModels.chat).toEqual({
       provider: 'anthropic',
       model: 'claude-sonnet-4-20250514',

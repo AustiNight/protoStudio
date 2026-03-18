@@ -31,6 +31,7 @@ npm run dev
 
 * `.env.example` documents all runtime knobs (LLM mode, preview sandbox, logging, model defaults, optional keys/tokens).
 * `.env.local` is loaded by Vite for local overrides and is gitignored.
+* OpenAI uses a server-managed proxy path (`/api/openai/*`) in both dev and prod. Set `OPENAI_API_KEY` once per environment.
 
 ## Scripts
 
@@ -48,6 +49,7 @@ npm run dev
 * OpenAI requests in production are routed through a Pages Function at `/api/openai/\*`.
 * Configure the server secret before deploying:
 `npx wrangler@4.71.0 pages secret put OPENAI\_API\_KEY --project-name prontoproto-studio`
+* Local dev uses the same proxy path; export `OPENAI_API_KEY` (or set it in your local env) before `npm run dev`.
 * If `VITE\_OPENAI\_PROXY\_BASE\_URL` points to a different origin, also set
 `OPENAI\_PROXY\_ALLOWED\_ORIGINS` (comma-separated), for example:
 `https://prontoproto.studio,https://www.prontoproto.studio`
@@ -57,4 +59,3 @@ npm run dev
 * Client-only studio and static output; zero-cost hosting priority.
 * Keys and tokens are encrypted in-browser; no third-party trackers; no eval.
 * Builder uses patch ops only; scaffold and anchors stay intact.
-

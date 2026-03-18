@@ -159,11 +159,11 @@ function buildDefaultSettings(): SettingsPayload {
   const defaults = runtimeConfig.settingsDefaults;
   return {
     version: 1,
-    llmKeys: {
+    llmKeys: normalizeLlmKeys({
       openai: defaults.llmKeys.openai,
       anthropic: defaults.llmKeys.anthropic,
       google: defaults.llmKeys.google,
-    },
+    }),
     llmModels: {
       chat: {
         provider: defaults.chatProvider,
@@ -205,7 +205,7 @@ function normalizeSettings(settings: SettingsPayload): SettingsPayload {
   const now = Date.now();
   return {
     version: 1,
-    llmKeys: { ...settings.llmKeys },
+    llmKeys: normalizeLlmKeys(settings.llmKeys),
     llmModels: {
       chat: { ...settings.llmModels.chat },
       builder: { ...settings.llmModels.builder },
@@ -219,7 +219,7 @@ function normalizeSettings(settings: SettingsPayload): SettingsPayload {
 function cloneSettings(settings: SettingsPayload): SettingsPayload {
   return {
     version: 1,
-    llmKeys: { ...settings.llmKeys },
+    llmKeys: normalizeLlmKeys(settings.llmKeys),
     llmModels: {
       chat: { ...settings.llmModels.chat },
       builder: { ...settings.llmModels.builder },
@@ -238,6 +238,7 @@ function parseSettingsPayload(payload: string): SettingsPayload | null {
     }
     return {
       ...parsed,
+      llmKeys: normalizeLlmKeys(parsed.llmKeys),
       openaiThinking: normalizeOpenAIThinking(parsed.openaiThinking),
     };
   } catch (error) {
@@ -360,6 +361,17 @@ function isProvider(value: unknown): value is LLMProviderName {
 
 function isProviderKey(value: unknown): value is string {
   return isString(value);
+}
+
+function normalizeLlmKeys(
+  llmKeys: SettingsPayload['llmKeys'],
+): SettingsPayload['llmKeys'] {
+  const next = { ...llmKeys };
+  if (runtimeConfig.openAIRequestMode === 'proxy') {
+    // OpenAI credentials are server-managed in proxy mode.
+    next.openai = '';
+  }
+  return next;
 }
 
 function isDeployToken(value: unknown): value is string {

@@ -12,6 +12,9 @@ export type OpenAIKeyValidationStatus = 'valid' | 'invalid' | 'error' | 'aborted
 export type OpenAIKeyValidationCode =
   | 'valid'
   | 'auth_invalid'
+  | 'secret_missing'
+  | 'origin_blocked'
+  | 'upstream_unreachable'
   | 'rate_limited'
   | 'timeout'
   | 'service_error'
@@ -70,6 +73,8 @@ export function createOpenAIKeyValidationRunner(
         now: options.now,
         timeoutMs: options.timeoutMs,
         signal: controller?.signal,
+        requestMode: options.requestMode,
+        proxyBaseUrl: options.proxyBaseUrl,
       });
 
       if (requestId !== activeRequestId) {
@@ -135,7 +140,8 @@ export async function validateOpenAIKey(
       signal,
     });
 
-    return mapStatusToValidation(response.status, now());
+    const bodyText = await safeReadText(response);
+    return mapStatusToValidation(response.status, now(), requestMode, bodyText);
   } catch (error) {
     const checkedAt = now();
     if (didTimeout) {
@@ -184,9 +190,59 @@ function normalizeProxyBaseUrl(value?: string): string {
 function mapStatusToValidation(
   status: number,
   checkedAt: number,
+  requestMode: OpenAIRequestMode,
+  bodyText: string,
 ): OpenAIKeyValidationResult {
   if (status === 200) {
-    return buildResult(checkedAt, 'valid', 'valid', 'OpenAI key is valid.', status);
+    return buildResult(
+      checkedAt,
+      'valid',
+      'valid',
+      requestMode === 'proxy'
+        ? 'OpenAI proxy is healthy.'
+        : 'OpenAI key is valid.',
+      status,
+    );
+  }
+
+  const diagnosticCode = extractErrorCode(bodyText);
+  if (diagnosticCode === 'secret_missing') {
+    return buildResult(
+      checkedAt,
+      'error',
+      'secret_missing',
+      'OpenAI proxy is missing OPENAI_API_KEY. Set the server secret and retry.',
+      status,
+    );
+  }
+  if (diagnosticCode === 'origin_blocked') {
+    return buildResult(
+      checkedAt,
+      'error',
+      'origin_blocked',
+      'OpenAI proxy blocked this origin. Check OPENAI_PROXY_ALLOWED_ORIGINS.',
+      status,
+    );
+  }
+  if (diagnosticCode === 'upstream_unreachable') {
+    return buildResult(
+      checkedAt,
+      'error',
+      'upstream_unreachable',
+      'OpenAI proxy could not reach OpenAI upstream. Check egress/network and retry.',
+      status,
+    );
+  }
+  if (diagnosticCode === 'invalid_api_key' || diagnosticCode === 'auth_invalid') {
+    return buildResult(
+      checkedAt,
+      'invalid',
+      'auth_invalid',
+      requestMode === 'proxy'
+        ? 'OpenAI rejected the server-managed key. Rotate OPENAI_API_KEY and retry.'
+        : `OpenAI rejected this key (${status}). Check key permissions and try again.`,
+      status,
+    );
   }
 
   if (status === 401 || status === 403) {
@@ -194,7 +250,9 @@ function mapStatusToValidation(
       checkedAt,
       'invalid',
       'auth_invalid',
-      `OpenAI rejected this key (${status}). Check key permissions and try again.`,
+      requestMode === 'proxy'
+        ? `OpenAI proxy authentication failed (${status}). Check server OPENAI_API_KEY.`
+        : `OpenAI rejected this key (${status}). Check key permissions and try again.`,
       status,
     );
   }
@@ -213,9 +271,41 @@ function mapStatusToValidation(
     checkedAt,
     'error',
     'service_error',
-    `OpenAI validation failed with status ${status}. This looks like a service/connectivity issue.`,
+    requestMode === 'proxy'
+      ? `OpenAI proxy validation failed with status ${status}.`
+      : `OpenAI validation failed with status ${status}. This looks like a service/connectivity issue.`,
     status,
   );
+}
+
+function extractErrorCode(bodyText: string): string | null {
+  if (!bodyText.trim()) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(bodyText) as {
+      error?: { code?: unknown };
+      code?: unknown;
+    };
+    const nested = parsed.error?.code;
+    if (typeof nested === 'string' && nested.trim()) {
+      return nested.trim();
+    }
+    if (typeof parsed.code === 'string' && parsed.code.trim()) {
+      return parsed.code.trim();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function safeReadText(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch {
+    return '';
+  }
 }
 
 function buildAbortController(): AbortController | null {

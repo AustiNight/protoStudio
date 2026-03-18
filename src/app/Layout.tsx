@@ -306,6 +306,9 @@ function getChatErrorMessage(
   error: { code?: string; message: string; details?: unknown },
 ): string {
   if (error.code === 'auth') {
+    if (provider === 'openai' && runtimeConfig.openAIRequestMode === 'proxy') {
+      return 'OpenAI authentication failed at the server proxy. Rotate OPENAI_API_KEY and retry.';
+    }
     return `${provider} authentication failed. Update your API key in Settings and try again.`;
   }
   if (error.code === 'rate_limit') {

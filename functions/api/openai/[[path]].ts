@@ -3,6 +3,13 @@ interface Env {
   OPENAI_PROXY_ALLOWED_ORIGINS?: string;
 }
 
+type ProxyErrorCode =
+  | 'secret_missing'
+  | 'origin_blocked'
+  | 'route_not_found'
+  | 'method_not_allowed'
+  | 'upstream_unreachable';
+
 const OPENAI_API_BASE_URL = 'https://api.openai.com';
 const OPENAI_PROXY_PREFIX = '/api/openai';
 const ALLOWED_PATHS = new Set(['/v1/chat/completions', '/v1/models']);
@@ -14,12 +21,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const cors = resolveCors(request, incomingUrl, env.OPENAI_PROXY_ALLOWED_ORIGINS);
 
   if (!apiKey) {
-    return jsonError(500, 'OPENAI_API_KEY secret is not configured.', cors);
+    return jsonError(
+      500,
+      'OPENAI_API_KEY secret is not configured.',
+      cors,
+      'secret_missing',
+    );
   }
 
   if (request.method === 'OPTIONS') {
     if (!cors.allowed) {
-      return jsonError(403, 'Origin is not allowed.', cors);
+      return jsonError(403, 'Origin is not allowed.', cors, 'origin_blocked');
     }
     return new Response(null, {
       status: 204,
@@ -36,19 +48,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   if (!cors.allowed) {
-    return jsonError(403, 'Origin is not allowed.', cors);
+    return jsonError(403, 'Origin is not allowed.', cors, 'origin_blocked');
   }
 
   const openAIPath = normalizeOpenAIPath(incomingUrl.pathname);
   if (!ALLOWED_PATHS.has(openAIPath)) {
-    return jsonError(404, 'OpenAI proxy route not found.', cors);
+    return jsonError(404, 'OpenAI proxy route not found.', cors, 'route_not_found');
   }
 
   if (openAIPath === '/v1/models' && request.method !== 'GET') {
-    return jsonError(405, 'Method not allowed.', cors);
+    return jsonError(405, 'Method not allowed.', cors, 'method_not_allowed');
   }
   if (openAIPath === '/v1/chat/completions' && request.method !== 'POST') {
-    return jsonError(405, 'Method not allowed.', cors);
+    return jsonError(405, 'Method not allowed.', cors, 'method_not_allowed');
   }
 
   const targetUrl = new URL(`${OPENAI_API_BASE_URL}${openAIPath}`);
@@ -58,11 +70,21 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   headers.set('Authorization', `Bearer ${apiKey}`);
   headers.set('Content-Type', request.headers.get('Content-Type') ?? 'application/json');
 
-  const response = await fetch(targetUrl, {
-    method: request.method,
-    headers,
-    body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
-  });
+  let response: Response;
+  try {
+    response = await fetch(targetUrl, {
+      method: request.method,
+      headers,
+      body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+    });
+  } catch {
+    return jsonError(
+      502,
+      'OpenAI upstream is unreachable.',
+      cors,
+      'upstream_unreachable',
+    );
+  }
 
   const responseHeaders = new Headers(response.headers);
   responseHeaders.delete('set-cookie');
@@ -136,11 +158,17 @@ function buildResponseHeaders(
   return headers;
 }
 
-function jsonError(status: number, message: string, cors: ResolvedCors): Response {
+function jsonError(
+  status: number,
+  message: string,
+  cors: ResolvedCors,
+  code?: ProxyErrorCode,
+): Response {
   return new Response(
     JSON.stringify({
       error: {
         message,
+        ...(code ? { code } : {}),
       },
     }),
     {

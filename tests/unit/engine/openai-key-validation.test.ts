@@ -7,10 +7,13 @@ import {
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-function createMockResponse(status: number): Response {
+function createMockResponse(status: number, body?: unknown): Response {
+  const payload =
+    body === undefined ? '' : typeof body === 'string' ? body : JSON.stringify(body);
   return {
     ok: status >= 200 && status < 300,
     status,
+    text: () => Promise.resolve(payload),
     headers: {
       get: () => null,
     },
@@ -104,6 +107,33 @@ describe('validateOpenAIKey', () => {
     expect(result403.status).toBe('invalid');
     expect(result403.code).toBe('auth_invalid');
     expect(result403.httpStatus).toBe(403);
+  });
+
+  it('maps proxy diagnostic codes to actionable statuses', async () => {
+    const missingSecretFetch = vi
+      .fn()
+      .mockResolvedValue(
+        createMockResponse(500, { error: { code: 'secret_missing' } }),
+      );
+    const invalidKeyFetch = vi
+      .fn()
+      .mockResolvedValue(
+        createMockResponse(401, { error: { code: 'invalid_api_key' } }),
+      );
+
+    const secretResult = await validateOpenAIKey('', {
+      fetchFn: missingSecretFetch as unknown as FetchFn,
+      requestMode: 'proxy',
+    });
+    const authResult = await validateOpenAIKey('', {
+      fetchFn: invalidKeyFetch as unknown as FetchFn,
+      requestMode: 'proxy',
+    });
+
+    expect(secretResult.status).toBe('error');
+    expect(secretResult.code).toBe('secret_missing');
+    expect(authResult.status).toBe('invalid');
+    expect(authResult.code).toBe('auth_invalid');
   });
 
   it('maps status 429 to a rate-limit error result', async () => {

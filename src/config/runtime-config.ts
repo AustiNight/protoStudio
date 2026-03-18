@@ -53,14 +53,16 @@ export const runtimeConfig: RuntimeConfig = {
     readEnv('VITE_PREVIEW_IFRAME_SANDBOX'),
     DEFAULT_IFRAME_SANDBOX,
   ),
-  openAIRequestMode: parseOpenAIRequestMode(
-    readEnv('VITE_OPENAI_REQUEST_MODE'),
-    import.meta.env.PROD ? 'proxy' : 'direct',
-  ),
+  openAIRequestMode: parseOpenAIRequestMode(readEnv('VITE_OPENAI_REQUEST_MODE'), 'proxy'),
   openAIProxyBaseUrl: normalizePath(readEnv('VITE_OPENAI_PROXY_BASE_URL'), '/api/openai'),
   settingsDefaults: {
     llmKeys: {
-      openai: readEnvString('VITE_OPENAI_API_KEY', ''),
+      // OpenAI keys are server-managed by default through the proxy route.
+      // Direct mode can still read VITE_OPENAI_API_KEY for local diagnostics.
+      openai:
+        parseOpenAIRequestMode(readEnv('VITE_OPENAI_REQUEST_MODE'), 'proxy') === 'direct'
+          ? readEnvString('VITE_OPENAI_API_KEY', '')
+          : '',
       anthropic: readEnvString('VITE_ANTHROPIC_API_KEY', ''),
       google: readEnvString('VITE_GOOGLE_API_KEY', ''),
     },

@@ -104,7 +104,9 @@ const TABS: Array<{ id: TabKey; label: string; description: string }> = [
   {
     id: 'keys',
     label: 'LLM Keys',
-    description: 'Store provider keys for chat and builder models.',
+    description: OPENAI_SERVER_MANAGED
+      ? 'OpenAI key is server-managed. Configure Anthropic/Google keys locally.'
+      : 'Store provider keys for chat and builder models.',
   },
   {
     id: 'models',
@@ -642,19 +644,22 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           <section role="tabpanel" hidden={activeTab !== 'keys'}>
             <p className="text-sm text-slate-300">{TABS[0].description}</p>
             <div className="mt-4 grid gap-4 lg:grid-cols-3">
-              <SecretField
-                label="OpenAI"
-                description={
-                  OPENAI_SERVER_MANAGED
-                    ? 'Chat + builder calls use the server-side OpenAI gateway. Key is managed in Cloudflare.'
-                    : 'Chat + builder calls routed directly to OpenAI.'
-                }
-                value={settings.llmKeys.openai}
-                placeholder={OPENAI_SERVER_MANAGED ? 'Server-managed in production' : 'sk-...'}
-                status={keyStatus.openai}
-                onChange={(value) => handleLlmKeyChange('openai', value)}
-                onValidate={() => runKeyValidation('openai')}
-              />
+              {OPENAI_SERVER_MANAGED ? (
+                <ServerManagedOpenAIField
+                  status={keyStatus.openai}
+                  onValidate={() => runKeyValidation('openai')}
+                />
+              ) : (
+                <SecretField
+                  label="OpenAI"
+                  description="Chat + builder calls routed directly to OpenAI."
+                  value={settings.llmKeys.openai}
+                  placeholder="sk-..."
+                  status={keyStatus.openai}
+                  onChange={(value) => handleLlmKeyChange('openai', value)}
+                  onValidate={() => runKeyValidation('openai')}
+                />
+              )}
               <SecretField
                 label="Anthropic"
                 description="Claude models for reasoning-heavy work."
@@ -970,6 +975,48 @@ function SecretField({
             {actionLabel}
           </button>
         </div>
+      </div>
+      <p className={`mt-2 text-xs ${statusTone}`}>{status.message}</p>
+    </div>
+  );
+}
+
+function ServerManagedOpenAIField({
+  status,
+  onValidate,
+}: {
+  status: ValidationState;
+  onValidate: () => void;
+}) {
+  const statusTone =
+    status.status === 'valid'
+      ? 'text-emerald-200'
+      : status.status === 'invalid'
+        ? 'text-rose-200'
+        : status.status === 'error'
+          ? 'text-amber-200'
+          : 'text-slate-400';
+
+  return (
+    <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-100">OpenAI</h4>
+          <p className="mt-1 text-xs text-slate-400">
+            Server-managed through the `/api/openai` gateway. Rotate only the server
+            `OPENAI_API_KEY` secret.
+          </p>
+        </div>
+        <StatusBadge status={status.status} />
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onValidate}
+          className="rounded-full bg-emerald-300/90 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-950 transition hover:bg-emerald-200"
+        >
+          Ping proxy
+        </button>
       </div>
       <p className={`mt-2 text-xs ${statusTone}`}>{status.message}</p>
     </div>
