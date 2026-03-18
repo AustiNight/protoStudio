@@ -11,7 +11,7 @@ type LogViewerPanelProps = {
 
 type ViewerTab = 'logs' | 'token_analysis';
 type MetricMode = 'tokens' | 'cost';
-type SeriesKey = 'api_calls' | 'builder_tasks' | 'chat_tasks';
+type SeriesKey = 'api_calls' | 'estimated_prompt' | 'builder_tasks' | 'chat_tasks';
 
 type ChartPoint = {
   x: number;
@@ -29,11 +29,13 @@ type ChartSeries = {
 type LlmResponseSample = {
   index: number;
   role: 'chat' | 'builder';
+  provider: 'openai' | 'anthropic' | 'google';
   model: string;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
   cost: number;
+  estimatedPromptTokens: number | null;
 };
 
 const timeFormatter = new Intl.DateTimeFormat('en-US', {
@@ -62,6 +64,11 @@ const SERIES_STYLES: Record<
     label: 'Outgoing API calls',
     colorClass: 'text-sky-300',
     colorHex: '#7dd3fc',
+  },
+  estimated_prompt: {
+    label: 'Estimated prompt',
+    colorClass: 'text-fuchsia-300',
+    colorHex: '#f0abfc',
   },
   builder_tasks: {
     label: 'Builder tasks',
@@ -122,24 +129,51 @@ function buildResponseSamples(events: TelemetryEvent[], sessionId: string | null
   if (!sessionId) {
     return [];
   }
-  const responses = events
+  const orderedEvents = events
+    .filter((event) => event.sessionId === sessionId)
+    .sort((left, right) => left.timestamp - right.timestamp);
+  const requestQueues = new Map<string, number[]>();
+
+  for (const event of orderedEvents) {
+    if (event.event !== 'llm.request') {
+      continue;
+    }
+    const key = `${event.data.role}::${event.data.provider}::${event.data.model}`;
+    const queue = requestQueues.get(key) ?? [];
+    if (typeof event.data.estimatedPromptTokens === 'number') {
+      queue.push(event.data.estimatedPromptTokens);
+    } else {
+      queue.push(0);
+    }
+    requestQueues.set(key, queue);
+  }
+
+  const responses = orderedEvents
     .filter(
       (event): event is Extract<TelemetryEvent, { event: 'llm.response' }> =>
-        event.sessionId === sessionId && event.event === 'llm.response',
-    )
-    .sort((left, right) => left.timestamp - right.timestamp);
+        event.event === 'llm.response',
+    );
 
   return responses.map((event, index) => {
     const promptTokens = event.data.promptTokens;
     const completionTokens = event.data.completionTokens;
+    const key = `${event.data.role}::${event.data.provider}::${event.data.model}`;
+    const queue = requestQueues.get(key) ?? [];
+    const estimatedPromptTokens = queue.length > 0 ? queue.shift() ?? null : null;
+    requestQueues.set(key, queue);
     return {
       index: index + 1,
       role: event.data.role,
+      provider: event.data.provider,
       model: event.data.model,
       promptTokens,
       completionTokens,
       totalTokens: promptTokens + completionTokens,
       cost: event.data.cost,
+      estimatedPromptTokens:
+        typeof estimatedPromptTokens === 'number' && estimatedPromptTokens > 0
+          ? estimatedPromptTokens
+          : null,
     };
   });
 }
@@ -205,6 +239,9 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
     const apiRaw = tokenSamples.map((sample) =>
       metricMode === 'tokens' ? sample.promptTokens : sample.cost,
     );
+    const estimatedPromptRaw = tokenSamples.map((sample) =>
+      metricMode === 'tokens' ? sample.estimatedPromptTokens : null,
+    );
     const builderRaw = tokenSamples.map((sample) => {
       if (sample.role !== 'builder') {
         return null;
@@ -220,6 +257,7 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
     const maxValue = Math.max(
       1,
       ...apiRaw,
+      ...estimatedPromptRaw.map((value) => value ?? 0),
       ...builderRaw.map((value) => value ?? 0),
       ...chatRaw.map((value) => value ?? 0),
     );
@@ -237,6 +275,7 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
     };
     return [
       buildSeries('api_calls', apiRaw),
+      buildSeries('estimated_prompt', estimatedPromptRaw),
       buildSeries('builder_tasks', builderRaw),
       buildSeries('chat_tasks', chatRaw),
     ];
@@ -249,12 +288,25 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
       0,
     );
     const totalCost = tokenSamples.reduce((sum, sample) => sum + sample.cost, 0);
+    const totalEstimatedPrompt = tokenSamples.reduce(
+      (sum, sample) => sum + (sample.estimatedPromptTokens ?? 0),
+      0,
+    );
     const builderCalls = tokenSamples.filter((sample) => sample.role === 'builder').length;
     const chatCalls = tokenSamples.filter((sample) => sample.role === 'chat').length;
+    const estimatedCalls = tokenSamples.filter(
+      (sample) => typeof sample.estimatedPromptTokens === 'number',
+    ).length;
+    const promptDelta = totalEstimatedPrompt - totalPrompt;
+    const promptDeltaRatio = totalPrompt > 0 ? (promptDelta / totalPrompt) * 100 : 0;
     return {
       totalPrompt,
       totalCompletion,
       totalCost,
+      totalEstimatedPrompt,
+      estimatedCalls,
+      promptDelta,
+      promptDeltaRatio,
       totalCalls: tokenSamples.length,
       builderCalls,
       chatCalls,
@@ -641,6 +693,16 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
               </div>
             </div>
           </div>
+          {metricMode === 'tokens' && totals.estimatedCalls > 0 && (
+            <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 px-3 py-2 text-[11px] text-slate-300">
+              <span className="font-['JetBrains_Mono'] uppercase tracking-[0.2em] text-slate-500">
+                Prompt Estimate Drift
+              </span>{' '}
+              actual {toRounded(totals.totalPrompt)} vs est. {toRounded(totals.totalEstimatedPrompt)} (
+              {totals.promptDelta >= 0 ? '+' : ''}
+              {toRounded(totals.promptDelta)} / {totals.promptDeltaRatio.toFixed(1)}%)
+            </div>
+          )}
 
           <div className="space-y-2 rounded-xl border border-slate-800/80 bg-slate-950/70 p-2">
             {tokenSamples.length === 0 ? (
@@ -665,6 +727,7 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
                           return Math.max(
                             1,
                             ...tokenSamples.map((sample) => sample.promptTokens),
+                            ...tokenSamples.map((sample) => sample.estimatedPromptTokens ?? 0),
                             ...tokenSamples.map((sample) => sample.totalTokens),
                           );
                         }
@@ -754,7 +817,9 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 text-xs">
-                  {chartSeries.map((series) => (
+                  {chartSeries
+                    .filter((series) => series.points.length > 0)
+                    .map((series) => (
                     <span key={series.key} className="flex items-center gap-1 text-slate-300">
                       <span
                         className={`inline-block h-2 w-2 rounded-full ${series.colorClass}`}

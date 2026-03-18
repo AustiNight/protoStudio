@@ -507,6 +507,11 @@ export const createTelemetryStore = () => {
           if (!resolvedSessionId) {
             return;
           }
+          const promptChars =
+            request.systemPrompt.length +
+            request.messages.reduce((sum, message) => sum + message.content.length, 0);
+          const messageCount = request.messages.length + (request.systemPrompt.trim() ? 1 : 0);
+          const estimatedPromptTokens = Math.max(1, Math.ceil(promptChars / 4));
           selectionByRole.set(request.role, selection);
           await appendEventInternal(
             buildTelemetryEvent(
@@ -520,6 +525,9 @@ export const createTelemetryStore = () => {
                 maxTokens: request.maxTokens,
                 temperature: request.temperature,
                 reasoningEffort: request.reasoningEffort,
+                estimatedPromptTokens,
+                estimatedPromptChars: Math.max(0, promptChars),
+                estimatedMessageCount: messageCount,
               },
             ),
           );

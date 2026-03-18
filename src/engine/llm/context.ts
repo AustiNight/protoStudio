@@ -133,13 +133,15 @@ export class ContextManager {
       this.estimateTokens(this.builder.patchFormat ?? '') +
       this.estimateTokens(cssVariables);
 
-    const affectedSections = buildSectionContexts(
+    const useFullAffectedSections = shouldUseFullAffectedSections(atom);
+    let affectedDetail: SectionDetail = useFullAffectedSections ? 'full' : 'signature';
+    let affectedSections = buildSectionContexts(
       affectedBlocks,
-      'full',
+      affectedDetail,
       false,
       this.estimateTokens.bind(this),
     );
-    let adjacentDetail: SectionDetail = 'full';
+    let adjacentDetail: SectionDetail = 'signature';
     let adjacentSections = buildSectionContexts(
       adjacentBlocks,
       adjacentDetail,
@@ -153,6 +155,13 @@ export class ContextManager {
     let ratio = calculateRatio(historyBudget, available);
 
     if (ratio < this.thresholds.tight) {
+      affectedDetail = 'signature';
+      affectedSections = buildSectionContexts(
+        affectedBlocks,
+        affectedDetail,
+        false,
+        this.estimateTokens.bind(this),
+      );
       adjacentDetail = 'signature';
       adjacentSections = buildSectionContexts(
         adjacentBlocks,
@@ -381,7 +390,8 @@ export class ContextManager {
       this.builder.reservedForOutput,
     );
 
-    let affectedDetail: SectionDetail = 'full';
+    const useFullAffectedSections = shouldUseFullAffectedSections(input.atom);
+    let affectedDetail: SectionDetail = useFullAffectedSections ? 'full' : 'signature';
     const adjacentDetail: SectionDetail = 'signature';
     let conversationMessages = input.conversation.length > 0 ? [input.conversation[0]] : [];
     if (input.conversation.length > 1 && conversationMessages[0]) {
@@ -425,7 +435,7 @@ export class ContextManager {
 
     let used = sumBudgetTokens(budget);
 
-    if (used > available) {
+    if (used > available && affectedDetail !== 'signature') {
       affectedDetail = 'signature';
       affectedSections = buildSectionContexts(
         input.affectedBlocks,
@@ -872,4 +882,21 @@ function buildSummaryMessage(first: ChatMessage, trimmedCount: number): ChatMess
     sender: 'system',
     content: `[${trimmedCount} earlier messages summarized to preserve context.]`,
   };
+}
+
+function shouldUseFullAffectedSections(atom: WorkItem): boolean {
+  if (atom.atomType === 'structure') {
+    return true;
+  }
+
+  const normalized = `${atom.title} ${atom.description} ${atom.visibleChange}`.toLowerCase();
+  if (
+    /\b(add|remove|reorder|restructure|layout|section|hero|header|footer|grid|columns|nav)\b/.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+
+  return false;
 }

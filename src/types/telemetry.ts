@@ -74,6 +74,9 @@ export interface TelemetryEventDataMap {
     maxTokens?: number;
     temperature?: number;
     reasoningEffort?: string;
+    estimatedPromptTokens?: number;
+    estimatedPromptChars?: number;
+    estimatedMessageCount?: number;
   };
   'llm.response': {
     role: TelemetryLLMRole;
@@ -443,6 +446,9 @@ function validateLlmRequest(data: unknown): TelemetryValidationError | null {
       'maxTokens',
       'temperature',
       'reasoningEffort',
+      'estimatedPromptTokens',
+      'estimatedPromptChars',
+      'estimatedMessageCount',
     ])
   ) {
     return unexpectedKeys('llm.request');
@@ -478,6 +484,15 @@ function validateLlmRequest(data: unknown): TelemetryValidationError | null {
     ])
   ) {
     return invalidField('llm.request', 'reasoningEffort');
+  }
+  if (hasValue(record, 'estimatedPromptTokens') && !isNonNegativeInteger(record.estimatedPromptTokens)) {
+    return invalidField('llm.request', 'estimatedPromptTokens');
+  }
+  if (hasValue(record, 'estimatedPromptChars') && !isNonNegativeInteger(record.estimatedPromptChars)) {
+    return invalidField('llm.request', 'estimatedPromptChars');
+  }
+  if (hasValue(record, 'estimatedMessageCount') && !isNonNegativeInteger(record.estimatedMessageCount)) {
+    return invalidField('llm.request', 'estimatedMessageCount');
   }
   return null;
 }

@@ -810,6 +810,202 @@ function splitRequestIntoClauses(value: string): string[] {
   return split.slice(0, 4);
 }
 
+function normalizeComparableText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isEchoLike(candidate: string, source: string): boolean {
+  const normalizedCandidate = normalizeComparableText(candidate);
+  const normalizedSource = normalizeComparableText(source);
+  if (!normalizedCandidate || !normalizedSource) {
+    return false;
+  }
+  if (normalizedCandidate === normalizedSource) {
+    return true;
+  }
+  if (
+    normalizedSource.includes(normalizedCandidate) &&
+    normalizedCandidate.length >= Math.floor(normalizedSource.length * 0.65)
+  ) {
+    return true;
+  }
+  if (
+    normalizedCandidate.includes(normalizedSource) &&
+    normalizedSource.length >= Math.floor(normalizedCandidate.length * 0.65)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function hasImplementationVerb(value: string): boolean {
+  return /\b(add|adjust|align|apply|create|darken|decrease|ensure|improve|increase|introduce|lighten|refine|remove|replace|rework|standardize|tune|update)\b/i.test(
+    value,
+  );
+}
+
+function inferEffortFromLines(estimatedLines: number): Effort {
+  if (estimatedLines <= 35) {
+    return 'S';
+  }
+  if (estimatedLines <= 90) {
+    return 'M';
+  }
+  return 'L';
+}
+
+function buildImplementationInstruction(
+  clause: string,
+  atomType: AtomType,
+): Pick<WorkItem, 'title' | 'description' | 'filesTouch' | 'estimatedLines' | 'visibleChange'> {
+  const normalized = clause.toLowerCase();
+  const defaults = {
+    title: 'Implement requested update',
+    description:
+      'Apply the requested change as a focused implementation pass, keeping the edit scoped and testable.',
+    filesTouch: defaultFilesForAtomType(atomType),
+    estimatedLines: 55,
+    visibleChange: 'The requested change is visibly reflected in the preview.',
+  };
+
+  if (atomType === 'style') {
+    if (/(too light|bright|washed out|pale)/.test(normalized)) {
+      return {
+        title: 'Darken global palette and strengthen contrast',
+        description:
+          'Update global color tokens and key section/background styles in styles.css so the baseline theme is visibly darker while preserving readable text contrast and button hierarchy.',
+        filesTouch: ['styles.css', 'index.html'],
+        estimatedLines: 60,
+        visibleChange:
+          'Page surfaces render with a substantially darker theme and clear contrast across hero, content blocks, and footer.',
+      };
+    }
+    if (/(too dark|dim|hard to read)/.test(normalized)) {
+      return {
+        title: 'Lighten base theme and improve readability',
+        description:
+          'Refine global color tokens and section backgrounds so the palette is brighter and text contrast remains accessible for primary and secondary content.',
+        filesTouch: ['styles.css', 'index.html'],
+        estimatedLines: 55,
+        visibleChange:
+          'The site appears lighter with improved text readability and preserved visual hierarchy.',
+      };
+    }
+    if (/(color|theme|palette|contrast|typography|spacing|shadow|gradient)/.test(normalized)) {
+      return {
+        title: 'Refine visual system tokens and component styling',
+        description:
+          'Adjust theme tokens and shared component styles for a consistent visual direction, then propagate changes to primary sections to remove mismatched accents or spacing.',
+        filesTouch: ['styles.css', 'index.html'],
+        estimatedLines: 58,
+        visibleChange:
+          'Core components and sections display a consistent, updated visual style.',
+      };
+    }
+  }
+
+  if (atomType === 'behavior') {
+    return {
+      title: 'Implement interaction behavior update',
+      description:
+        'Apply the requested interaction change in main.js and wire any required markup hooks in index.html with minimal, scoped logic.',
+      filesTouch: ['main.js', 'index.html'],
+      estimatedLines: 50,
+      visibleChange: 'Interactive behavior in the affected flow now matches the requested intent.',
+    };
+  }
+
+  if (atomType === 'structure') {
+    return {
+      title: 'Implement structural layout adjustment',
+      description:
+        'Update page structure in index.html to introduce or rearrange the requested sections while preserving existing content integrity.',
+      filesTouch: ['index.html', 'styles.css'],
+      estimatedLines: 70,
+      visibleChange: 'Page structure reflects the requested section/layout changes.',
+    };
+  }
+
+  if (atomType === 'integration') {
+    return {
+      title: 'Implement integration and data-flow update',
+      description:
+        'Add the requested integration wiring and UI hookup with clear failure handling and minimal surface-area changes.',
+      filesTouch: ['main.js', 'index.html'],
+      estimatedLines: 80,
+      visibleChange: 'The requested external or data integration is connected and visible in the UI flow.',
+    };
+  }
+
+  if (atomType === 'content') {
+    return {
+      title: 'Refine content and messaging implementation',
+      description:
+        'Update copy and supporting markup to reflect the requested messaging change while preserving structure and readability.',
+      filesTouch: ['index.html'],
+      estimatedLines: 45,
+      visibleChange: 'Visible page copy reflects the new messaging request.',
+    };
+  }
+
+  return defaults;
+}
+
+function workItemNeedsInstructionUpgrade(item: WorkItem, request: string): boolean {
+  const title = item.title.trim();
+  const description = item.description.trim();
+  const visibleChange = item.visibleChange.trim();
+  if (!title || !description || !visibleChange) {
+    return true;
+  }
+  if (isEchoLike(title, request) || isEchoLike(description, request)) {
+    return true;
+  }
+  if (/^implements?:/i.test(visibleChange) || isEchoLike(visibleChange, request)) {
+    return true;
+  }
+  if (!hasImplementationVerb(description)) {
+    return true;
+  }
+  return false;
+}
+
+function upgradePlannedWorkItems(
+  items: WorkItem[],
+  request: string,
+  sessionId: string,
+): WorkItem[] {
+  const summary = summarizeUserRequest(request);
+  return items.map((item) => {
+    if (!workItemNeedsInstructionUpgrade(item, request)) {
+      return {
+        ...item,
+        sessionId,
+        filesTouch: item.filesTouch.length > 0 ? item.filesTouch : defaultFilesForAtomType(item.atomType),
+      };
+    }
+    const sourceClause = item.description.trim() || item.title.trim() || request;
+    const atomType = item.atomType ?? inferAtomTypeFromRequest(sourceClause);
+    const upgraded = buildImplementationInstruction(sourceClause, atomType);
+    return {
+      ...item,
+      sessionId,
+      title: upgraded.title,
+      description: upgraded.description,
+      rationale: `Planner-normalized from user request: ${summary}.`,
+      atomType,
+      filesTouch: upgraded.filesTouch,
+      estimatedLines: upgraded.estimatedLines,
+      effort: inferEffortFromLines(upgraded.estimatedLines),
+      visibleChange: upgraded.visibleChange,
+    };
+  });
+}
+
 type AutonomousCriticEnvelope = {
   score: number;
   done: boolean;
@@ -1518,23 +1714,23 @@ export function Layout() {
         const clauses = splitRequestIntoClauses(content);
         const items = clauses.map((clause, index) => {
           const atomType = inferAtomTypeFromRequest(clause);
-          const title = summarizeUserRequest(clause);
-          const id = `user-${now}-${index}-${sanitizeIdentifier(title).slice(0, 36)}`;
+          const instruction = buildImplementationInstruction(clause, atomType);
+          const id = `user-${now}-${index}-${sanitizeIdentifier(instruction.title).slice(0, 36)}`;
           return {
             id,
             sessionId: activeSessionId,
-            title,
-            description: clause,
-            effort: 'M' as Effort,
+            title: instruction.title,
+            description: instruction.description,
+            effort: inferEffortFromLines(instruction.estimatedLines) as Effort,
             status: 'backlog' as WorkItemStatus,
             order: index + 1,
             dependencies: [],
-            rationale: 'Directly requested by the user in chat.',
+            rationale: `Deterministic planner fallback from user request: ${summarizeUserRequest(clause)}.`,
             createdAt: now,
             atomType,
-            filesTouch: defaultFilesForAtomType(atomType),
-            estimatedLines: 65,
-            visibleChange: `Implements: ${title}`,
+            filesTouch: instruction.filesTouch,
+            estimatedLines: instruction.estimatedLines,
+            visibleChange: instruction.visibleChange,
           };
         });
         return items;
@@ -1559,6 +1755,9 @@ export function Layout() {
             'You are a backlog planner for prontoproto.studio.',
             'Rewrite the user request into concise, implementation-ready Builder atoms.',
             'If the request mixes concerns, split into multiple atoms with dependencies.',
+            'Do not echo or paraphrase the user message as-is.',
+            'Use imperative engineering language with clear implementation verbs.',
+            'Each description must mention concrete implementation intent and likely files touched.',
             'Keep total output text roughly similar in length to the user input.',
             'Return JSON array only, no prose.',
           ].join('\n'),
@@ -1569,6 +1768,10 @@ export function Layout() {
                 `Session request: ${content}`,
                 'Output item schema:',
                 '{ "title": "...", "description": "...", "atomType": "structure|content|style|behavior|integration", "filesTouch": ["..."], "estimatedLines": 40, "visibleChange": "...", "dependencies": [] }',
+                'Quality bar:',
+                '- title is actionable and not user-verbatim',
+                '- description starts with an implementation verb',
+                '- visibleChange states concrete preview outcome',
               ].join('\n'),
             },
           ],
@@ -1582,7 +1785,10 @@ export function Layout() {
         const parsed = parseWorkItemsResponse(response.value, {
           sessionId: activeSessionId,
         });
-        return parsed.length > 0 ? parsed : buildFallback();
+        if (parsed.length === 0) {
+          return buildFallback();
+        }
+        return upgradePlannedWorkItems(parsed, content, activeSessionId);
       } catch {
         return buildFallback();
       }
@@ -2424,22 +2630,22 @@ export function Layout() {
       const now = Date.now();
       const splitItems: WorkItem[] = clauses.slice(0, 3).map((clause, index) => {
         const atomType = inferAtomTypeFromRequest(clause);
-        const title = summarizeUserRequest(clause);
+        const instruction = buildImplementationInstruction(clause, atomType);
         return {
-          id: `split-${now}-${index}-${sanitizeIdentifier(title).slice(0, 30)}`,
+          id: `split-${now}-${index}-${sanitizeIdentifier(instruction.title).slice(0, 30)}`,
           sessionId: activeSessionId,
-          title,
-          description: clause,
-          effort: 'S',
+          title: instruction.title,
+          description: instruction.description,
+          effort: inferEffortFromLines(instruction.estimatedLines),
           status: 'backlog',
           order: index + 1,
           dependencies: [],
           rationale: `Split from blocked item "${item.title}".`,
           createdAt: now,
           atomType,
-          filesTouch: defaultFilesForAtomType(atomType),
-          estimatedLines: 40,
-          visibleChange: `Implements: ${title}`,
+          filesTouch: instruction.filesTouch,
+          estimatedLines: instruction.estimatedLines,
+          visibleChange: instruction.visibleChange,
         };
       });
       if (splitItems.length > 0) {
@@ -3730,7 +3936,8 @@ export function Layout() {
                       <span>{completedItems.length}</span>
                     </button>
                     {showCompleted && (
-                      <div className="mt-3 flex flex-col gap-2">
+                      <div className="mt-3 max-h-56 overflow-y-auto pr-1">
+                        <div className="flex flex-col gap-2">
                         {completedItems.map((item) => (
                           <div
                             key={item.id}
@@ -3749,6 +3956,7 @@ export function Layout() {
                             </div>
                           </div>
                         ))}
+                        </div>
                       </div>
                     )}
                   </div>

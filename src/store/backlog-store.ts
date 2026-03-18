@@ -76,8 +76,19 @@ export const createBacklogStore = () =>
       if (items.length === 0) {
         return;
       }
+      let insertedCount = 0;
+      let insertedSessionId: string | undefined = items[0]?.sessionId;
       set((state) => {
-        const nextIncoming = items.map((item) => ({ ...item, status: 'backlog' as const }));
+        const existingFingerprints = new Set(
+          state.items.map((item) => workItemFingerprint(item)),
+        );
+        const dedupedIncoming = items.filter((item) => !existingFingerprints.has(workItemFingerprint(item)));
+        if (dedupedIncoming.length === 0) {
+          return {};
+        }
+        insertedCount = dedupedIncoming.length;
+        insertedSessionId = dedupedIncoming[0]?.sessionId ?? insertedSessionId;
+        const nextIncoming = dedupedIncoming.map((item) => ({ ...item, status: 'backlog' as const }));
         const ordered = sortByOrder(state.items);
         const insertAfterIndex = ordered.reduce((lastIndex, item, index) => {
           if (item.status === 'in_progress' || item.status === 'on_deck') {
@@ -104,10 +115,13 @@ export const createBacklogStore = () =>
           items: normalizeOrder([...prefix, ...inserted, ...shiftedSuffix]),
         };
       });
+      if (insertedCount === 0) {
+        return;
+      }
       const telemetry = useTelemetryStore.getState();
       void telemetry.recordBacklogAdded({
-        sessionId: items[0]?.sessionId,
-        count: items.length,
+        sessionId: insertedSessionId,
+        count: insertedCount,
         timestamp: Date.now(),
       });
     },
@@ -293,4 +307,14 @@ function moveItem(items: WorkItem[], fromIndex: number, toIndex: number): WorkIt
   }
   nextItems.splice(toIndex, 0, moved);
   return nextItems;
+}
+
+function workItemFingerprint(item: WorkItem): string {
+  const normalize = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  return `${item.atomType}::${normalize(item.title)}::${normalize(item.visibleChange)}`;
 }

@@ -103,6 +103,10 @@ interface RetryContext {
   violations?: string[];
 }
 
+interface AttemptPromptBaseline {
+  manifestJson: string;
+}
+
 const DEFAULT_MAX_ATTEMPTS = 3;
 
 const DEFAULT_PHASE_TIMEOUTS: PhaseTimeouts = {
@@ -194,6 +198,7 @@ export class BuilderLoop {
 
     let attempt = 0;
     let retryContext: RetryContext | null = null;
+    let promptBaseline: AttemptPromptBaseline | null = null;
 
     while (attempt < this.maxAttempts) {
       attempt += 1;
@@ -217,7 +222,11 @@ export class BuilderLoop {
         context,
         retryContext,
         typeof atom.expectedSectionDelta === 'number' ? atom.expectedSectionDelta : 0,
+        promptBaseline,
       );
+      promptBaseline = {
+        manifestJson: context.siteManifestJson,
+      };
 
       this.setPhase('awaiting_llm');
       const llmResult = await this.gateway.send({
@@ -360,7 +369,7 @@ export class BuilderLoop {
         this.now,
       );
       if (!metrics.visibleChange) {
-        const reason = 'Patch produced no visible changes.';
+        const reason = 'Intent validation failed: patch produced no visible changes.';
         const decision = this.recordFailure(atom, reason, attempt);
         this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
         if (decision.action === 'retry') {
@@ -405,6 +414,22 @@ export class BuilderLoop {
       const intentValidationError = validateIntentSatisfaction(atom, before, sandbox);
       if (intentValidationError) {
         const reason = `Intent validation failed: ${intentValidationError}`;
+        const decision = this.recordFailure(atom, reason, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
+        if (decision.action === 'retry') {
+          retryContext = { reason };
+          continue;
+        }
+        const outcome = this.skipAtom(atom, input.backlog, reason, attempt);
+        return okResult(outcome);
+      }
+
+      const beforePreview = buildPreviewHtml(before, previewResult.value.pagePath);
+      if (
+        beforePreview.ok &&
+        !hasVisiblePreviewDelta(beforePreview.value.html, previewResult.value.html)
+      ) {
+        const reason = 'Intent validation failed: no visible preview change detected.';
         const decision = this.recordFailure(atom, reason, attempt);
         this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
         if (decision.action === 'retry') {
@@ -567,7 +592,7 @@ function buildBuilderPrompt(context: {
   adjacentSections: unknown[];
   patchFormat: string;
   conversation: ChatMessage[];
-}, retry: RetryContext | null, expectedSectionDelta = 0): string {
+}, retry: RetryContext | null, expectedSectionDelta = 0, baseline?: AttemptPromptBaseline | null): string {
   const sections: string[] = [];
 
   if (retry) {
@@ -580,8 +605,13 @@ function buildBuilderPrompt(context: {
 
   sections.push('Work item:');
   sections.push(context.workItemJson);
-  sections.push('Site manifest:');
-  sections.push(context.siteManifestJson);
+  if (retry) {
+    sections.push('Site manifest delta since prior attempt:');
+    sections.push(summarizeManifestDelta(baseline?.manifestJson ?? null, context.siteManifestJson));
+  } else {
+    sections.push('Site manifest:');
+    sections.push(context.siteManifestJson);
+  }
   sections.push('CSS variables:');
   sections.push(context.cssVariables || '');
   sections.push('Affected sections:');
@@ -610,6 +640,77 @@ function buildBuilderPrompt(context: {
   sections.push(JSON.stringify(context.conversation, null, 2));
 
   return sections.filter((section) => section.trim().length > 0).join('\n\n');
+}
+
+function summarizeManifestDelta(
+  previousManifestJson: string | null,
+  currentManifestJson: string,
+): string {
+  if (!previousManifestJson) {
+    return 'No prior attempt baseline available.';
+  }
+  if (previousManifestJson === currentManifestJson) {
+    return 'No manifest changes since prior attempt.';
+  }
+
+  try {
+    const previous = JSON.parse(previousManifestJson) as {
+      pages?: Array<{ path?: string; sections?: string[] }>;
+      cssBlocks?: string[];
+      jsFunctions?: string[];
+      theme?: { colors?: Record<string, string>; fonts?: Record<string, string> };
+    };
+    const current = JSON.parse(currentManifestJson) as typeof previous;
+
+    const previousPages = new Set((previous.pages ?? []).map((page) => page.path ?? ''));
+    const currentPages = new Set((current.pages ?? []).map((page) => page.path ?? ''));
+    const previousCss = new Set(previous.cssBlocks ?? []);
+    const currentCss = new Set(current.cssBlocks ?? []);
+    const previousJs = new Set(previous.jsFunctions ?? []);
+    const currentJs = new Set(current.jsFunctions ?? []);
+
+    const addedPages = [...currentPages].filter((value) => value && !previousPages.has(value));
+    const removedPages = [...previousPages].filter((value) => value && !currentPages.has(value));
+    const addedCssBlocks = [...currentCss].filter((value) => !previousCss.has(value));
+    const removedCssBlocks = [...previousCss].filter((value) => !currentCss.has(value));
+    const addedJsFunctions = [...currentJs].filter((value) => !previousJs.has(value));
+    const removedJsFunctions = [...previousJs].filter((value) => !currentJs.has(value));
+
+    const colorChanged =
+      JSON.stringify(previous.theme?.colors ?? {}) !== JSON.stringify(current.theme?.colors ?? {});
+    const fontChanged =
+      JSON.stringify(previous.theme?.fonts ?? {}) !== JSON.stringify(current.theme?.fonts ?? {});
+
+    const lines: string[] = [];
+    if (addedPages.length > 0) {
+      lines.push(`Added pages: ${addedPages.join(', ')}`);
+    }
+    if (removedPages.length > 0) {
+      lines.push(`Removed pages: ${removedPages.join(', ')}`);
+    }
+    if (addedCssBlocks.length > 0) {
+      lines.push(`Added css blocks: ${addedCssBlocks.slice(0, 10).join(', ')}`);
+    }
+    if (removedCssBlocks.length > 0) {
+      lines.push(`Removed css blocks: ${removedCssBlocks.slice(0, 10).join(', ')}`);
+    }
+    if (addedJsFunctions.length > 0) {
+      lines.push(`Added js functions: ${addedJsFunctions.slice(0, 10).join(', ')}`);
+    }
+    if (removedJsFunctions.length > 0) {
+      lines.push(`Removed js functions: ${removedJsFunctions.slice(0, 10).join(', ')}`);
+    }
+    if (colorChanged) {
+      lines.push('Theme colors changed.');
+    }
+    if (fontChanged) {
+      lines.push('Theme fonts changed.');
+    }
+
+    return lines.length > 0 ? lines.join('\n') : 'Manifest changed in minor/non-structural ways.';
+  } catch {
+    return 'Manifest changed since prior attempt.';
+  }
 }
 
 function normalizePatchForRuntime(
@@ -725,6 +826,21 @@ function extractRootVariable(css: string, variableName: string): string | null {
   const regex = new RegExp(`${escapedName}\\s*:\\s*([^;]+);`, 'i');
   const match = rootMatch[0].match(regex);
   return match?.[1]?.trim() ?? null;
+}
+
+function normalizePreviewForComparison(html: string): string {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/>\s+</g, '><')
+    .trim()
+    .toLowerCase();
+}
+
+function hasVisiblePreviewDelta(beforeHtml: string, afterHtml: string): boolean {
+  const normalizedBefore = normalizePreviewForComparison(beforeHtml);
+  const normalizedAfter = normalizePreviewForComparison(afterHtml);
+  return normalizedBefore !== normalizedAfter;
 }
 
 function collectPreviewFiles(vfs: VirtualFileSystem, pagePath: string): {
