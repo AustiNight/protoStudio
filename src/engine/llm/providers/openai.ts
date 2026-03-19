@@ -14,7 +14,7 @@ import type { OpenAIRequestMode } from '../../../config/runtime-config';
 
 const OPENAI_CHAT_COMPLETIONS_URL =
   'https://api.openai.com/v1/chat/completions';
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_PROXY_BASE_URL = '/api/openai';
 
 interface OpenAIProviderOptions {

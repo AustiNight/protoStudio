@@ -23,6 +23,13 @@ export type AtomType =
   | 'behavior'
   | 'integration';
 
+export type WorkItemSource =
+  | 'first_message_planner'
+  | 'request_planner'
+  | 'web_designer'
+  | 'fallback'
+  | 'system';
+
 /**
  * Backlog work item produced by the PO and executed by the builder.
  */
@@ -103,6 +110,10 @@ export interface WorkItem {
    * Human-readable reason when work is blocked.
    */
   blockedReason?: string;
+  /**
+   * Origin of this item for supportability/debugging.
+   */
+  source?: WorkItemSource;
 }
 
 /**

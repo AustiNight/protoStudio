@@ -11,7 +11,12 @@ type LogViewerPanelProps = {
 
 type ViewerTab = 'logs' | 'token_analysis';
 type MetricMode = 'tokens' | 'cost';
-type SeriesKey = 'api_calls' | 'estimated_prompt' | 'builder_tasks' | 'chat_tasks';
+type SeriesKey =
+  | 'api_calls'
+  | 'estimated_prompt'
+  | 'builder_tasks'
+  | 'chat_tasks'
+  | 'critic_tasks';
 
 type ChartPoint = {
   x: number;
@@ -28,7 +33,7 @@ type ChartSeries = {
 
 type LlmResponseSample = {
   index: number;
-  role: 'chat' | 'builder';
+  role: 'chat' | 'builder' | 'critic';
   provider: 'openai' | 'anthropic' | 'google';
   model: string;
   promptTokens: number;
@@ -79,6 +84,11 @@ const SERIES_STYLES: Record<
     label: 'Chat tasks',
     colorClass: 'text-amber-300',
     colorHex: '#fcd34d',
+  },
+  critic_tasks: {
+    label: 'Web Designer tasks',
+    colorClass: 'text-violet-300',
+    colorHex: '#c4b5fd',
   },
 };
 
@@ -254,12 +264,19 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
       }
       return metricMode === 'tokens' ? sample.totalTokens : sample.cost;
     });
+    const criticRaw = tokenSamples.map((sample) => {
+      if (sample.role !== 'critic') {
+        return null;
+      }
+      return metricMode === 'tokens' ? sample.totalTokens : sample.cost;
+    });
     const maxValue = Math.max(
       1,
       ...apiRaw,
       ...estimatedPromptRaw.map((value) => value ?? 0),
       ...builderRaw.map((value) => value ?? 0),
       ...chatRaw.map((value) => value ?? 0),
+      ...criticRaw.map((value) => value ?? 0),
     );
     const buildSeries = (key: SeriesKey, values: Array<number | null>): ChartSeries => {
       const points = values.flatMap((value, index) =>
@@ -278,6 +295,7 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
       buildSeries('estimated_prompt', estimatedPromptRaw),
       buildSeries('builder_tasks', builderRaw),
       buildSeries('chat_tasks', chatRaw),
+      buildSeries('critic_tasks', criticRaw),
     ];
   }, [metricMode, tokenSamples]);
 
@@ -294,6 +312,7 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
     );
     const builderCalls = tokenSamples.filter((sample) => sample.role === 'builder').length;
     const chatCalls = tokenSamples.filter((sample) => sample.role === 'chat').length;
+    const criticCalls = tokenSamples.filter((sample) => sample.role === 'critic').length;
     const estimatedCalls = tokenSamples.filter(
       (sample) => typeof sample.estimatedPromptTokens === 'number',
     ).length;
@@ -310,6 +329,7 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
       totalCalls: tokenSamples.length,
       builderCalls,
       chatCalls,
+      criticCalls,
     };
   }, [tokenSamples]);
 
@@ -318,7 +338,7 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
       string,
       {
         model: string;
-        role: 'chat' | 'builder';
+        role: 'chat' | 'builder' | 'critic';
         calls: number;
         promptTokens: number;
         completionTokens: number;
@@ -829,7 +849,7 @@ export function LogViewerPanel({ label }: LogViewerPanelProps) {
                     </span>
                   ))}
                   <span className="text-slate-500">
-                    Builder calls: {totals.builderCalls} | Chat calls: {totals.chatCalls}
+                    Builder calls: {totals.builderCalls} | Chat calls: {totals.chatCalls} | Web Designer calls: {totals.criticCalls}
                   </span>
                 </div>
               </>

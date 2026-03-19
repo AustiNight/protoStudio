@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 
 import { runtimeConfig } from '../config/runtime-config';
-import { decrypt, encrypt, EncryptionError } from '../persistence/encryption';
 import {
   clearEncryptedSettings,
   readEncryptedSettings,
@@ -20,6 +19,7 @@ export interface ModelSelection {
 export interface OpenAIThinkingSettings {
   chat: OpenAIReasoningSetting;
   builder: OpenAIReasoningSetting;
+  critic: OpenAIReasoningSetting;
 }
 
 export interface SettingsPayload {
@@ -28,6 +28,7 @@ export interface SettingsPayload {
   llmModels: {
     chat: ModelSelection;
     builder: ModelSelection;
+    critic: ModelSelection;
   };
   openaiThinking: OpenAIThinkingSettings;
   deployTokens: Record<SettingsDeployHost, string>;
@@ -36,27 +37,33 @@ export interface SettingsPayload {
 
 export interface SettingsStoreState {
   settings: SettingsPayload;
-  encryptedSettings: string | null;
-  hasStoredSecrets: boolean;
   lastError: string | null;
   hydrateFromStorage: () => void;
   setRuntimeSettings: (settings: SettingsPayload) => void;
   updateRuntimeSettings: (updater: (settings: SettingsPayload) => SettingsPayload) => void;
-  saveSettings: (settings: SettingsPayload, passphrase: string) => Promise<boolean>;
-  unlockSettings: (passphrase: string) => Promise<boolean>;
+  saveSettings: (settings: SettingsPayload) => Promise<boolean>;
   clearSettings: () => void;
   resetStore: () => void;
 }
 
 export const createSettingsStore = () =>
-  create<SettingsStoreState>((set, get) => ({
+  create<SettingsStoreState>((set) => ({
     ...buildInitialState(),
     hydrateFromStorage: () =>
       set(() => {
-        const encrypted = readEncryptedSettings();
+        const stored = readEncryptedSettings();
+        if (!stored) {
+          return {};
+        }
+        const parsed = parseSettingsPayload(stored);
+        if (!parsed) {
+          return {
+            lastError: 'Stored settings payload is invalid.',
+          };
+        }
         return {
-          encryptedSettings: encrypted,
-          hasStoredSecrets: Boolean(encrypted),
+          settings: parsed,
+          lastError: null,
         };
       }),
     setRuntimeSettings: (settings) =>
@@ -75,16 +82,12 @@ export const createSettingsStore = () =>
           lastError: null,
         };
       }),
-    saveSettings: async (settings, passphrase) => {
+    saveSettings: async (settings) => {
       try {
         const updatedSettings = normalizeSettings(settings);
-        const payload = JSON.stringify(updatedSettings);
-        const encrypted = await encrypt(payload, passphrase);
-        writeEncryptedSettings(encrypted);
+        writeEncryptedSettings(JSON.stringify(updatedSettings));
         set(() => ({
           settings: updatedSettings,
-          encryptedSettings: encrypted,
-          hasStoredSecrets: true,
           lastError: null,
         }));
         return true;
@@ -95,47 +98,10 @@ export const createSettingsStore = () =>
         return false;
       }
     },
-    unlockSettings: async (passphrase) => {
-      const encrypted = get().encryptedSettings ?? readEncryptedSettings();
-      if (!encrypted) {
-        set(() => ({
-          lastError: 'No stored settings found.',
-          hasStoredSecrets: false,
-        }));
-        return false;
-      }
-
-      try {
-        const decrypted = await decrypt(encrypted, passphrase);
-        const parsed = parseSettingsPayload(decrypted);
-        if (!parsed) {
-          set(() => ({
-            lastError: 'Stored settings payload is invalid.',
-          }));
-          return false;
-        }
-        set(() => ({
-          settings: parsed,
-          encryptedSettings: encrypted,
-          hasStoredSecrets: true,
-          lastError: null,
-        }));
-        return true;
-      } catch (error) {
-        const message =
-          error instanceof EncryptionError ? error.message : getErrorMessage(error);
-        set(() => ({
-          lastError: message,
-        }));
-        return false;
-      }
-    },
     clearSettings: () => {
       clearEncryptedSettings();
       set(() => ({
         settings: buildDefaultSettings(),
-        encryptedSettings: null,
-        hasStoredSecrets: false,
         lastError: null,
       }));
     },
@@ -148,8 +114,6 @@ export const createSettingsStore = () =>
 export const useSettingsStore = createSettingsStore();
 
 export const selectSettings = (state: SettingsStoreState) => state.settings;
-export const selectHasStoredSecrets = (state: SettingsStoreState) =>
-  state.hasStoredSecrets;
 export const selectDeployToken = (host: SettingsDeployHost) =>
   (state: SettingsStoreState) => state.settings.deployTokens[host];
 export const selectLlmKey = (provider: LLMProviderName) =>
@@ -173,10 +137,15 @@ function buildDefaultSettings(): SettingsPayload {
         provider: defaults.builderProvider,
         model: defaults.builderModel,
       },
+      critic: {
+        provider: defaults.criticProvider,
+        model: defaults.criticModel,
+      },
     },
     openaiThinking: {
       chat: defaults.openAIReasoning.chat,
       builder: defaults.openAIReasoning.builder,
+      critic: defaults.openAIReasoning.critic,
     },
     deployTokens: {
       github: defaults.deployTokens.github,
@@ -190,13 +159,12 @@ function buildDefaultSettings(): SettingsPayload {
 
 function buildInitialState(): Pick<
   SettingsStoreState,
-  'settings' | 'encryptedSettings' | 'hasStoredSecrets' | 'lastError'
+  'settings' | 'lastError'
 > {
-  const encrypted = readEncryptedSettings();
+  const stored = readEncryptedSettings();
+  const parsed = stored ? parseSettingsPayload(stored) : null;
   return {
-    settings: buildDefaultSettings(),
-    encryptedSettings: encrypted,
-    hasStoredSecrets: Boolean(encrypted),
+    settings: parsed ?? buildDefaultSettings(),
     lastError: null,
   };
 }
@@ -209,6 +177,7 @@ function normalizeSettings(settings: SettingsPayload): SettingsPayload {
     llmModels: {
       chat: { ...settings.llmModels.chat },
       builder: { ...settings.llmModels.builder },
+      critic: { ...settings.llmModels.critic },
     },
     openaiThinking: normalizeOpenAIThinking(settings.openaiThinking),
     deployTokens: { ...settings.deployTokens },
@@ -223,6 +192,7 @@ function cloneSettings(settings: SettingsPayload): SettingsPayload {
     llmModels: {
       chat: { ...settings.llmModels.chat },
       builder: { ...settings.llmModels.builder },
+      critic: { ...settings.llmModels.critic },
     },
     openaiThinking: normalizeOpenAIThinking(settings.openaiThinking),
     deployTokens: { ...settings.deployTokens },
@@ -236,10 +206,20 @@ function parseSettingsPayload(payload: string): SettingsPayload | null {
     if (!isSettingsPayload(parsed)) {
       return null;
     }
+    const defaults = buildDefaultSettings();
     return {
+      ...defaults,
       ...parsed,
       llmKeys: normalizeLlmKeys(parsed.llmKeys),
+      llmModels: {
+        ...defaults.llmModels,
+        ...parsed.llmModels,
+        chat: { ...defaults.llmModels.chat, ...parsed.llmModels?.chat },
+        builder: { ...defaults.llmModels.builder, ...parsed.llmModels?.builder },
+        critic: { ...defaults.llmModels.critic, ...parsed.llmModels?.critic },
+      },
       openaiThinking: normalizeOpenAIThinking(parsed.openaiThinking),
+      deployTokens: { ...defaults.deployTokens, ...parsed.deployTokens },
     };
   } catch (error) {
     return null;
@@ -277,6 +257,9 @@ function isSettingsPayload(value: unknown): value is SettingsPayload {
   if (!isModelSelection(value.llmModels.builder)) {
     return false;
   }
+  if (hasValue(value.llmModels, 'critic') && !isModelSelection(value.llmModels.critic)) {
+    return false;
+  }
   if (
     hasValue(value, 'openaiThinking') &&
     !isOpenAIThinkingSettings(value.openaiThinking)
@@ -311,6 +294,9 @@ function isOpenAIThinkingSettings(value: unknown): value is OpenAIThinkingSettin
   if (!isOpenAIReasoningSetting(value.builder)) {
     return false;
   }
+  if (hasValue(value, 'critic') && !isOpenAIReasoningSetting(value.critic)) {
+    return false;
+  }
   return true;
 }
 
@@ -320,6 +306,7 @@ function normalizeOpenAIThinking(value: unknown): OpenAIThinkingSettings {
     return {
       chat: defaults.chat,
       builder: defaults.builder,
+      critic: defaults.critic,
     };
   }
   return {
@@ -327,6 +314,9 @@ function normalizeOpenAIThinking(value: unknown): OpenAIThinkingSettings {
     builder: isOpenAIReasoningSetting(value.builder)
       ? value.builder
       : defaults.builder,
+    critic: isOpenAIReasoningSetting(value.critic)
+      ? value.critic
+      : defaults.critic,
   };
 }
 

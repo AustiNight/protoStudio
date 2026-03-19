@@ -50,6 +50,7 @@ type CostTickerProps = {
 const roleLabels: Record<LLMRole, string> = {
   chat: 'Chat AI',
   builder: 'Builder AI',
+  critic: 'Web Designer AI',
 };
 
 function formatUsdCompact(value: number): string {

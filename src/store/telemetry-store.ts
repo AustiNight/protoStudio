@@ -663,7 +663,7 @@ export const selectTelemetryCount = (state: TelemetryStoreState) => state.events
 export const selectTelemetryTotals = (state: TelemetryStoreState) =>
   buildTotals(state.events);
 
-const TELEMETRY_ROLE_ORDER: TelemetryLLMRole[] = ['chat', 'builder'];
+const TELEMETRY_ROLE_ORDER: TelemetryLLMRole[] = ['chat', 'builder', 'critic'];
 
 type MutableRoleSummary = Omit<SessionCostRoleBreakdown, 'models'> & {
   models: Map<string, SessionCostModelBreakdown>;

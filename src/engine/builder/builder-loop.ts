@@ -565,7 +565,15 @@ export class BuilderLoop {
   ): BuilderLoopOutcome {
     backlog.updateItem(atom.id, { status: 'backlog' });
     backlog.moveToEnd(atom.id);
-    const next = backlog.promoteNext();
+    let next = backlog.promoteNext();
+    if (next?.id === atom.id) {
+      backlog.updateItem(atom.id, {
+        status: 'blocked',
+        blockedCode: 'terminal_skip',
+        blockedReason: reason,
+      });
+      next = backlog.promoteNext();
+    }
 
     this.setPhase('skipping');
     this.emit({ type: 'skip', atom, reason, next });

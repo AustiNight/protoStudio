@@ -1,6 +1,6 @@
 import type { PricingConfig } from '../types/pricing';
 
-export const OPENAI_MODEL_REVIEW_DATE = '2026-03-02';
+export const OPENAI_MODEL_REVIEW_DATE = '2026-03-18';
 
 const OFFICIAL_OPENAI_HOSTS = new Set(['platform.openai.com', 'developers.openai.com']);
 

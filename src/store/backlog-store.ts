@@ -16,6 +16,7 @@ export interface BacklogStoreState {
   promoteNext: () => void;
   updateItemStatus: (itemId: string, status: WorkItemStatus) => void;
   updateItem: (itemId: string, update: Partial<WorkItem>) => void;
+  removeItem: (itemId: string) => void;
   moveToEnd: (itemId: string) => void;
   focusItem: (itemId: string | null) => void;
   clearBacklog: () => void;
@@ -232,6 +233,21 @@ export const createBacklogStore = () =>
           return next;
         }),
       })),
+    removeItem: (itemId) =>
+      set((state) => {
+        const exists = state.items.some((item) => item.id === itemId);
+        if (!exists) {
+          return {};
+        }
+        const nextItems = normalizeOrder(
+          state.items.filter((item) => item.id !== itemId),
+        );
+        return {
+          items: nextItems,
+          onDeckId: state.onDeckId === itemId ? null : state.onDeckId,
+          focusedItemId: state.focusedItemId === itemId ? null : state.focusedItemId,
+        };
+      }),
     moveToEnd: (itemId) =>
       set((state) => {
         const index = state.items.findIndex((item) => item.id === itemId);

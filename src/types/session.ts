@@ -44,7 +44,7 @@ export interface LLMModelSelection {
 }
 
 /**
- * LLM configuration for chat and builder roles.
+ * LLM configuration for chat, builder, and critic roles.
  */
 export interface LLMConfig {
   /**
@@ -56,11 +56,16 @@ export interface LLMConfig {
    */
   builderModel: LLMModelSelection;
   /**
+   * Optional model selection used for autonomous critic reviews.
+   */
+  criticModel?: LLMModelSelection;
+  /**
    * Optional OpenAI reasoning defaults by role.
    */
   openAIReasoning?: {
     chat: OpenAIReasoningSetting;
     builder: OpenAIReasoningSetting;
+    critic?: OpenAIReasoningSetting;
   };
 }
 

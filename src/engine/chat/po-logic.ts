@@ -1,12 +1,18 @@
 import type { ClassificationCustomization, ClassificationResult } from '../../types/chat';
 import type { LLMRequest, RawLLMResponse } from '../../types/llm';
 import type { ValidationIssue, ValidationResult } from '../../types/template';
-import type { AtomType, Effort, ReorderDecision, WorkItem } from '../../types/backlog';
+import type {
+  AtomType,
+  Effort,
+  ReorderDecision,
+  WorkItem,
+  WorkItemSource,
+} from '../../types/backlog';
 import type { TemplateConfig } from '../../types/template';
 
 const MAX_FILES_TOUCHED = 5;
 const MAX_LINES_CHANGED = 150;
-const DEFAULT_MAX_TOKENS = 900;
+const DEFAULT_MAX_TOKENS = 2200;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_SESSION_ID = 'session-unknown';
 
@@ -15,99 +21,17 @@ interface BacklogParseOptions {
   now?: () => number;
 }
 
-interface SeoItemSpec {
-  title: string;
-  description: string;
-  atomType: AtomType;
-  filesTouch: string[];
-  estimatedLines: number;
-  visibleChange: string;
-}
-
-const SEO_ITEM_SPECS: SeoItemSpec[] = [
-  {
-    title: 'Add meta descriptions to all pages',
-    description:
-      'Ensure each page has a concise meta description for search snippets.',
-    atomType: 'content',
-    filesTouch: ['index.html'],
-    estimatedLines: 25,
-    visibleChange: 'Meta description tags are present for search previews.',
-  },
-  {
-    title: 'Add descriptive alt text to all images',
-    description: 'Provide meaningful alt text to improve accessibility and SEO.',
-    atomType: 'content',
-    filesTouch: ['index.html'],
-    estimatedLines: 35,
-    visibleChange: 'Images now include descriptive alt text.',
-  },
-  {
-    title: 'Add Open Graph meta tags',
-    description: 'Configure Open Graph tags for richer social share previews.',
-    atomType: 'content',
-    filesTouch: ['index.html'],
-    estimatedLines: 30,
-    visibleChange: 'Social share previews are configured with Open Graph tags.',
-  },
-  {
-    title: 'Add JSON-LD structured data',
-    description: 'Embed structured data for richer search results.',
-    atomType: 'integration',
-    filesTouch: ['index.html'],
-    estimatedLines: 45,
-    visibleChange: 'Structured data is embedded for rich search results.',
-  },
-  {
-    title: 'Generate sitemap.xml',
-    description: 'Add a sitemap to improve crawlability and indexing.',
-    atomType: 'integration',
-    filesTouch: ['sitemap.xml'],
-    estimatedLines: 40,
-    visibleChange: 'A sitemap.xml file is available for search engines.',
-  },
-  {
-    title: 'Add robots.txt',
-    description: 'Provide crawl directives for search engines.',
-    atomType: 'integration',
-    filesTouch: ['robots.txt'],
-    estimatedLines: 20,
-    visibleChange: 'A robots.txt file is available with crawl directives.',
-  },
-  {
-    title: 'Optimize images and defer non-critical assets',
-    description: 'Defer non-critical CSS/JS and optimize images for faster load.',
-    atomType: 'style',
-    filesTouch: ['index.html', 'styles.css', 'main.js'],
-    estimatedLines: 80,
-    visibleChange: 'Images and assets load faster for a snappier experience.',
-  },
-  {
-    title: 'Add canonical URL tags',
-    description: 'Prevent duplicate content by adding canonical URLs.',
-    atomType: 'content',
-    filesTouch: ['index.html'],
-    estimatedLines: 25,
-    visibleChange: 'Canonical URL tags are present on each page.',
-  },
-  {
-    title: 'Fix heading hierarchy',
-    description: 'Ensure headings follow a logical H1 → H2 → H3 structure.',
-    atomType: 'content',
-    filesTouch: ['index.html'],
-    estimatedLines: 40,
-    visibleChange: 'Headings follow a clear hierarchy across the page.',
-  },
-];
-
 export function buildBacklogPrompt(
   classification: ClassificationResult,
   templateConfig: TemplateConfig,
+  userRequest?: string,
 ): LLMRequest {
   const templateSummary = buildTemplateSummary(templateConfig);
   const customizationSummary = buildCustomizationSummary(
     classification.suggestedCustomization,
   );
+  const requestSummary = normalizeSentence(userRequest ?? '');
+  const gapHints = inferTemplateGapHints(userRequest ?? '', templateConfig);
   const systemPrompt = [
     'You are the Product Owner (PO) for prontoproto.studio.',
     '',
@@ -147,8 +71,16 @@ export function buildBacklogPrompt(
     '- Can be described in a single sentence',
     '- No mixed concerns (structure + style = 2 atoms)',
     '',
+    'Initial queue quality rules:',
+    '- Produce 8-20 items.',
+    '- First 3-5 items must be high-visibility, user-intent-specific improvements (not generic hygiene).',
+    '- Generic SEO/performance tasks belong only in lower-priority slots and only when clearly relevant.',
+    '- Do not repeat boilerplate tasks that appear on every site unless the request explicitly asks for them.',
+    '- Include dependencies so implementation order preserves visible momentum.',
+    '',
     'Output format:',
-    '- Produce a JSON array of backlog items.',
+    '- Produce a JSON object with an "items" array of backlog items.',
+    '- Root shape: { "items": [ ... ] }',
     '- Each item:',
     '  {',
     '    "title": "...",',
@@ -166,11 +98,14 @@ export function buildBacklogPrompt(
     {
       role: 'user' as const,
       content: [
+        requestSummary ? `Raw first user request: ${requestSummary}` : '',
         `User intent summary: ${classification.reasoning}`,
         `Template: ${templateSummary}`,
         customizationSummary ? `Customization hints: ${customizationSummary}` : '',
         `Template sections:\n${formatPageSections(templateConfig)}`,
-        'Remember to keep SEO items in the lower half of the backlog when possible.',
+        gapHints.length > 0
+          ? `Likely template-to-request gaps:\n${gapHints.map((entry) => `- ${entry}`).join('\n')}`
+          : '',
       ]
         .filter(Boolean)
         .join('\n'),
@@ -192,10 +127,7 @@ export function parseBacklogResponse(
   response: Pick<RawLLMResponse, 'content'>,
   options?: BacklogParseOptions,
 ): WorkItem[] {
-  const baseItems = parseWorkItemsResponse(response, options);
-  const now = options?.now ?? (() => Date.now());
-  const sessionId = options?.sessionId ?? DEFAULT_SESSION_ID;
-  return appendSeoItems(baseItems, sessionId, now);
+  return parseWorkItemsResponse(response, options);
 }
 
 export function parseWorkItemsResponse(
@@ -387,6 +319,7 @@ function normalizeWorkItems(
     const rawDependencies = normalizeStringArray(
       record['dependencies'] ?? record['deps'],
     );
+    const source = normalizeWorkItemSource(record['source']);
 
     const id = ensureUniqueId(buildWorkItemId(title, index), existingIds);
     existingIds.add(id);
@@ -409,6 +342,7 @@ function normalizeWorkItems(
       estimatedLines,
       visibleChange,
       expectedSectionDelta: normalizeOptionalNumber(record['expectedSectionDelta']),
+      source,
     };
   });
 
@@ -425,52 +359,41 @@ function normalizeWorkItems(
   });
 }
 
-function appendSeoItems(
-  items: WorkItem[],
-  sessionId: string,
-  now: () => number,
-): WorkItem[] {
-  const existingTitles = new Set(items.map((item) => normalizeKey(item.title)));
-  const existingIds = new Set(items.map((item) => item.id));
-  const createdAt = now();
-  const output = [...items];
-
-  SEO_ITEM_SPECS.forEach((spec, index) => {
-    const key = normalizeKey(spec.title);
-    if (existingTitles.has(key)) {
-      return;
-    }
-
-    const id = ensureUniqueId(
-      buildWorkItemId(spec.title, output.length + index, 'seo'),
-      existingIds,
-    );
-    existingIds.add(id);
-    existingTitles.add(key);
-
-    output.push({
-      id,
-      sessionId,
-      title: spec.title,
-      description: spec.description,
-      effort: 'M',
-      status: 'backlog',
-      order: output.length + 1,
-      dependencies: [],
-      rationale: 'SEO best practice improvement.',
-      createdAt,
-      atomType: spec.atomType,
-      filesTouch: spec.filesTouch,
-      estimatedLines: spec.estimatedLines,
-      visibleChange: spec.visibleChange,
-    });
-  });
-
-  return normalizeOrder(output);
-}
-
 function normalizeOrder(items: WorkItem[]): WorkItem[] {
   return items.map((item, index) => ({ ...item, order: index + 1 }));
+}
+
+function inferTemplateGapHints(userRequest: string, templateConfig: TemplateConfig): string[] {
+  const normalizedRequest = normalizeSentence(userRequest).toLowerCase();
+  if (!normalizedRequest) {
+    return [];
+  }
+  const sections = new Set(
+    Object.values(templateConfig.pages).flatMap((page) =>
+      page.sections.map((section) => normalizeKey(section)),
+    ),
+  );
+  const hints: string[] = [];
+  const registerHint = (regex: RegExp, sectionKeys: string[], hint: string) => {
+    if (!regex.test(normalizedRequest)) {
+      return;
+    }
+    const hasSection = sectionKeys.some((key) => sections.has(normalizeKey(key)));
+    if (!hasSection) {
+      hints.push(hint);
+    }
+  };
+
+  registerHint(/\b(pricing|price|plans?)\b/, ['pricing'], 'Add clear pricing section/cards.');
+  registerHint(/\b(testimonial|review|social proof)\b/, ['testimonials', 'reviews'], 'Add trust/social-proof section.');
+  registerHint(/\b(contact|call|book|appointment)\b/, ['contact', 'cta', 'form'], 'Strengthen contact/booking conversion flow.');
+  registerHint(/\b(gallery|portfolio|before and after|photos?)\b/, ['gallery', 'portfolio'], 'Add gallery/portfolio visuals.');
+  registerHint(/\b(blog|article|news|resources?)\b/, ['blog', 'articles'], 'Add content hub/blog section.');
+  registerHint(/\b(store|shop|checkout|cart|product)\b/, ['products', 'cart'], 'Add product/catalog + purchase flow.');
+  registerHint(/\b(location|map|directions?)\b/, ['map', 'location'], 'Add location/map context.');
+  registerHint(/\b(team|about|founder|story)\b/, ['about', 'team'], 'Add about/team credibility section.');
+
+  return hints.slice(0, 6);
 }
 
 function reorderItems(items: WorkItem[], fromIndex: number, toIndex: number): WorkItem[] {
@@ -535,6 +458,23 @@ function resolveDependencies(
   });
 
   return [...ids];
+}
+
+function normalizeWorkItemSource(value: unknown): WorkItemSource | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  switch (normalized) {
+    case 'first_message_planner':
+    case 'request_planner':
+    case 'web_designer':
+    case 'fallback':
+    case 'system':
+      return normalized;
+    default:
+      return undefined;
+  }
 }
 
 function buildWorkItemId(title: string, index: number, prefix = 'atom'): string {
@@ -663,31 +603,17 @@ function normalizeOptionalNumber(value: unknown): number | undefined {
 }
 
 function parseJsonArray(content: string): unknown[] | null {
-  const trimmed = content.trim();
-  if (!trimmed) {
-    return null;
+  const structured = parseStructuredJsonValue(content);
+  if (Array.isArray(structured)) {
+    return structured;
   }
-
-  const direct = safeJsonParse(trimmed);
-  if (Array.isArray(direct)) {
-    return direct;
-  }
-  if (isRecord(direct)) {
-    const items = direct['items'] ?? direct['backlog'];
-    if (Array.isArray(items)) {
-      return items;
+  if (isRecord(structured)) {
+    const fromRecord = extractWorkArrayFromRecord(structured);
+    if (fromRecord) {
+      return fromRecord;
     }
   }
-
-  const start = trimmed.indexOf('[');
-  const end = trimmed.lastIndexOf(']');
-  if (start === -1 || end === -1 || end <= start) {
-    return null;
-  }
-
-  const slice = trimmed.slice(start, end + 1);
-  const parsed = safeJsonParse(slice);
-  return Array.isArray(parsed) ? parsed : null;
+  return null;
 }
 
 function safeJsonParse(value: string): unknown {
@@ -705,4 +631,83 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function getString(record: Record<string, unknown>, key: string): string | null {
   const value = record[key];
   return typeof value === 'string' ? value : null;
+}
+
+function parseStructuredJsonValue(content: string): unknown {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const candidates: string[] = [trimmed];
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  if (fenced) {
+    candidates.push(fenced);
+  }
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+  const firstBracket = trimmed.indexOf('[');
+  const lastBracket = trimmed.lastIndexOf(']');
+  if (firstBracket >= 0 && lastBracket > firstBracket) {
+    candidates.push(trimmed.slice(firstBracket, lastBracket + 1));
+  }
+
+  for (const candidate of candidates) {
+    const parsed = safeJsonParse(candidate);
+    const unwrapped = unwrapJsonString(parsed);
+    if (unwrapped !== null) {
+      return unwrapped;
+    }
+  }
+  return null;
+}
+
+function unwrapJsonString(value: unknown): unknown {
+  let current = value;
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (typeof current !== 'string') {
+      return current;
+    }
+    const trimmed = current.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const reparsed = safeJsonParse(trimmed);
+    if (reparsed === null) {
+      return null;
+    }
+    current = reparsed;
+  }
+  return current;
+}
+
+function extractWorkArrayFromRecord(record: Record<string, unknown>): unknown[] | null {
+  const directCandidates = [
+    record['items'],
+    record['backlog'],
+    record['workItems'],
+    record['work_items'],
+    record['tasks'],
+    record['recommendations'],
+    record['actionItems'],
+  ];
+  for (const candidate of directCandidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+  const nestedCandidates = [record['payload'], record['data'], record['result'], record['output']];
+  for (const candidate of nestedCandidates) {
+    if (!isRecord(candidate)) {
+      continue;
+    }
+    const nested = extractWorkArrayFromRecord(candidate);
+    if (nested) {
+      return nested;
+    }
+  }
+  return null;
 }

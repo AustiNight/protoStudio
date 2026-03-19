@@ -39,9 +39,20 @@ import type { SettingsPayload } from '@/store/settings-store';
 import { useSettingsStore } from '@/store/settings-store';
 import { buildSessionCostSummary, useTelemetryStore } from '@/store/telemetry-store';
 import type { ChatMessage, ClassificationResult } from '@/types/chat';
-import type { AtomType, Effort, WorkItem, WorkItemStatus } from '@/types/backlog';
+import type {
+  AtomType,
+  Effort,
+  WorkItem,
+  WorkItemSource,
+  WorkItemStatus,
+} from '@/types/backlog';
 import type { BuildPatch } from '@/types/patch';
-import type { LLMMessage, LLMProviderClient, RawLLMResponse } from '@/types/llm';
+import type {
+  LLMMessage,
+  LLMProviderClient,
+  LLMRequest,
+  RawLLMResponse,
+} from '@/types/llm';
 import type { BuildPhase } from '@/types/build';
 import type { RecoveryState } from '@/types/persistence';
 import type { TelemetrySessionPath } from '@/types/telemetry';
@@ -90,8 +101,12 @@ const CHAT_SYSTEM_PROMPT = [
   'Do not claim to have completed actions unless they are confirmed by the app state.',
 ].join('\n');
 const MAX_CHAT_CONTEXT_MESSAGES = 20;
-const CHAT_RESPONSE_MAX_TOKENS = 600;
-const CHAT_EMPTY_RETRY_MAX_TOKENS = 1800;
+const CHAT_RESPONSE_MAX_TOKENS = 1200;
+const CHAT_EMPTY_RETRY_MAX_TOKENS = 4096;
+const REQUEST_PLANNER_MAX_TOKENS = 1800;
+const CRITIC_MAX_TOKENS = 2400;
+const CRITIC_REPAIR_MAX_TOKENS = 1200;
+const FIRST_PREVIEW_SLA_MS = 6_000;
 const CHECKPOINT_AUTOSAVE_INTERVAL_MS = 45_000;
 const CHECKPOINT_CHANGE_DEBOUNCE_MS = 1_500;
 const AUTO_CRITIC_MAX_ROUNDS = 10;
@@ -99,6 +114,10 @@ const AUTO_CRITIC_MIN_ACCEPTABLE_SCORE = 94;
 const AUTO_CRITIC_COOLDOWN_MS = 12_000;
 const AUTO_CRITIC_MIN_DIMENSION_SCORE = 88;
 const AUTO_CRITIC_MAX_NOOP_ROUNDS = 3;
+const AUTO_CRITIC_ROUND1_MIN_ITEMS = 8;
+const AUTO_CRITIC_ROUND1_MAX_ITEMS = 20;
+const AUTO_CRITIC_FOLLOWUP_MIN_ITEMS = 3;
+const AUTO_CRITIC_FOLLOWUP_MAX_ITEMS = 8;
 const USE_MOCK_LLM =
   import.meta.env.MODE === 'e2e' ||
   (import.meta.env.DEV && !runtimeConfig.useRealLlm);
@@ -253,6 +272,7 @@ function buildLlmConfigFromSettings(settings: SettingsPayload): LLMConfig {
 
   const chatSelection = settings.llmModels.chat;
   const builderSelection = settings.llmModels.builder;
+  const criticSelection = settings.llmModels.critic;
 
   return {
     chatModel: buildSelection(
@@ -265,9 +285,15 @@ function buildLlmConfigFromSettings(settings: SettingsPayload): LLMConfig {
       builderSelection.model,
       settings.llmKeys[builderSelection.provider].trim(),
     ),
+    criticModel: buildSelection(
+      criticSelection.provider,
+      criticSelection.model,
+      settings.llmKeys[criticSelection.provider].trim(),
+    ),
     openAIReasoning: {
       chat: settings.openaiThinking.chat,
       builder: settings.openaiThinking.builder,
+      critic: settings.openaiThinking.critic,
     },
   };
 }
@@ -986,6 +1012,7 @@ function upgradePlannedWorkItems(
         ...item,
         sessionId,
         filesTouch: item.filesTouch.length > 0 ? item.filesTouch : defaultFilesForAtomType(item.atomType),
+        source: item.source ?? 'request_planner',
       };
     }
     const sourceClause = item.description.trim() || item.title.trim() || request;
@@ -1002,6 +1029,7 @@ function upgradePlannedWorkItems(
       estimatedLines: upgraded.estimatedLines,
       effort: inferEffortFromLines(upgraded.estimatedLines),
       visibleChange: upgraded.visibleChange,
+      source: 'request_planner',
     };
   });
 }
@@ -1038,6 +1066,11 @@ function extractJsonPayload(raw: string): string | null {
   if (firstBrace >= 0 && lastBrace > firstBrace) {
     return trimmed.slice(firstBrace, lastBrace + 1);
   }
+  const firstBracket = trimmed.indexOf('[');
+  const lastBracket = trimmed.lastIndexOf(']');
+  if (firstBracket >= 0 && lastBracket > firstBracket) {
+    return trimmed.slice(firstBracket, lastBracket + 1);
+  }
   return null;
 }
 
@@ -1045,27 +1078,67 @@ function parseAutonomousCriticEnvelope(
   content: string,
   sessionId: string,
 ): AutonomousCriticEnvelope | null {
+  const directItems = parseWorkItemsResponse(
+    { content },
+    { sessionId },
+  );
   const payload = extractJsonPayload(content);
   if (!payload) {
+    if (directItems.length > 0) {
+      return {
+        score: 0,
+        done: false,
+        summary: 'Actionable Web Designer items parsed; detailed scoring was unavailable.',
+        dimensions: null,
+        items: directItems,
+      };
+    }
     return null;
   }
   try {
-    const parsed = JSON.parse(payload) as {
-      score?: unknown;
-      done?: unknown;
-      summary?: unknown;
-      dimensions?: unknown;
-      items?: unknown;
-    };
+    const raw = parseStructuredJsonValue(payload);
+    if (raw === null) {
+      if (directItems.length > 0) {
+        return {
+          score: 0,
+          done: false,
+          summary: 'Actionable Web Designer items parsed; detailed scoring was unavailable.',
+          dimensions: null,
+          items: directItems,
+        };
+      }
+      return null;
+    }
+    const parsed =
+      Array.isArray(raw) || typeof raw !== 'object' || raw === null
+        ? { items: raw }
+        : (raw as Record<string, unknown>);
+    const parseNumber = (value: unknown) =>
+      typeof value === 'number' && Number.isFinite(value)
+        ? Math.max(0, Math.min(100, Math.round(value)))
+        : null;
     const score =
-      typeof parsed.score === 'number' && Number.isFinite(parsed.score)
-        ? Math.max(0, Math.min(100, Math.round(parsed.score)))
-        : 0;
-    const done = parsed.done === true;
+      parseNumber(parsed.score) ??
+      parseNumber(parsed.overallScore) ??
+      parseNumber(parsed.qualityScore) ??
+      0;
+    const done = parsed.done === true || parsed.complete === true;
+    const summaryCandidates = [
+      parsed.summary,
+      parsed.findingSummary,
+      parsed.narrative,
+      parsed.rationale,
+    ];
     const summary =
-      typeof parsed.summary === 'string' ? parsed.summary.trim() : 'No summary provided.';
+      summaryCandidates.find(
+        (value) => typeof value === 'string' && value.trim().length > 0,
+      )?.toString().trim() ?? 'No summary provided.';
+    const rawDimensionsCandidate =
+      parsed.dimensions ?? parsed.scores ?? parsed.dimensionScores ?? null;
     const rawDimensions =
-      parsed.dimensions && typeof parsed.dimensions === 'object' ? parsed.dimensions : null;
+      rawDimensionsCandidate && typeof rawDimensionsCandidate === 'object'
+        ? rawDimensionsCandidate
+        : null;
     const parseDimension = (value: unknown) =>
       typeof value === 'number' && Number.isFinite(value)
         ? Math.max(0, Math.min(100, Math.round(value)))
@@ -1080,13 +1153,16 @@ function parseAutonomousCriticEnvelope(
           performance: parseDimension((rawDimensions as Record<string, unknown>).performance),
         }
       : null;
-    const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
-    const items = parseWorkItemsResponse(
-      {
-        content: JSON.stringify(rawItems),
-      },
-      { sessionId },
-    );
+    const rawItems = extractCriticItems(parsed);
+    const items =
+      rawItems.length > 0
+        ? parseWorkItemsResponse(
+            {
+              content: JSON.stringify(rawItems),
+            },
+            { sessionId },
+          )
+        : directItems;
     return {
       score,
       done,
@@ -1095,8 +1171,162 @@ function parseAutonomousCriticEnvelope(
       items,
     };
   } catch {
+    if (directItems.length > 0) {
+      return {
+        score: 0,
+        done: false,
+        summary: 'Actionable Web Designer items parsed; detailed scoring was unavailable.',
+        dimensions: null,
+        items: directItems,
+      };
+    }
     return null;
   }
+}
+
+function parseStructuredJsonValue(raw: string): unknown {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const candidates: string[] = [trimmed];
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  if (fenced) {
+    candidates.push(fenced);
+  }
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+  const firstBracket = trimmed.indexOf('[');
+  const lastBracket = trimmed.lastIndexOf(']');
+  if (firstBracket >= 0 && lastBracket > firstBracket) {
+    candidates.push(trimmed.slice(firstBracket, lastBracket + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      const unwrapped = unwrapStructuredJsonString(parsed);
+      if (unwrapped !== null) {
+        return unwrapped;
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null;
+}
+
+function unwrapStructuredJsonString(value: unknown): unknown {
+  let current = value;
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (typeof current !== 'string') {
+      return current;
+    }
+    const trimmed = current.trim();
+    if (!trimmed) {
+      return null;
+    }
+    try {
+      current = JSON.parse(trimmed) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  return current;
+}
+
+function extractCriticItems(record: Record<string, unknown>): unknown[] {
+  const directCandidates = [
+    record.items,
+    record.workItems,
+    record.tasks,
+    record.recommendations,
+    record.findings,
+    record.actionItems,
+  ];
+  for (const candidate of directCandidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+  const nestedCandidates = [record.payload, record.data, record.result, record.output];
+  for (const candidate of nestedCandidates) {
+    if (!candidate || typeof candidate !== 'object') {
+      continue;
+    }
+    const nested = candidate as Record<string, unknown>;
+    const nestedItems = extractCriticItems(nested);
+    if (nestedItems.length > 0) {
+      return nestedItems;
+    }
+  }
+  return [];
+}
+
+function validateInitialBacklogPayload(items: WorkItem[]): {
+  valid: boolean;
+  reason: string;
+} {
+  if (items.length < 8 || items.length > 20) {
+    return {
+      valid: false,
+      reason: `Expected 8-20 items, got ${items.length}.`,
+    };
+  }
+  const sizing = validateAtomSizing(items);
+  if (!sizing.valid) {
+    return {
+      valid: false,
+      reason: sizing.issues[0]?.message ?? 'Atom sizing validation failed.',
+    };
+  }
+  return { valid: true, reason: 'ok' };
+}
+
+function isCriticPlaceholderSummary(summary: string): boolean {
+  return /(no payload provided|could not extract critic output|conservative empty report|no actionable payload)/i.test(
+    summary,
+  );
+}
+
+function validateCriticEnvelopePayload(
+  envelope: AutonomousCriticEnvelope,
+  round: number,
+): { valid: boolean; reason: string } {
+  if (isCriticPlaceholderSummary(envelope.summary)) {
+    return { valid: false, reason: 'Placeholder critic summary detected.' };
+  }
+  const dimensionsAllZero =
+    envelope.dimensions !== null &&
+    Object.values(envelope.dimensions).every((value) => value === 0);
+  if (dimensionsAllZero && envelope.items.length === 0 && envelope.score === 0) {
+    return { valid: false, reason: 'All-zero critic envelope without actionable items.' };
+  }
+  if (envelope.done) {
+    if (envelope.items.length > 0) {
+      return { valid: false, reason: 'done=true must not include items.' };
+    }
+    return { valid: true, reason: 'ok' };
+  }
+  const minItems = round === 1 ? AUTO_CRITIC_ROUND1_MIN_ITEMS : AUTO_CRITIC_FOLLOWUP_MIN_ITEMS;
+  const maxItems = round === 1 ? AUTO_CRITIC_ROUND1_MAX_ITEMS : AUTO_CRITIC_FOLLOWUP_MAX_ITEMS;
+  if (envelope.items.length < minItems || envelope.items.length > maxItems) {
+    return {
+      valid: false,
+      reason: `Expected ${minItems}-${maxItems} critic items when done=false, got ${envelope.items.length}.`,
+    };
+  }
+  const sizing = validateAtomSizing(envelope.items);
+  if (!sizing.valid) {
+    return {
+      valid: false,
+      reason: sizing.issues[0]?.message ?? 'Critic item sizing validation failed.',
+    };
+  }
+  return { valid: true, reason: 'ok' };
 }
 
 type PreviewRouteMap = Record<string, string>;
@@ -1231,6 +1461,7 @@ export function Layout() {
   const autonomousCriticNoopRoundsRef = useRef(0);
   const autonomousCriticCooldownUntilRef = useRef(0);
   const autonomousCriticStoppedRef = useRef(false);
+  const manualCriticQueuedAtRef = useRef<number | null>(null);
   const sessionCreatedAtRef = useRef(Date.now());
   const sessionPathRef = useRef<SessionPath>('scratch');
   const sessionTemplateIdRef = useRef<string | undefined>(undefined);
@@ -1669,41 +1900,82 @@ export function Layout() {
       gateway: LLMGateway | null,
       providerName: LLMProviderName,
       requestSessionId: string,
+      firstUserMessage: string,
     ): Promise<WorkItem[]> => {
-      const response = USE_MOCK_LLM
-        ? buildMockBacklogResponse(template.id)
-        : (() => {
-            if (!gateway) {
-              throw new Error('Backlog generation gateway unavailable.');
-            }
-            return null;
-          })();
-
-      const resolvedResponse =
-        response ??
-        (await (async () => {
-          const result = await gateway!.send(buildBacklogPrompt(classification, template));
-          if (!result.ok) {
-            throw new Error(getChatErrorMessage(providerName, result.error));
-          }
-          return result.value;
-        })());
-
-      const parsed = parseBacklogResponse(resolvedResponse, {
-        sessionId: requestSessionId,
-      });
-      const validation = validateAtomSizing(parsed);
-      if (!validation.valid) {
-        const firstIssue = validation.issues[0];
-        addFocusedMessage(
-          buildNarrationMessage(
-            requestSessionId,
-            'system',
-            `Backlog generated with validation warnings. First issue: ${firstIssue?.message ?? 'Unknown issue.'}`,
-          ),
-        );
+      if (USE_MOCK_LLM) {
+        const parsed = parseBacklogResponse(buildMockBacklogResponse(template.id), {
+          sessionId: requestSessionId,
+        });
+        return parsed.map((item) => ({
+          ...item,
+          source: item.source ?? 'first_message_planner',
+        }));
       }
-      return parsed;
+      if (!gateway) {
+        throw new Error('Backlog generation gateway unavailable.');
+      }
+
+      const maxAttempts = 3;
+      let attempt = 0;
+      let lastRaw = '';
+      let lastReason = 'Planner returned invalid backlog payload.';
+
+      while (attempt < maxAttempts) {
+        attempt += 1;
+        const request =
+          attempt === 1
+            ? buildBacklogPrompt(classification, template, firstUserMessage)
+            : {
+                role: 'chat' as const,
+                systemPrompt: [
+                  'You are repairing a malformed backlog payload.',
+                  'Return JSON object only with shape { "items": [ ... ] }.',
+                  'Hard requirements:',
+                  '- 8-20 items',
+                  '- each item uses atom schema fields',
+                  '- each item is implementation-ready and visibly testable',
+                  '- no markdown, no prose wrapper',
+                ].join('\n'),
+                messages: [
+                  {
+                    role: 'user' as const,
+                    content: [
+                      `User request: ${firstUserMessage}`,
+                      `Template: ${template.id}`,
+                      `Previous payload issue: ${lastReason}`,
+                      'Previous malformed payload:',
+                      lastRaw.slice(0, 24_000),
+                    ].join('\n\n'),
+                  },
+                ],
+                responseFormat: 'json' as const,
+                temperature: 0,
+                reasoningEffort: 'minimal' as const,
+                maxTokens: REQUEST_PLANNER_MAX_TOKENS,
+              };
+
+        const result = await gateway.send(request);
+        if (!result.ok) {
+          throw new Error(getChatErrorMessage(providerName, result.error));
+        }
+
+        lastRaw = result.value.content;
+        const parsed = parseBacklogResponse(result.value, {
+          sessionId: requestSessionId,
+        });
+        const quality = validateInitialBacklogPayload(parsed);
+        if (quality.valid) {
+          return parsed.map((item) => ({
+            ...item,
+            source: item.source ?? 'first_message_planner',
+          }));
+        }
+        lastReason = quality.reason;
+      }
+
+      throw new Error(
+        `Initial backlog planner returned invalid structured output after ${maxAttempts} attempts. Last issue: ${lastReason}`,
+      );
     },
     [addFocusedMessage],
   );
@@ -1736,6 +2008,7 @@ export function Layout() {
             filesTouch: instruction.filesTouch,
             estimatedLines: instruction.estimatedLines,
             visibleChange: instruction.visibleChange,
+            source: 'fallback' as WorkItemSource,
           };
         });
         return items;
@@ -1764,14 +2037,16 @@ export function Layout() {
             'Use imperative engineering language with clear implementation verbs.',
             'Each description must mention concrete implementation intent and likely files touched.',
             'Keep total output text roughly similar in length to the user input.',
-            'Return JSON array only, no prose.',
+            'Return JSON object only with shape { "items": [ ... ] }.',
           ].join('\n'),
           messages: [
             {
               role: 'user',
               content: [
                 `Session request: ${content}`,
-                'Output item schema:',
+                'Output shape:',
+                '{ "items": [WorkItemLike] }',
+                'WorkItem schema:',
                 '{ "title": "...", "description": "...", "atomType": "structure|content|style|behavior|integration", "filesTouch": ["..."], "estimatedLines": 40, "visibleChange": "...", "dependencies": [] }',
                 'Quality bar:',
                 '- title is actionable and not user-verbatim',
@@ -1782,7 +2057,8 @@ export function Layout() {
           ],
           responseFormat: 'json',
           temperature: 0.2,
-          maxTokens: 900,
+          reasoningEffort: 'minimal',
+          maxTokens: REQUEST_PLANNER_MAX_TOKENS,
         });
         if (!response.ok) {
           return buildFallback();
@@ -1801,21 +2077,31 @@ export function Layout() {
     [activeSessionId],
   );
 
-  const runAutonomousCriticCycle = useCallback(async () => {
+  const runAutonomousCriticCycle = useCallback(async (options?: {
+    force?: boolean;
+    pauseDuringRun?: boolean;
+    manual?: boolean;
+  }) => {
+    const force = options?.force === true;
+    const manual = options?.manual === true;
+    const pauseDuringRun = options?.pauseDuringRun === true;
     const now = Date.now();
-    if (autonomousCriticRunningRef.current || autonomousCriticStoppedRef.current) {
+    if (autonomousCriticRunningRef.current) {
       return;
     }
-    if (now < autonomousCriticCooldownUntilRef.current) {
+    if (!force && autonomousCriticStoppedRef.current) {
       return;
     }
-    if (autonomousCriticRoundsRef.current >= AUTO_CRITIC_MAX_ROUNDS) {
+    if (!force && now < autonomousCriticCooldownUntilRef.current) {
+      return;
+    }
+    if (!force && autonomousCriticRoundsRef.current >= AUTO_CRITIC_MAX_ROUNDS) {
       autonomousCriticStoppedRef.current = true;
       addFocusedMessage(
         buildNarrationMessage(
           activeSessionId,
           'system',
-          'Autonomous quality loop reached max rounds. Continuing only on explicit user requests.',
+          'Autonomous Web Designer loop reached max rounds. Continuing only on explicit user requests.',
         ),
       );
       return;
@@ -1831,7 +2117,20 @@ export function Layout() {
     const requestSessionId = activeSessionIdRef.current;
 
     try {
+      if (pauseDuringRun && !useBuildStore.getState().isPaused) {
+        pauseBuild();
+      }
+      addFocusedMessage(
+        buildNarrationMessage(
+          requestSessionId,
+          'system',
+          manual
+            ? `Manual Web Designer review ${round}/${AUTO_CRITIC_MAX_ROUNDS} started. Builder is paused during analysis.`
+            : `Autonomous Web Designer review ${round}/${AUTO_CRITIC_MAX_ROUNDS} started.`,
+        ),
+      );
       let envelope: AutonomousCriticEnvelope | null = null;
+      let llmFailureMessage: string | null = null;
 
       if (USE_MOCK_LLM) {
         envelope = {
@@ -1884,28 +2183,53 @@ export function Layout() {
       } else {
         const settings = useSettingsStore.getState().settings;
         const llmConfig = buildLlmConfigFromSettings(settings);
-        const providerName = settings.llmModels.chat.provider;
+        const providerName = settings.llmModels.critic.provider;
         const apiKey = settings.llmKeys[providerName].trim();
         if (shouldRequireClientApiKey(providerName) && !apiKey) {
           return;
         }
-        const gateway = createRuntimeGateway(llmConfig);
+        const reasoning = llmConfig.openAIReasoning ?? {
+          chat: 'default' as const,
+          builder: 'default' as const,
+        };
+        const criticGateway = createRuntimeGateway({
+          ...llmConfig,
+          chatModel: llmConfig.criticModel ?? llmConfig.chatModel,
+          openAIReasoning: {
+            ...reasoning,
+            chat: reasoning.critic ?? reasoning.chat,
+          },
+        });
         const preview = buildPreviewHtml(vfs);
         const manifest = JSON.stringify(vfs.toManifest(), null, 2);
         const html = preview.ok ? preview.value.html.slice(0, 20_000) : '';
         const css = vfs.getFile('styles.css')?.content.slice(0, 20_000) ?? '';
 
-        const criticResult = await gateway.send({
-          role: 'chat',
+        const criticTargetRange =
+          round === 1
+            ? `${AUTO_CRITIC_ROUND1_MIN_ITEMS}-${AUTO_CRITIC_ROUND1_MAX_ITEMS}`
+            : `${AUTO_CRITIC_FOLLOWUP_MIN_ITEMS}-${AUTO_CRITIC_FOLLOWUP_MAX_ITEMS}`;
+        const buildCriticRequest = (repairContext?: {
+          invalidPayload: string;
+          reason: string;
+        }): LLMRequest => ({
+          role: 'critic',
           systemPrompt: [
-            'You are an autonomous website quality critic for prontoproto.studio.',
+            repairContext
+              ? 'You are repairing malformed Web Designer JSON output.'
+              : 'You are an autonomous website quality critic for prontoproto.studio.',
             'Assess MVP maturity with rigor across UX, visual polish, accessibility, trust signals, and conversion clarity.',
-            'Return strict JSON with shape:',
-            '{ "score": 0-100, "done": boolean, "summary": "...", "dimensions": { "ux": 0-100, "visual": 0-100, "accessibility": 0-100, "trust": 0-100, "conversion": 0-100, "performance": 0-100 }, "items": [WorkItemLike] }',
+            'Return strict JSON object.',
+            'Required keys: "done", "summary", "items".',
+            'Optional keys: "score", "dimensions".',
+            'Recommended shape:',
+            '{ "done": boolean, "summary": "...", "items": [WorkItemLike], "score": 0-100, "dimensions": { "ux": 0-100, "visual": 0-100, "accessibility": 0-100, "trust": 0-100, "conversion": 0-100, "performance": 0-100 } }',
             'Only set done=true when the site is mature and production-worthy for MVP quality.',
             `Do not set done=true unless score >= ${AUTO_CRITIC_MIN_ACCEPTABLE_SCORE}, each dimension >= ${AUTO_CRITIC_MIN_DIMENSION_SCORE}, and items is empty.`,
-            'If not done, return 1-4 actionable, implementation-ready items.',
-            'No markdown.',
+            `If done=false, return ${criticTargetRange} actionable, implementation-ready items.`,
+            'Do not return placeholder summaries or empty zero-score reports.',
+            'Each item must be specific to this site and visibly testable in preview.',
+            'No markdown or prose wrappers.',
           ].join('\n'),
           messages: [
             {
@@ -1913,6 +2237,12 @@ export function Layout() {
               content: [
                 `Round: ${round}/${AUTO_CRITIC_MAX_ROUNDS}`,
                 `Target done score: ${AUTO_CRITIC_MIN_ACCEPTABLE_SCORE}`,
+                `Required item count when done=false: ${criticTargetRange}`,
+                repairContext
+                  ? `Previous payload issue: ${repairContext.reason}`
+                  : '',
+                repairContext ? 'Previous malformed payload:' : '',
+                repairContext ? repairContext.invalidPayload.slice(0, 24_000) : '',
                 'Site manifest:',
                 manifest,
                 'Rendered HTML snapshot:',
@@ -1925,23 +2255,81 @@ export function Layout() {
             },
           ],
           responseFormat: 'json',
-          temperature: 0.2,
-          maxTokens: 1200,
+          temperature: repairContext ? 0 : 0.2,
+          reasoningEffort: 'minimal',
+          maxTokens: repairContext ? CRITIC_REPAIR_MAX_TOKENS : CRITIC_MAX_TOKENS,
         });
+        const criticResult = await criticGateway.send(buildCriticRequest());
 
         if (!criticResult.ok) {
-          return;
+          llmFailureMessage = getChatErrorMessage(providerName, criticResult.error);
+        } else {
+          envelope = parseAutonomousCriticEnvelope(criticResult.value.content, requestSessionId);
+          let quality =
+            envelope === null
+              ? { valid: false, reason: 'Could not parse critic JSON envelope.' }
+              : validateCriticEnvelopePayload(envelope, round);
+          let repairAttempt = 0;
+          let invalidPayload = criticResult.value.content;
+          while (!quality.valid && repairAttempt < 2) {
+            repairAttempt += 1;
+            const repairResult = await criticGateway.send(
+              buildCriticRequest({
+                invalidPayload,
+                reason: quality.reason,
+              }),
+            );
+            if (!repairResult.ok) {
+              break;
+            }
+            invalidPayload = repairResult.value.content;
+            envelope = parseAutonomousCriticEnvelope(
+              repairResult.value.content,
+              requestSessionId,
+            );
+            quality =
+              envelope === null
+                ? { valid: false, reason: 'Could not parse repaired critic envelope.' }
+                : validateCriticEnvelopePayload(envelope, round);
+          }
+          if (!quality.valid) {
+            const excerpt = invalidPayload.replace(/\s+/g, ' ').trim().slice(0, 180);
+            llmFailureMessage =
+              `Web Designer returned invalid structured output after 3 attempts. ` +
+              `Last issue: ${quality.reason}` +
+              (excerpt ? ` Payload excerpt: "${excerpt}"` : '');
+            envelope = null;
+          }
         }
-        envelope = parseAutonomousCriticEnvelope(criticResult.value.content, requestSessionId);
       }
 
       if (!envelope) {
         autonomousCriticNoopRoundsRef.current += 1;
+        addFocusedMessage(
+          buildNarrationMessage(
+            requestSessionId,
+            'chat_ai',
+            llmFailureMessage
+              ? `Web Designer review ${round}/${AUTO_CRITIC_MAX_ROUNDS} failed: ${llmFailureMessage} Review backlog, then unpause when ready.`
+              : `Web Designer review ${round}/${AUTO_CRITIC_MAX_ROUNDS} returned no actionable payload. Review backlog, then unpause when ready.`,
+          ),
+        );
         return;
       }
 
       const validation = validateAtomSizing(envelope.items);
-      const safeItems = validation.valid ? envelope.items : envelope.items.slice(0, 1);
+      const safeItems = (validation.valid ? envelope.items : envelope.items.slice(0, 1)).map(
+        (item) => ({
+          ...item,
+          source: 'web_designer' as WorkItemSource,
+        }),
+      );
+      const rawItemCount = envelope.items.length;
+      const acceptedCount = safeItems.length;
+      const rejectedCount = Math.max(0, rawItemCount - acceptedCount);
+      const dimensionsSummary = envelope.dimensions
+        ? `ux ${envelope.dimensions.ux}, visual ${envelope.dimensions.visual}, accessibility ${envelope.dimensions.accessibility}, trust ${envelope.dimensions.trust}, conversion ${envelope.dimensions.conversion}, performance ${envelope.dimensions.performance}`
+        : 'dimensions unavailable';
 
       if (safeItems.length > 0) {
         insertItemsAfterActive(safeItems);
@@ -1950,7 +2338,13 @@ export function Layout() {
           buildNarrationMessage(
             requestSessionId,
             'chat_ai',
-            `Autonomous quality review ${round}/${AUTO_CRITIC_MAX_ROUNDS} (score ${envelope.score}) queued ${safeItems.length} improvement task${safeItems.length === 1 ? '' : 's'}.`,
+            [
+              `Web Designer review ${round}/${AUTO_CRITIC_MAX_ROUNDS} summary:`,
+              `- Score ${envelope.score}; ${dimensionsSummary}.`,
+              `- Findings: ${rawItemCount} proposed, ${acceptedCount} queued${rejectedCount > 0 ? `, ${rejectedCount} filtered by validation` : ''}.`,
+              `- Top finding: ${envelope.summary}`,
+              'Review backlog content/order, delete anything you do not want, then unpause when satisfied.',
+            ].join('\n'),
             safeItems[0]?.id ?? null,
           ),
         );
@@ -1960,7 +2354,13 @@ export function Layout() {
           buildNarrationMessage(
             requestSessionId,
             'chat_ai',
-            `Autonomous quality review ${round}/${AUTO_CRITIC_MAX_ROUNDS}: ${envelope.summary}`,
+            [
+              `Web Designer review ${round}/${AUTO_CRITIC_MAX_ROUNDS} summary:`,
+              `- Score ${envelope.score}; ${dimensionsSummary}.`,
+              '- No new backlog tasks were queued this round.',
+              `- Finding: ${envelope.summary}`,
+              'Review backlog content/order and unpause when satisfied.',
+            ].join('\n'),
           ),
         );
       }
@@ -1996,7 +2396,7 @@ export function Layout() {
       autonomousCriticCooldownUntilRef.current = Date.now() + AUTO_CRITIC_COOLDOWN_MS;
       autonomousCriticRunningRef.current = false;
     }
-  }, [activeSessionId, addFocusedMessage, insertItemsAfterActive]);
+  }, [activeSessionId, addFocusedMessage, insertItemsAfterActive, pauseBuild]);
 
   const runBuilderCycle = useCallback(async () => {
     if (builderRunningRef.current) {
@@ -2302,6 +2702,7 @@ export function Layout() {
         const firstPath = new FirstMessagePath({
           gateway,
           templateCatalog: TEMPLATE_CATALOG,
+          previewSlaMs: FIRST_PREVIEW_SLA_MS,
         });
         const firstResult = await firstPath.run(firstUserMessage);
 
@@ -2428,6 +2829,7 @@ export function Layout() {
             USE_MOCK_LLM ? null : gateway,
             providerName,
             requestSessionId,
+            firstUserMessage,
           );
         } catch (error) {
           backlogErrorMessage =
@@ -2560,7 +2962,7 @@ export function Layout() {
         buildNarrationMessage(
           activeSessionId,
           'chat_ai',
-          'Manual critic review requires an active preview.',
+          'Manual Web Designer review requires an active preview.',
         ),
       );
       return;
@@ -2570,12 +2972,13 @@ export function Layout() {
     }
     autonomousCriticStoppedRef.current = false;
     autonomousCriticCooldownUntilRef.current = 0;
+    manualCriticQueuedAtRef.current = Date.now();
     setManualCriticQueued(true);
     addFocusedMessage(
       buildNarrationMessage(
         activeSessionId,
         'chat_ai',
-        'Backlog paused. I will run one manual critic review as soon as the active build settles.',
+        'Backlog paused. I will run one manual Web Designer review as soon as the active build settles.',
       ),
     );
   }, [activeSessionId, addFocusedMessage, hasPreview, isPaused, pauseBuild]);
@@ -2587,23 +2990,45 @@ export function Layout() {
     if (!isPaused) {
       return;
     }
-    const buildSettled =
-      buildPhase === 'idle' &&
+    const buildExecutionSettled =
       !builderRunningRef.current &&
-      !previewHasStagedRef.current;
-    if (!buildSettled) {
+      (buildPhase === 'idle' || buildPhase === 'error' || buildPhase === 'skipping');
+    if (!buildExecutionSettled) {
+      return;
+    }
+    const queuedAt = manualCriticQueuedAtRef.current ?? Date.now();
+    const queuedForMs = Math.max(0, Date.now() - queuedAt);
+    const allowCriticWithStagedPreview = queuedForMs >= 8_000;
+    if (previewHasStagedRef.current && !allowCriticWithStagedPreview) {
       return;
     }
     setManualCriticRunning(true);
     setManualCriticQueued(false);
+    manualCriticQueuedAtRef.current = null;
     void (async () => {
       try {
-        await runAutonomousCriticCycle();
+        if (previewHasStagedRef.current) {
+          addFocusedMessage(
+            buildNarrationMessage(
+              activeSessionIdRef.current,
+              'system',
+              'Staged preview is still pending swap; running Web Designer review against the latest committed build state.',
+            ),
+          );
+        }
+        await runAutonomousCriticCycle({ force: true, pauseDuringRun: true, manual: true });
       } finally {
         setManualCriticRunning(false);
       }
     })();
-  }, [buildPhase, isPaused, manualCriticQueued, manualCriticRunning, runAutonomousCriticCycle]);
+  }, [
+    buildPhase,
+    isPaused,
+    manualCriticQueued,
+    manualCriticRunning,
+    runAutonomousCriticCycle,
+    addFocusedMessage,
+  ]);
 
   const queueUserRequestAsBacklogItem = useCallback(
     async (rawContent: string) => {
@@ -2687,9 +3112,9 @@ export function Layout() {
       const splitItems: WorkItem[] = clauses.slice(0, 3).map((clause, index) => {
         const atomType = inferAtomTypeFromRequest(clause);
         const instruction = buildImplementationInstruction(clause, atomType);
-        return {
-          id: `split-${now}-${index}-${sanitizeIdentifier(instruction.title).slice(0, 30)}`,
-          sessionId: activeSessionId,
+          return {
+            id: `split-${now}-${index}-${sanitizeIdentifier(instruction.title).slice(0, 30)}`,
+            sessionId: activeSessionId,
           title: instruction.title,
           description: instruction.description,
           effort: inferEffortFromLines(instruction.estimatedLines),
@@ -2702,6 +3127,7 @@ export function Layout() {
           filesTouch: instruction.filesTouch,
           estimatedLines: instruction.estimatedLines,
           visibleChange: instruction.visibleChange,
+          source: 'system' as WorkItemSource,
         };
       });
       if (splitItems.length > 0) {
@@ -2734,6 +3160,31 @@ export function Layout() {
       );
     },
     [activeSessionId, addFocusedMessage, updateBacklogItem],
+  );
+
+  const deleteWorkItem = useCallback(
+    (item: WorkItem) => {
+      if (buildAtom?.id === item.id && builderRunningRef.current) {
+        addFocusedMessage(
+          buildNarrationMessage(
+            activeSessionId,
+            'chat_ai',
+            `Cannot delete "${item.title}" while it is actively building. Pause and retry.`,
+            item.id,
+          ),
+        );
+        return;
+      }
+      useBacklogStore.getState().removeItem(item.id);
+      addFocusedMessage(
+        buildNarrationMessage(
+          activeSessionId,
+          'chat_ai',
+          `Deleted task "${item.title}". Review queue order, then unpause when ready.`,
+        ),
+      );
+    },
+    [activeSessionId, addFocusedMessage, buildAtom?.id],
   );
 
   const submitChatDraft = useCallback(() => {
@@ -3073,19 +3524,20 @@ export function Layout() {
     }
 
     if (buildPhase === 'skipping') {
+      if (current.status === 'blocked') {
+        return;
+      }
       const loweredError = (buildError ?? '').toLowerCase();
       const shouldBlock =
         loweredError.includes('intent validation failed') ||
         loweredError.includes('exceeded') ||
         loweredError.includes('color change');
       if (shouldBlock) {
-        if (current.status !== 'blocked') {
-          updateBacklogItem(current.id, {
-            status: 'blocked',
-            blockedCode: 'intent_unmet',
-            blockedReason: buildError ?? 'Validation failed repeatedly.',
-          });
-        }
+        updateBacklogItem(current.id, {
+          status: 'blocked',
+          blockedCode: 'intent_unmet',
+          blockedReason: buildError ?? 'Validation failed repeatedly.',
+        });
         return;
       }
       if (current.status !== 'backlog') {
@@ -3432,6 +3884,13 @@ export function Layout() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => deleteWorkItem(item)}
+                        className="rounded-full border border-rose-500/80 bg-rose-500/25 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-rose-100 transition hover:bg-rose-500/35"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => skipBlockedItem(item)}
                         className="rounded-full border border-rose-300/50 bg-rose-300/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-rose-200"
                       >
@@ -3665,10 +4124,10 @@ export function Layout() {
                   }`}
                 >
                   {manualCriticRunning
-                    ? 'Critic Running'
+                    ? 'Web Designer Running'
                     : manualCriticQueued
-                      ? 'Critic Queued'
-                      : 'Run Critic'}
+                      ? 'Web Designer Queued'
+                      : 'Run Web Designer'}
                 </button>
                 <button
                   type="button"
@@ -3718,6 +4177,16 @@ export function Layout() {
                         <span className="rounded-full border border-slate-700/80 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300">
                           Locked
                         </span>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            deleteWorkItem(onDeckItem);
+                          }}
+                          className="rounded-full border border-rose-500/80 bg-rose-500/25 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-rose-100 transition hover:bg-rose-500/35"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
                     <h3 className="mt-1.5 line-clamp-1 text-sm font-semibold text-slate-100">
@@ -3728,17 +4197,16 @@ export function Layout() {
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-slate-400">
                       <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                        {formatAtomType(onDeckItem.atomType)}
-                      </span>
-                      <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                        Impact {impactFromLines(onDeckItem.estimatedLines)}
-                      </span>
-                      <span className="rounded-full border border-slate-800/80 px-2 py-1">
                         Effort {onDeckItem.effort}
                       </span>
                       <span className="rounded-full border border-slate-800/80 px-2 py-1">
                         ETA {estimateEta(onDeckItem.effort, onDeckItem.estimatedLines)}m
                       </span>
+                      {onDeckItem.source && (
+                        <span className="rounded-full border border-sky-300/40 bg-sky-300/10 px-2 py-1 text-sky-200">
+                          {formatWorkItemSource(onDeckItem.source)}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-1.5 line-clamp-1 text-[11px] text-slate-300">
                       {onDeckItem.visibleChange}
@@ -3946,7 +4414,7 @@ export function Layout() {
                                   : 'cursor-not-allowed'
                             }`}
                           >
-                            <div className="flex items-start justify-between gap-3">
+                            <div>
                               <div>
                                 <div className="flex items-center gap-2">
                                   <span
@@ -3969,27 +4437,41 @@ export function Layout() {
                                   {item.description}
                                 </p>
                               </div>
-                              <div className="flex flex-col items-end gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                                <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                                  {formatAtomType(item.atomType)}
-                                </span>
-                                <span className="rounded-full border border-slate-800/80 px-2 py-1">
-                                  Impact {impactFromLines(item.estimatedLines)}
-                                </span>
+                              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-slate-400">
                                 <span className="rounded-full border border-slate-800/80 px-2 py-1">
                                   Effort {item.effort}
                                 </span>
+                                <span className="rounded-full border border-slate-800/80 px-2 py-1">
+                                  ETA {estimateEta(item.effort, item.estimatedLines)}m
+                                </span>
+                                {item.source && (
+                                  <span className="rounded-full border border-sky-300/40 bg-sky-300/10 px-2 py-1 text-sky-200">
+                                    {formatWorkItemSource(item.source)}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <div className="mt-2 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-slate-500">
                               <span>Priority {index + 1}</span>
-                              <span>
-                                {isPaused
-                                  ? 'Paused'
-                                  : item.status === 'backlog'
-                                    ? 'Drag ready'
-                                    : formatStatus(item.status)}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span>
+                                  {isPaused
+                                    ? 'Paused'
+                                    : item.status === 'backlog'
+                                      ? 'Drag ready'
+                                      : formatStatus(item.status)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    deleteWorkItem(item);
+                                  }}
+                                  className="rounded-full border border-rose-500/80 bg-rose-500/25 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-rose-100 transition hover:bg-rose-500/35"
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );
@@ -4019,9 +4501,20 @@ export function Layout() {
                               <span className="font-semibold text-slate-100">
                                 {item.title}
                               </span>
-                              <span className="rounded-full border border-slate-700/80 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                                {formatAtomType(item.atomType)}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                {item.source && (
+                                  <span className="rounded-full border border-sky-300/40 bg-sky-300/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-sky-200">
+                                    {formatWorkItemSource(item.source)}
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => deleteWorkItem(item)}
+                                  className="rounded-full border border-rose-500/80 bg-rose-500/25 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-rose-100 transition hover:bg-rose-500/35"
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             </div>
                             <div className="mt-1 text-[11px] text-slate-400">
                               {item.visibleChange}
@@ -4052,31 +4545,21 @@ export function Layout() {
   );
 }
 
-function formatAtomType(atomType: AtomType): string {
-  switch (atomType) {
-    case 'structure':
-      return 'Structure';
-    case 'content':
-      return 'Content';
-    case 'style':
-      return 'Style';
-    case 'behavior':
-      return 'Behavior';
-    case 'integration':
-      return 'Integration';
+function formatWorkItemSource(source: WorkItemSource): string {
+  switch (source) {
+    case 'first_message_planner':
+      return 'First Plan';
+    case 'request_planner':
+      return 'Request';
+    case 'web_designer':
+      return 'Web Designer';
+    case 'fallback':
+      return 'Fallback';
+    case 'system':
+      return 'System';
     default:
-      return 'Unknown';
+      return source;
   }
-}
-
-function impactFromLines(estimatedLines: number): 'Low' | 'Medium' | 'High' {
-  if (estimatedLines >= 100) {
-    return 'High';
-  }
-  if (estimatedLines >= 50) {
-    return 'Medium';
-  }
-  return 'Low';
 }
 
 function estimateEta(effort: Effort, estimatedLines: number): number {

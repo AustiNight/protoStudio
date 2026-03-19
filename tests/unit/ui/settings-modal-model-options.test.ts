@@ -30,7 +30,7 @@ describe('buildModelOptions', () => {
     expect(options.openai.some((model) => model.startsWith('gemini-'))).toBe(false);
 
     expect(options.anthropic).toEqual(
-      expect.arrayContaining(['claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022']),
+      expect.arrayContaining(['claude-sonnet-4-6', 'claude-haiku-4-5']),
     );
     expect(options.anthropic.some((model) => model.startsWith('gpt-'))).toBe(false);
     expect(options.anthropic.some((model) => /^o[0-9]/i.test(model))).toBe(false);

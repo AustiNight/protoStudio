@@ -56,16 +56,16 @@ describe('calculateCost', () => {
     expect(result.cost).toBe(0);
   });
 
-  it('should resolve gpt-5.3-chat-latest using fallback pricing', () => {
+  it('should resolve gpt-5.3-chat-latest with direct pricing', () => {
     const resolution = resolvePricingModelId('gpt-5.3-chat-latest');
     const result = calculateCost('gpt-5.3-chat-latest', {
       promptTokens: 1000,
       completionTokens: 1000,
     });
 
-    expect(resolution).toEqual({ modelId: 'gpt-5', estimated: true });
+    expect(resolution).toEqual({ modelId: 'gpt-5.3-chat-latest', estimated: false });
     expect(result.unknownModel).toBe(false);
-    expect(result.cost).toBeCloseTo(0.01125, 6);
+    expect(result.cost).toBeCloseTo(0.01575, 6);
   });
 
   it('should resolve exact pricing when model exists directly', () => {

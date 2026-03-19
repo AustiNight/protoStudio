@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { webcrypto } from 'node:crypto';
-
 import {
   SETTINGS_STORAGE_KEY,
 } from '../../../src/persistence/settings-storage';
-import { decrypt } from '../../../src/persistence/encryption';
 import {
   createSettingsStore,
   type SettingsPayload,
@@ -45,15 +42,6 @@ function installLocalStorage(storage: Storage): void {
   });
 }
 
-function ensureCrypto(): void {
-  if (!globalThis.crypto) {
-    Object.defineProperty(globalThis, 'crypto', {
-      value: webcrypto,
-      configurable: true,
-    });
-  }
-}
-
 function buildSettingsPayload(): SettingsPayload {
   return {
     version: 1,
@@ -65,10 +53,12 @@ function buildSettingsPayload(): SettingsPayload {
     llmModels: {
       chat: { provider: 'openai', model: 'gpt-4o-mini' },
       builder: { provider: 'openai', model: 'gpt-4o-mini' },
+      critic: { provider: 'openai', model: 'gpt-4o-mini' },
     },
     openaiThinking: {
       chat: 'default',
       builder: 'default',
+      critic: 'default',
     },
     deployTokens: {
       github: 'ghp-token',
@@ -82,43 +72,33 @@ function buildSettingsPayload(): SettingsPayload {
 
 describe('settings-store', () => {
   beforeEach(() => {
-    ensureCrypto();
     installLocalStorage(new MemoryStorage());
   });
 
   it('should persist settings to localStorage on change', async () => {
     const store = createSettingsStore();
-    const passphrase = 'correct horse battery staple';
     const payload = buildSettingsPayload();
 
-    const saved = await store.getState().saveSettings(payload, passphrase);
+    const saved = await store.getState().saveSettings(payload);
 
     expect(saved).toBe(true);
-    const storedCiphertext = globalThis.localStorage.getItem(SETTINGS_STORAGE_KEY);
-    expect(storedCiphertext).not.toBeNull();
-    if (!storedCiphertext) {
+    const storedPayload = globalThis.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    expect(storedPayload).not.toBeNull();
+    if (!storedPayload) {
       return;
     }
 
-    const decrypted = await decrypt(storedCiphertext, passphrase);
-    const parsed = JSON.parse(decrypted) as SettingsPayload;
+    const parsed = JSON.parse(storedPayload) as SettingsPayload;
     expect(parsed.llmKeys.openai).toBe('');
     expect(parsed.deployTokens.github).toBe('ghp-token');
   });
 
   it('should hydrate settings from localStorage on creation', async () => {
     const seedStore = createSettingsStore();
-    const passphrase = 'correct horse battery staple';
-    await seedStore.getState().saveSettings(buildSettingsPayload(), passphrase);
+    await seedStore.getState().saveSettings(buildSettingsPayload());
 
     const nextStore = createSettingsStore();
-    const storedCiphertext = globalThis.localStorage.getItem(SETTINGS_STORAGE_KEY);
-
-    expect(nextStore.getState().hasStoredSecrets).toBe(true);
-    expect(nextStore.getState().encryptedSettings).toBe(storedCiphertext);
-
-    const unlocked = await nextStore.getState().unlockSettings(passphrase);
-    expect(unlocked).toBe(true);
+    nextStore.getState().hydrateFromStorage();
     expect(nextStore.getState().settings.llmKeys.anthropic).toBe('sk-anthropic');
   });
 

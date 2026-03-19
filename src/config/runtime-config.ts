@@ -11,9 +11,12 @@ interface RuntimeSettingsDefaults {
   chatModel: string;
   builderProvider: LLMProviderName;
   builderModel: string;
+  criticProvider: LLMProviderName;
+  criticModel: string;
   openAIReasoning: {
     chat: OpenAIReasoningSetting;
     builder: OpenAIReasoningSetting;
+    critic: OpenAIReasoningSetting;
   };
 }
 
@@ -34,8 +37,9 @@ export interface RuntimeConfig {
 }
 
 const DEFAULT_IFRAME_SANDBOX = 'allow-scripts allow-forms allow-same-origin';
-const DEFAULT_CHAT_MODEL = 'gpt-4o-mini';
-const DEFAULT_BUILDER_MODEL = 'gpt-4o-mini';
+const DEFAULT_CHAT_MODEL = 'gpt-5-mini';
+const DEFAULT_BUILDER_MODEL = 'gpt-5.4-mini';
+const DEFAULT_CRITIC_MODEL = 'gpt-5-mini';
 const DEFAULT_OPENAI_REASONING: OpenAIReasoningSetting = 'xhigh';
 
 export const runtimeConfig: RuntimeConfig = {
@@ -76,6 +80,8 @@ export const runtimeConfig: RuntimeConfig = {
     chatModel: readEnvString('VITE_DEFAULT_CHAT_MODEL', DEFAULT_CHAT_MODEL),
     builderProvider: parseProvider(readEnv('VITE_DEFAULT_BUILDER_PROVIDER'), 'openai'),
     builderModel: readEnvString('VITE_DEFAULT_BUILDER_MODEL', DEFAULT_BUILDER_MODEL),
+    criticProvider: parseProvider(readEnv('VITE_DEFAULT_CRITIC_PROVIDER'), 'openai'),
+    criticModel: readEnvString('VITE_DEFAULT_CRITIC_MODEL', DEFAULT_CRITIC_MODEL),
     openAIReasoning: {
       chat: parseOpenAIReasoning(
         readEnv('VITE_OPENAI_CHAT_THINKING_LEVEL'),
@@ -83,6 +89,10 @@ export const runtimeConfig: RuntimeConfig = {
       ),
       builder: parseOpenAIReasoning(
         readEnv('VITE_OPENAI_BUILDER_THINKING_LEVEL'),
+        DEFAULT_OPENAI_REASONING,
+      ),
+      critic: parseOpenAIReasoning(
+        readEnv('VITE_OPENAI_CRITIC_THINKING_LEVEL'),
         DEFAULT_OPENAI_REASONING,
       ),
     },

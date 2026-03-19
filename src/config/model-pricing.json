@@ -1,95 +1,45 @@
 {
-  "lastUpdated": "2026-03-02",
+  "lastUpdated": "2026-03-18",
   "models": {
-    "gpt-4o-mini": {
-      "promptPer1K": 0.00015,
-      "completionPer1K": 0.0006,
-      "sourceUrls": [
-        "https://platform.openai.com/docs/models",
-        "https://platform.openai.com/docs/api-reference/models/list",
-        "https://platform.openai.com/docs/pricing"
-      ],
-      "reviewedAt": "2026-03-02"
-    },
-    "gpt-4o": {
+    "gpt-5.4": {
       "promptPer1K": 0.0025,
-      "completionPer1K": 0.01,
+      "completionPer1K": 0.015,
       "sourceUrls": [
         "https://platform.openai.com/docs/models",
         "https://platform.openai.com/docs/api-reference/models/list",
         "https://platform.openai.com/docs/pricing"
       ],
-      "reviewedAt": "2026-03-02"
+      "reviewedAt": "2026-03-18"
     },
-    "gpt-4.1-mini": {
-      "promptPer1K": 0.0004,
-      "completionPer1K": 0.0016,
+    "gpt-5.4-pro": {
+      "promptPer1K": 0.03,
+      "completionPer1K": 0.18,
       "sourceUrls": [
         "https://platform.openai.com/docs/models",
         "https://platform.openai.com/docs/api-reference/models/list",
         "https://platform.openai.com/docs/pricing"
       ],
-      "reviewedAt": "2026-03-02"
+      "reviewedAt": "2026-03-18"
     },
-    "gpt-4.1": {
-      "promptPer1K": 0.002,
-      "completionPer1K": 0.008,
+    "gpt-5.4-mini": {
+      "promptPer1K": 0.00075,
+      "completionPer1K": 0.0045,
       "sourceUrls": [
         "https://platform.openai.com/docs/models",
         "https://platform.openai.com/docs/api-reference/models/list",
         "https://platform.openai.com/docs/pricing"
       ],
-      "reviewedAt": "2026-03-02"
+      "reviewedAt": "2026-03-18"
     },
-    "gpt-4.1-nano": {
-      "promptPer1K": 0.0001,
-      "completionPer1K": 0.0004,
+    "gpt-5.4-nano": {
+      "promptPer1K": 0.0002,
+      "completionPer1K": 0.00125,
       "sourceUrls": [
         "https://platform.openai.com/docs/models",
         "https://platform.openai.com/docs/api-reference/models/list",
         "https://platform.openai.com/docs/pricing"
       ],
-      "reviewedAt": "2026-03-02"
-    },
-    "gpt-5-mini": {
-      "promptPer1K": 0.00025,
-      "completionPer1K": 0.002,
-      "sourceUrls": [
-        "https://platform.openai.com/docs/models",
-        "https://platform.openai.com/docs/api-reference/models/list",
-        "https://platform.openai.com/docs/pricing"
-      ],
-      "reviewedAt": "2026-03-02"
-    },
-    "gpt-5-nano": {
-      "promptPer1K": 0.00005,
-      "completionPer1K": 0.0004,
-      "sourceUrls": [
-        "https://platform.openai.com/docs/models",
-        "https://platform.openai.com/docs/api-reference/models/list",
-        "https://platform.openai.com/docs/pricing"
-      ],
-      "reviewedAt": "2026-03-02"
-    },
-    "gpt-5": {
-      "promptPer1K": 0.00125,
-      "completionPer1K": 0.01,
-      "sourceUrls": [
-        "https://platform.openai.com/docs/models",
-        "https://platform.openai.com/docs/api-reference/models/list",
-        "https://platform.openai.com/docs/pricing"
-      ],
-      "reviewedAt": "2026-03-02"
-    },
-    "gpt-5.1": {
-      "promptPer1K": 0.00125,
-      "completionPer1K": 0.01,
-      "sourceUrls": [
-        "https://platform.openai.com/docs/models",
-        "https://platform.openai.com/docs/api-reference/models/list",
-        "https://platform.openai.com/docs/pricing"
-      ],
-      "reviewedAt": "2026-03-02"
+      "reviewedAt": "2026-03-18"
     },
     "gpt-5.2": {
       "promptPer1K": 0.00175,
@@ -99,7 +49,167 @@
         "https://platform.openai.com/docs/api-reference/models/list",
         "https://platform.openai.com/docs/pricing"
       ],
-      "reviewedAt": "2026-03-02"
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-5.1": {
+      "promptPer1K": 0.00125,
+      "completionPer1K": 0.01,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-5": {
+      "promptPer1K": 0.00125,
+      "completionPer1K": 0.01,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-5-mini": {
+      "promptPer1K": 0.00025,
+      "completionPer1K": 0.002,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-5-nano": {
+      "promptPer1K": 0.00005,
+      "completionPer1K": 0.0004,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-5.3-chat-latest": {
+      "promptPer1K": 0.00175,
+      "completionPer1K": 0.014,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-5.2-chat-latest": {
+      "promptPer1K": 0.00175,
+      "completionPer1K": 0.014,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-5.1-chat-latest": {
+      "promptPer1K": 0.00125,
+      "completionPer1K": 0.01,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-5-chat-latest": {
+      "promptPer1K": 0.00125,
+      "completionPer1K": 0.01,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-5.2-pro": {
+      "promptPer1K": 0.021,
+      "completionPer1K": 0.168,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-5-pro": {
+      "promptPer1K": 0.015,
+      "completionPer1K": 0.12,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-4.1": {
+      "promptPer1K": 0.002,
+      "completionPer1K": 0.008,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-4.1-mini": {
+      "promptPer1K": 0.0004,
+      "completionPer1K": 0.0016,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-4.1-nano": {
+      "promptPer1K": 0.0001,
+      "completionPer1K": 0.0004,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-4o": {
+      "promptPer1K": 0.0025,
+      "completionPer1K": 0.01,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-4o-2024-05-13": {
+      "promptPer1K": 0.005,
+      "completionPer1K": 0.015,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
+    },
+    "gpt-4o-mini": {
+      "promptPer1K": 0.00015,
+      "completionPer1K": 0.0006,
+      "sourceUrls": [
+        "https://platform.openai.com/docs/models",
+        "https://platform.openai.com/docs/api-reference/models/list",
+        "https://platform.openai.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-03-18"
     },
     "o4-mini": {
       "promptPer1K": 0.0011,
@@ -109,7 +219,7 @@
         "https://platform.openai.com/docs/api-reference/models/list",
         "https://platform.openai.com/docs/pricing"
       ],
-      "reviewedAt": "2026-03-02"
+      "reviewedAt": "2026-03-18"
     },
     "o3-mini": {
       "promptPer1K": 0.0011,
@@ -119,7 +229,7 @@
         "https://platform.openai.com/docs/api-reference/models/list",
         "https://platform.openai.com/docs/pricing"
       ],
-      "reviewedAt": "2026-03-02"
+      "reviewedAt": "2026-03-18"
     },
     "o3": {
       "promptPer1K": 0.002,
@@ -129,11 +239,28 @@
         "https://platform.openai.com/docs/api-reference/models/list",
         "https://platform.openai.com/docs/pricing"
       ],
-      "reviewedAt": "2026-03-02"
+      "reviewedAt": "2026-03-18"
     },
-    "claude-sonnet-4-20250514": { "promptPer1K": 0.003, "completionPer1K": 0.015 },
-    "claude-3-5-haiku-20241022": { "promptPer1K": 0.0008, "completionPer1K": 0.004 },
-    "gemini-2.0-flash": { "promptPer1K": 0.0001, "completionPer1K": 0.0004 },
-    "gemini-2.5-pro": { "promptPer1K": 0.00125, "completionPer1K": 0.01 }
+    "claude-opus-4-6": { "promptPer1K": 0.005, "completionPer1K": 0.025 },
+    "claude-opus-4-5": { "promptPer1K": 0.005, "completionPer1K": 0.025 },
+    "claude-opus-4-1": { "promptPer1K": 0.015, "completionPer1K": 0.075 },
+    "claude-opus-4": { "promptPer1K": 0.015, "completionPer1K": 0.075 },
+    "claude-sonnet-4-6": { "promptPer1K": 0.003, "completionPer1K": 0.015 },
+    "claude-sonnet-4-5": { "promptPer1K": 0.003, "completionPer1K": 0.015 },
+    "claude-sonnet-4": { "promptPer1K": 0.003, "completionPer1K": 0.015 },
+    "claude-sonnet-3-7": { "promptPer1K": 0.003, "completionPer1K": 0.015 },
+    "claude-haiku-4-5": { "promptPer1K": 0.001, "completionPer1K": 0.005 },
+    "claude-haiku-3-5": { "promptPer1K": 0.0008, "completionPer1K": 0.004 },
+    "claude-opus-3": { "promptPer1K": 0.015, "completionPer1K": 0.075 },
+    "claude-haiku-3": { "promptPer1K": 0.00025, "completionPer1K": 0.00125 },
+    "gemini-3.1-pro-preview": { "promptPer1K": 0.002, "completionPer1K": 0.012 },
+    "gemini-3.1-pro-preview-customtools": { "promptPer1K": 0.002, "completionPer1K": 0.012 },
+    "gemini-3.1-flash-lite-preview": { "promptPer1K": 0.00025, "completionPer1K": 0.0015 },
+    "gemini-3-flash-preview": { "promptPer1K": 0.0005, "completionPer1K": 0.003 },
+    "gemini-2.5-pro": { "promptPer1K": 0.00125, "completionPer1K": 0.01 },
+    "gemini-2.5-flash": { "promptPer1K": 0.0003, "completionPer1K": 0.0025 },
+    "gemini-2.5-flash-lite": { "promptPer1K": 0.0001, "completionPer1K": 0.0004 },
+    "gemini-2.5-flash-lite-preview-09-2025": { "promptPer1K": 0.0001, "completionPer1K": 0.0004 },
+    "gemini-2.0-flash": { "promptPer1K": 0.0001, "completionPer1K": 0.0004 }
   }
 }

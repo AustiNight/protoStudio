@@ -4,7 +4,7 @@
  */
 export type TelemetrySessionPath = 'template' | 'scratch';
 export type TelemetryMessageRole = 'user' | 'assistant';
-export type TelemetryLLMRole = 'chat' | 'builder';
+export type TelemetryLLMRole = 'chat' | 'builder' | 'critic';
 export type TelemetryProviderName = 'openai' | 'anthropic' | 'google';
 export type TelemetryDeployHost = 'github_pages' | 'cloudflare_pages' | 'netlify' | 'vercel';
 export type TelemetryBuildStatus = 'success' | 'failed';
@@ -180,7 +180,7 @@ export interface TelemetryValidationError {
 
 const SESSION_PATHS = ['template', 'scratch'] as const;
 const MESSAGE_ROLES = ['user', 'assistant'] as const;
-const LLM_ROLES = ['chat', 'builder'] as const;
+const LLM_ROLES = ['chat', 'builder', 'critic'] as const;
 const LLM_PROVIDERS = ['openai', 'anthropic', 'google'] as const;
 const DEPLOY_HOSTS = ['github_pages', 'cloudflare_pages', 'netlify', 'vercel'] as const;
 const BUILD_STATUSES = ['success', 'failed'] as const;

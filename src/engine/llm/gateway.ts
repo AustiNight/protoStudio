@@ -35,7 +35,7 @@ export class LLMGateway {
       ...options?.providers,
     };
     this.telemetry = options?.telemetry;
-    this.runningTotal = { chat: 0, builder: 0, total: 0 };
+    this.runningTotal = { chat: 0, builder: 0, critic: 0, total: 0 };
   }
 
   async send(request: LLMRequest): Promise<Result<LLMResponse, LLMError>> {
@@ -108,22 +108,30 @@ export class LLMGateway {
   }
 
   resetTotal(): void {
-    this.runningTotal = { chat: 0, builder: 0, total: 0 };
+    this.runningTotal = { chat: 0, builder: 0, critic: 0, total: 0 };
   }
 
   private getConfigForRole(role: LLMRequest['role']): LLMModelSelection {
-    return role === 'chat' ? this.config.chatModel : this.config.builderModel;
+    if (role === 'chat') {
+      return this.config.chatModel;
+    }
+    if (role === 'builder') {
+      return this.config.builderModel;
+    }
+    return this.config.criticModel ?? this.config.chatModel;
   }
 
   private addToTotals(role: LLMRequest['role'], cost: number): void {
     if (role === 'chat') {
       this.runningTotal.chat += cost;
-    } else {
+    } else if (role === 'builder') {
       this.runningTotal.builder += cost;
+    } else {
+      this.runningTotal.critic += cost;
     }
 
     this.runningTotal.total =
-      this.runningTotal.chat + this.runningTotal.builder;
+      this.runningTotal.chat + this.runningTotal.builder + this.runningTotal.critic;
   }
 }
 

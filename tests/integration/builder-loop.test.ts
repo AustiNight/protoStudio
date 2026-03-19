@@ -387,4 +387,49 @@ describe('BuilderLoop', () => {
     expect(skipped?.status).toBe('backlog');
     expect(next?.status).toBe('on_deck');
   });
+
+  it('should block terminally failing final item instead of re-promoting it', async () => {
+    const vfs = await createVfsFromFixture();
+    const validPatch = readJsonFixture<BuildPatch>('patches/valid-section-replace.json');
+    const invalidPatch: BuildPatch = {
+      workItemId: validPatch.workItemId,
+      targetVersion: validPatch.targetVersion,
+      operations: [],
+    };
+    const { gateway } = createGatewayWithResponses([
+      JSON.stringify(invalidPatch),
+      JSON.stringify(invalidPatch),
+      JSON.stringify(invalidPatch),
+    ]);
+    const contextManager = new ContextManager({
+      builder: { systemPrompt: 'Builder', patchFormat: 'Patch format' },
+    });
+
+    const backlog = new TestBacklog([
+      buildWorkItem({
+        id: validPatch.workItemId,
+        status: 'on_deck',
+        order: 1,
+      }),
+    ]);
+    const preview = new TestPreview();
+    const loop = new BuilderLoop({ gateway, contextManager, maxAttempts: 3 });
+
+    const result = await loop.run({
+      vfs,
+      backlog,
+      conversation: [],
+      preview,
+      guardrails: createGuardrailContext(),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('skipped');
+    expect(preview.swapCount).toBe(0);
+    const skipped = backlog.items.find((item) => item.id === validPatch.workItemId);
+    expect(skipped?.status).toBe('blocked');
+    expect(skipped?.blockedCode).toBe('terminal_skip');
+    expect(backlog.getOnDeck()).toBeNull();
+  });
 });

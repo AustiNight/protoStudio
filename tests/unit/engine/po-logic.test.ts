@@ -93,7 +93,8 @@ describe('po-logic', () => {
     expect(request.systemPrompt).toContain('Touches <= 5 files');
     expect(request.systemPrompt).toContain('Changes <= 150 lines');
     expect(request.systemPrompt).toContain('ONE CONCERN PER ATOM');
-    expect(request.maxTokens).toBe(900);
+    expect(request.systemPrompt).toContain('Produce 8-20 items.');
+    expect(request.maxTokens).toBe(2200);
     expect(request.reasoningEffort).toBe('minimal');
   });
 
@@ -104,7 +105,7 @@ describe('po-logic', () => {
       now: () => 1_700_000_000_000,
     });
 
-    expect(items.length).toBeGreaterThan(3);
+    expect(items.length).toBeGreaterThanOrEqual(3);
     expect(items[0]?.title).toBe('Add services section');
 
     const services = items.find((item) => item.title === 'Add services section');
@@ -112,11 +113,10 @@ describe('po-logic', () => {
 
     expect(copy?.dependencies).toEqual([services?.id]);
 
-    const seoItem = items.find(
-      (item) => item.title === 'Add meta descriptions to all pages',
+    const seoItem = items.find((item) =>
+      item.title.toLowerCase().includes('meta description'),
     );
-    expect(seoItem).toBeTruthy();
-    expect((seoItem?.order ?? 0)).toBeGreaterThan(3);
+    expect(seoItem).toBeUndefined();
   });
 
   it('should validate fixture atoms within Builder Atom limits', () => {

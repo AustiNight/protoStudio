@@ -47,7 +47,6 @@ type SettingsModalProps = {
   onClose: () => void;
 };
 
-const MIN_PASSPHRASE_LENGTH = 12;
 const VALIDATION_DELAY_MS = 800;
 const OPENAI_KEY_VALIDATION_TIMEOUT_MS = 10_000;
 const OPENAI_SERVER_MANAGED = runtimeConfig.openAIRequestMode === 'proxy';
@@ -56,14 +55,13 @@ const pricingConfig = pricingConfigRaw as PricingConfig;
 
 const NON_SELECTABLE_OPENAI_MODEL_PATTERNS: RegExp[] = [
   /^chatgpt-/i,
-  /-chat-latest$/i,
   /-codex$/i,
   /-preview$/i,
   /-search-preview$/i,
 ];
 
 // Keep this list in sync with OpenAI docs when pricing config trails newest releases.
-const MANUALLY_INCLUDED_OPENAI_MODEL_IDS = ['gpt-5.3-chat-latest'];
+const MANUALLY_INCLUDED_OPENAI_MODEL_IDS = ['gpt-5-chat-latest', 'gpt-5.3-chat-latest'];
 
 function isSelectableOpenAIModelId(modelId: string): boolean {
   if (!isOpenAIModelId(modelId)) {
@@ -91,10 +89,12 @@ const DEFAULT_SETTINGS: SettingsPayload = {
   llmModels: {
     chat: { provider: 'openai', model: defaultModelFor('openai') },
     builder: { provider: 'openai', model: defaultModelFor('openai') },
+    critic: { provider: 'openai', model: defaultModelFor('openai') },
   },
   openaiThinking: {
     chat: runtimeConfig.settingsDefaults.openAIReasoning.chat,
     builder: runtimeConfig.settingsDefaults.openAIReasoning.builder,
+    critic: runtimeConfig.settingsDefaults.openAIReasoning.critic,
   },
   deployTokens: { github: '', cloudflare: '', netlify: '', vercel: '' },
   updatedAt: 0,
@@ -111,7 +111,7 @@ const TABS: Array<{ id: TabKey; label: string; description: string }> = [
   {
     id: 'models',
     label: 'Models',
-    description: 'Pick the active models for chat and builder roles.',
+    description: 'Pick the active models for chat, builder, and Web Designer roles.',
   },
   {
     id: 'deploy',
@@ -156,9 +156,7 @@ const DEPLOY_HOST_OPTIONS: Array<{
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('keys');
-  const [passphrase, setPassphrase] = useState('');
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [isUnlocked, setIsUnlocked] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
   const [keyStatus, setKeyStatus] = useState<Record<ProviderName, ValidationState>>(
     () => buildValidationMap(LLM_PROVIDERS),
@@ -172,13 +170,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const telemetryCounters = useTelemetryStore((state) => state.counters);
   const telemetryEvents = useTelemetryStore((state) => state.events);
   const exportTelemetryBundle = useTelemetryStore((state) => state.exportBundle);
-  const hasStoredSecrets = useSettingsStore((state) => state.hasStoredSecrets);
   const storeSettings = useSettingsStore((state) => state.settings);
   const hydrateFromStorage = useSettingsStore((state) => state.hydrateFromStorage);
   const setRuntimeSettings = useSettingsStore((state) => state.setRuntimeSettings);
   const updateRuntimeSettings = useSettingsStore((state) => state.updateRuntimeSettings);
   const saveSettingsToStore = useSettingsStore((state) => state.saveSettings);
-  const unlockSettingsInStore = useSettingsStore((state) => state.unlockSettings);
   const clearSettingsInStore = useSettingsStore((state) => state.clearSettings);
 
   const modelOptions = useMemo(() => MODEL_OPTIONS, []);
@@ -195,7 +191,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     () => normalizeSettings(storeSettings, modelOptions),
     [modelOptions, storeSettings],
   );
-  const isPassphraseValid = passphrase.length >= MIN_PASSPHRASE_LENGTH;
   const storedUpdatedAt = settings.updatedAt;
   const lastTelemetryTimestamp =
     telemetryEvents.length > 0
@@ -208,13 +203,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     setRuntimeSettings(normalizeSettings(useSettingsStore.getState().settings, modelOptions));
     setKeyStatus(buildValidationMap(LLM_PROVIDERS));
     setTokenStatus(buildValidationMap(DEPLOY_HOSTS));
-    setIsUnlocked(false);
     setNotice(null);
   }, [open, hydrateFromStorage, modelOptions, setRuntimeSettings]);
 
   useEffect(() => {
     if (open) return;
-    setPassphrase('');
     setNotice(null);
   }, [open]);
 
@@ -245,52 +238,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     };
   }, [open]);
 
-  const handleUnlock = async () => {
-    if (!isPassphraseValid) {
-      setNotice({
-        tone: 'error',
-        message: `Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`,
-      });
-      return;
-    }
-    if (!hasStoredSecrets) {
-      setNotice({ tone: 'info', message: 'No saved settings found.' });
-      return;
-    }
-
-    setIsWorking(true);
-    const unlocked = await unlockSettingsInStore(passphrase);
-    const storeState = useSettingsStore.getState();
-    if (unlocked) {
-      setRuntimeSettings(normalizeSettings(storeState.settings, modelOptions));
-      setKeyStatus(buildValidationMap(LLM_PROVIDERS));
-      setTokenStatus(buildValidationMap(DEPLOY_HOSTS));
-      setIsUnlocked(true);
-      setNotice({ tone: 'success', message: 'Settings unlocked.' });
-    } else {
-      setNotice({
-        tone: 'error',
-        message: storeState.lastError ?? 'Unable to unlock settings.',
-      });
-    }
-    setIsWorking(false);
-  };
-
   const handleSave = async () => {
-    if (!isPassphraseValid) {
-      setNotice({
-        tone: 'error',
-        message: `Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`,
-      });
-      return;
-    }
-
     setIsWorking(true);
-    const saved = await saveSettingsToStore(settings, passphrase);
+    const saved = await saveSettingsToStore(settings);
     const storeState = useSettingsStore.getState();
     if (saved) {
       setRuntimeSettings(normalizeSettings(storeState.settings, modelOptions));
-      setIsUnlocked(true);
       setNotice({ tone: 'success', message: 'Settings saved locally.' });
     } else {
       setNotice({
@@ -303,7 +256,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   const handleClearStored = () => {
     clearSettingsInStore();
-    setIsUnlocked(false);
     setRuntimeSettings(normalizeSettings(useSettingsStore.getState().settings, modelOptions));
     setKeyStatus(buildValidationMap(LLM_PROVIDERS));
     setTokenStatus(buildValidationMap(DEPLOY_HOSTS));
@@ -366,7 +318,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     }));
   };
 
-  const handleModelProviderChange = (role: 'chat' | 'builder', provider: ProviderName) => {
+  const handleModelProviderChange = (
+    role: 'chat' | 'builder' | 'critic',
+    provider: ProviderName,
+  ) => {
     updateRuntimeSettings((current) => {
       const normalized = normalizeModelSelection(
         { provider, model: current.llmModels[role].model },
@@ -391,7 +346,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     });
   };
 
-  const handleModelChange = (role: 'chat' | 'builder', model: string) => {
+  const handleModelChange = (
+    role: 'chat' | 'builder' | 'critic',
+    model: string,
+  ) => {
     updateRuntimeSettings((current) => ({
       ...current,
       llmModels: {
@@ -410,7 +368,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   };
 
   const handleOpenAIThinkingChange = (
-    role: 'chat' | 'builder',
+    role: 'chat' | 'builder' | 'critic',
     value: OpenAIReasoningSetting,
   ) => {
     updateRuntimeSettings((current) => ({
@@ -536,7 +494,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               Settings
             </h2>
             <p className="mt-1 text-sm text-slate-400">
-              Keys and tokens stay encrypted in your browser. No server sync.
+              Settings are stored locally in this browser. No server sync.
             </p>
           </div>
           <button
@@ -552,56 +510,34 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           <section className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h3 className="text-sm font-semibold text-slate-100">Encryption Passphrase</h3>
+                <h3 className="text-sm font-semibold text-slate-100">Local Settings</h3>
                 <p className="mt-1 text-xs text-slate-400">
-                  Passphrase never leaves your browser. Minimum {MIN_PASSPHRASE_LENGTH} characters.
+                  Password protection is disabled. Persist or clear local settings here.
                 </p>
               </div>
-              {hasStoredSecrets && !isUnlocked && (
-                <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-amber-200">
-                  Stored settings locked
-                </span>
-              )}
             </div>
-            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-              <input
-                type="password"
-                value={passphrase}
-                onChange={(event) => setPassphrase(event.target.value)}
-                placeholder="Enter passphrase to unlock or save"
-                className="w-full rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleUnlock}
-                  disabled={!hasStoredSecrets || !isPassphraseValid || isWorking}
-                  className="rounded-full border border-slate-800/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-emerald-300/60 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Unlock
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={!isPassphraseValid || isWorking}
-                  className="rounded-full bg-emerald-300/90 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-950 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={handleClearStored}
-                  className="rounded-full border border-slate-800/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300 transition hover:border-rose-300/60 hover:text-rose-200"
-                >
-                  Clear
-                </button>
-              </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isWorking}
+                className="rounded-full bg-emerald-300/90 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-950 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={handleClearStored}
+                className="rounded-full border border-slate-800/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300 transition hover:border-rose-300/60 hover:text-rose-200"
+              >
+                Clear
+              </button>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
               <span>
                 {storedUpdatedAt
                   ? `Last saved ${formatLongDate(storedUpdatedAt)}`
-                  : 'No encrypted settings saved yet.'}
+                  : 'No local settings saved yet.'}
               </span>
               <span>Validation pings run locally in this prototype.</span>
             </div>
@@ -696,7 +632,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
           <section role="tabpanel" hidden={activeTab !== 'models'}>
             <p className="text-sm text-slate-300">{TABS[1].description}</p>
-            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="mt-4 grid gap-4 lg:grid-cols-3">
               <ModelCard
                 title="Chat model"
                 selection={settings.llmModels.chat}
@@ -713,6 +649,15 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 onModelChange={(model) => handleModelChange('builder', model)}
                 thinkingLevel={settings.openaiThinking.builder}
                 onThinkingChange={(value) => handleOpenAIThinkingChange('builder', value)}
+                modelOptions={modelOptions}
+              />
+              <ModelCard
+                title="Web Designer model"
+                selection={settings.llmModels.critic}
+                onProviderChange={(provider) => handleModelProviderChange('critic', provider)}
+                onModelChange={(model) => handleModelChange('critic', model)}
+                thinkingLevel={settings.openaiThinking.critic}
+                onThinkingChange={(value) => handleOpenAIThinkingChange('critic', value)}
                 modelOptions={modelOptions}
               />
             </div>
@@ -1187,6 +1132,7 @@ function normalizeSettings(
     llmModels: {
       chat: { ...DEFAULT_SETTINGS.llmModels.chat, ...payload.llmModels?.chat },
       builder: { ...DEFAULT_SETTINGS.llmModels.builder, ...payload.llmModels?.builder },
+      critic: { ...DEFAULT_SETTINGS.llmModels.critic, ...payload.llmModels?.critic },
     },
     openaiThinking: normalizeOpenAIThinkingSettings(payload.openaiThinking),
     updatedAt: payload.updatedAt ?? DEFAULT_SETTINGS.updatedAt,
@@ -1195,6 +1141,7 @@ function normalizeSettings(
   const llmModels = {
     chat: normalizeModelSelection(merged.llmModels.chat, modelOptions),
     builder: normalizeModelSelection(merged.llmModels.builder, modelOptions),
+    critic: normalizeModelSelection(merged.llmModels.critic, modelOptions),
   };
 
   return {
@@ -1217,6 +1164,14 @@ function normalizeSettings(
               merged.openaiThinking.builder,
             )
           : merged.openaiThinking.builder,
+      critic:
+        llmModels.critic.provider === 'openai' &&
+        supportsOpenAIReasoningForModel(llmModels.critic.model)
+          ? normalizeOpenAIReasoningSettingForModel(
+              llmModels.critic.model,
+              merged.openaiThinking.critic,
+            )
+          : merged.openaiThinking.critic,
     },
   };
 }
@@ -1241,6 +1196,7 @@ function normalizeOpenAIThinkingSettings(
   return {
     chat: isOpenAIReasoningSetting(value.chat) ? value.chat : defaults.chat,
     builder: isOpenAIReasoningSetting(value.builder) ? value.builder : defaults.builder,
+    critic: isOpenAIReasoningSetting(value.critic) ? value.critic : defaults.critic,
   };
 }
 
