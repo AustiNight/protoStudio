@@ -45,6 +45,11 @@ type Notice = {
 type SettingsModalProps = {
   open: boolean;
   onClose: () => void;
+  pricingGaps?: {
+    missingByProvider: Record<ProviderName, string[]>;
+    checkedAt: number;
+    sources: string[];
+  } | null;
 };
 
 const VALIDATION_DELAY_MS = 800;
@@ -154,7 +159,7 @@ const DEPLOY_HOST_OPTIONS: Array<{
   },
 ];
 
-export function SettingsModal({ open, onClose }: SettingsModalProps) {
+export function SettingsModal({ open, onClose, pricingGaps = null }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('keys');
   const [notice, setNotice] = useState<Notice | null>(null);
   const [isWorking, setIsWorking] = useState(false);
@@ -165,6 +170,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     () => buildValidationMap(DEPLOY_HOSTS),
   );
   const [isExportingTelemetry, setIsExportingTelemetry] = useState(false);
+  const [isCopyingPricingChecklist, setIsCopyingPricingChecklist] = useState(false);
 
   const telemetrySessionId = useTelemetryStore((state) => state.sessionId);
   const telemetryCounters = useTelemetryStore((state) => state.counters);
@@ -468,7 +474,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
+      className={`fixed inset-0 z-50 overflow-y-auto ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
       aria-hidden={!open}
     >
       <div
@@ -478,7 +484,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         onClick={onClose}
       />
       <div
-        className={`relative mx-auto mt-16 w-[min(96vw,1100px)] rounded-3xl border border-slate-800/80 bg-slate-950/95 shadow-[0_24px_80px_rgba(15,23,42,0.6)] transition duration-200 ${
+        className={`relative mx-auto my-8 flex max-h-[calc(100vh-4rem)] w-[min(96vw,1100px)] flex-col rounded-3xl border border-slate-800/80 bg-slate-950/95 shadow-[0_24px_80px_rgba(15,23,42,0.6)] transition duration-200 ${
           open ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
         }`}
         role="dialog"
@@ -506,7 +512,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           </button>
         </div>
 
-        <div className="space-y-6 px-6 py-5">
+        <div className="space-y-6 overflow-y-auto px-6 py-5">
           <section className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -661,6 +667,26 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 modelOptions={modelOptions}
               />
             </div>
+            <PricingGapPanel
+              pricingGaps={pricingGaps}
+              isCopying={isCopyingPricingChecklist}
+              onCopy={async () => {
+                if (!pricingGaps) {
+                  return;
+                }
+                setIsCopyingPricingChecklist(true);
+                const copied = await copyTextToClipboard(
+                  buildPricingGapChecklist(pricingGaps),
+                );
+                setIsCopyingPricingChecklist(false);
+                setNotice({
+                  tone: copied ? 'success' : 'error',
+                  message: copied
+                    ? 'Pricing gap checklist copied.'
+                    : 'Unable to copy checklist. Clipboard permissions may be blocked.',
+                });
+              }}
+            />
             <div className="mt-4 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 text-xs text-slate-400">
               Models listed here come from the pricing config (last updated {pricingConfig.lastUpdated}).
               Options labeled <span className="text-amber-200">est.</span> use fallback pricing.
@@ -1410,4 +1436,135 @@ function formatShortTime(timestamp: number): string {
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(timestamp));
+}
+
+function PricingGapPanel({
+  pricingGaps,
+  isCopying,
+  onCopy,
+}: {
+  pricingGaps: SettingsModalProps['pricingGaps'];
+  isCopying: boolean;
+  onCopy: () => void;
+}) {
+  const total =
+    (pricingGaps?.missingByProvider.openai.length ?? 0) +
+    (pricingGaps?.missingByProvider.anthropic.length ?? 0) +
+    (pricingGaps?.missingByProvider.google.length ?? 0);
+
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 text-xs text-slate-300">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.25em] text-slate-400">
+            Pricing Gaps
+          </div>
+          <div className="mt-1 text-sm text-slate-100">
+            {total > 0 ? `${total} unpriced model IDs detected` : 'No pricing gaps detected'}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onCopy}
+          disabled={!pricingGaps || total === 0 || isCopying}
+          className="rounded-full border border-slate-700/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-200 transition hover:border-emerald-300/70 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isCopying ? 'Copying' : 'Copy PR Checklist'}
+        </button>
+      </div>
+      {pricingGaps && (
+        <div className="mt-3 space-y-2">
+          <div className="text-[11px] text-slate-400">
+            Checked {formatLongDate(pricingGaps.checkedAt)} · Sources:{' '}
+            {pricingGaps.sources.join(', ')}
+          </div>
+          <ProviderGapRow label="OpenAI" ids={pricingGaps.missingByProvider.openai} />
+          <ProviderGapRow label="Anthropic" ids={pricingGaps.missingByProvider.anthropic} />
+          <ProviderGapRow label="Google" ids={pricingGaps.missingByProvider.google} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProviderGapRow({ label, ids }: { label: string; ids: string[] }) {
+  return (
+    <div className="rounded-xl border border-slate-800/70 bg-slate-950/60 p-3">
+      <div className="flex items-center justify-between">
+        <span className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-slate-400">
+          {label}
+        </span>
+        <span className="text-[11px] text-slate-300">{ids.length}</span>
+      </div>
+      {ids.length === 0 ? (
+        <div className="mt-1 text-[11px] text-slate-500">No gaps</div>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {ids.map((id) => (
+            <span
+              key={`${label}-${id}`}
+              className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[10px] text-amber-100"
+            >
+              {id}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function buildPricingGapChecklist(
+  pricingGaps: NonNullable<SettingsModalProps['pricingGaps']>,
+): string {
+  const lines: string[] = [
+    '# Pricing Metadata Update Checklist',
+    '',
+    `- Checked at: ${new Date(pricingGaps.checkedAt).toISOString()}`,
+    `- Sources: ${pricingGaps.sources.join(', ')}`,
+    '',
+  ];
+  (['openai', 'anthropic', 'google'] as const).forEach((provider) => {
+    const ids = pricingGaps.missingByProvider[provider];
+    lines.push(`## ${provider}`);
+    if (ids.length === 0) {
+      lines.push('- No missing models.');
+    } else {
+      ids.forEach((id) => {
+        lines.push(
+          `- [ ] Add \`${id}\` to \`src/config/model-pricing.json\` with promptPer1K, completionPer1K, sourceUrls, reviewedAt.`,
+        );
+      });
+    }
+    lines.push('');
+  });
+  return lines.join('\n').trim();
+}
+
+async function copyTextToClipboard(value: string): Promise<boolean> {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // fall through
+  }
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return ok;
+  } catch {
+    return false;
+  }
 }

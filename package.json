@@ -15,7 +15,8 @@
     "test:integration": "vitest run tests/integration/",
     "test:e2e": "playwright test",
     "test:watch": "vitest watch tests/unit/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "pricing:check": "node scripts/pricing-calibration-check.js --max-stale-days 45 --verify-sources --check-catalog"
   },
   "dependencies": {
     "idb": "^8.0.0",

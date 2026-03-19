@@ -25,6 +25,7 @@ import type { VfsMetadata, VirtualFileSystem as VfsState } from '@/types/vfs';
 import { studioLog } from '@/utils/studio-logger';
 
 import { ChlorastroliteLoader } from './ChlorastroliteLoader';
+import { OuroborosLoader } from './OuroborosLoader';
 import { DeployButton } from './DeployButton';
 import { StatusBar } from './StatusBar';
 
@@ -89,6 +90,10 @@ const PREVIEW_STAGED_STATE_EVENT = 'preview:staged-state';
 const PREVIEW_IFRAME_SANDBOX = runtimeConfig.previewIframeSandbox;
 const SRC_DOC_PROTOCOLS = ['about:srcdoc', 'about:blank'];
 const PREVIEW_BASE_ORIGIN = 'https://preview.local';
+const LOADER_SESSION_MAP_KEY = 'protoStudio.loader.session.map';
+const LOADER_SEQUENCE_KEY = 'protoStudio.loader.sequence';
+
+type LoaderKind = 'chlorastrolite' | 'ouroboros';
 
 const DEMO_METADATA = {
   title: 'Juniper Clay Studio',
@@ -455,6 +460,7 @@ export function PreviewPanel({
   const [isSwapping, setIsSwapping] = useState(false);
   const [viewport, setViewport] = useState<ViewportMode>('desktop');
   const [deployState, setDeployState] = useState<DeployState>('idle');
+  const [loaderKind, setLoaderKind] = useState<LoaderKind>('chlorastrolite');
   const [deploySummary, setDeploySummary] = useState<DeploySummary | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
   const addMessage = useChatStore((state) => state.addMessage);
@@ -607,6 +613,40 @@ export function PreviewPanel({
       sessionId,
       message: 'Reset preview panel state for active session.',
     });
+  }, [sessionId]);
+
+  useEffect(() => {
+    const selectLoaderForSession = (): LoaderKind => {
+      if (typeof window === 'undefined') {
+        return 'chlorastrolite';
+      }
+      try {
+        const rawMap = window.sessionStorage.getItem(LOADER_SESSION_MAP_KEY);
+        const parsedMap = rawMap ? (JSON.parse(rawMap) as Record<string, LoaderKind>) : {};
+        const existing = parsedMap[sessionId];
+        if (existing === 'chlorastrolite' || existing === 'ouroboros') {
+          return existing;
+        }
+
+        const sequenceRaw = window.localStorage.getItem(LOADER_SEQUENCE_KEY);
+        const sequence = Number.parseInt(sequenceRaw ?? '0', 10);
+        const next = Number.isFinite(sequence) ? sequence + 1 : 1;
+        const selected: LoaderKind = next % 2 === 0 ? 'ouroboros' : 'chlorastrolite';
+        parsedMap[sessionId] = selected;
+        window.sessionStorage.setItem(LOADER_SESSION_MAP_KEY, JSON.stringify(parsedMap));
+        window.localStorage.setItem(LOADER_SEQUENCE_KEY, String(next));
+        return selected;
+      } catch {
+        // Storage can fail in private contexts; fallback to deterministic per-session hash.
+        let hash = 0;
+        for (let i = 0; i < sessionId.length; i += 1) {
+          hash = (hash * 31 + sessionId.charCodeAt(i)) | 0;
+        }
+        return Math.abs(hash) % 2 === 0 ? 'chlorastrolite' : 'ouroboros';
+      }
+    };
+
+    setLoaderKind(selectLoaderForSession());
   }, [sessionId]);
 
   const handleValidate = () => {
@@ -1367,11 +1407,21 @@ export function PreviewPanel({
           </div>
         )}
 
-        <div className="relative flex h-[460px] flex-none items-stretch justify-center overflow-hidden rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900/40 via-slate-900/30 to-slate-950/80 p-4 md:h-[min(72vh,760px)]">
+        <div
+          className={`relative flex h-[460px] flex-none items-stretch justify-center overflow-hidden rounded-2xl border border-slate-800/80 p-4 md:h-[min(72vh,760px)] ${
+            !hasGeneratedPreview
+              ? 'bg-black'
+              : 'bg-gradient-to-br from-slate-900/40 via-slate-900/30 to-slate-950/80'
+          }`}
+        >
           <div className="relative w-full self-stretch" style={frameStyle}>
             {!hasGeneratedPreview ? (
-              <div className="flex h-full items-center justify-center rounded-2xl border border-slate-800/70 bg-slate-950/50 p-4">
-                <ChlorastroliteLoader label="Forging your first preview..." />
+              <div className="flex h-full items-center justify-center rounded-2xl border border-slate-800/70 bg-black p-4">
+                {loaderKind === 'ouroboros' ? (
+                  <OuroborosLoader label="" />
+                ) : (
+                  <ChlorastroliteLoader label="" />
+                )}
               </div>
             ) : (
               <>

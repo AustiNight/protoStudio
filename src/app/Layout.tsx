@@ -8,6 +8,8 @@ import { NewConversationDialog } from '@/components/shared/NewConversationDialog
 import { SessionRecoveryDialog } from '@/components/shared/SessionRecoveryDialog';
 import { SettingsModal } from '@/components/shared/SettingsModal';
 import { supportsOpenAIReasoningForModel } from '@/config/openai-reasoning';
+import pricingConfigRaw from '@/config/model-pricing.json';
+import { isOpenAIModelId } from '@/config/model-pricing-schema';
 import { runtimeConfig } from '@/config/runtime-config';
 import { BuilderLoop, type BacklogController } from '@/engine/builder/builder-loop';
 import { FirstMessagePath } from '@/engine/chat/first-message';
@@ -18,6 +20,7 @@ import {
   getSwapChatMessage,
 } from '@/engine/chat/narration';
 import {
+  type BacklogPreviewContext,
   buildBacklogPrompt,
   evaluateReorder,
   parseBacklogResponse,
@@ -58,7 +61,9 @@ import type { RecoveryState } from '@/types/persistence';
 import type { TelemetrySessionPath } from '@/types/telemetry';
 import type { LLMConfig, LLMProviderName, Session, SessionPath, StudioState } from '@/types/session';
 import type { TemplateConfig } from '@/types/template';
+import type { PricingConfig } from '@/types/pricing';
 import type { VfsSnapshot } from '@/types/vfs';
+import type { TelemetryEvent } from '@/types/telemetry';
 import { studioLog } from '@/utils/studio-logger';
 import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
 
@@ -114,10 +119,10 @@ const AUTO_CRITIC_MIN_ACCEPTABLE_SCORE = 94;
 const AUTO_CRITIC_COOLDOWN_MS = 12_000;
 const AUTO_CRITIC_MIN_DIMENSION_SCORE = 88;
 const AUTO_CRITIC_MAX_NOOP_ROUNDS = 3;
-const AUTO_CRITIC_ROUND1_MIN_ITEMS = 8;
-const AUTO_CRITIC_ROUND1_MAX_ITEMS = 20;
-const AUTO_CRITIC_FOLLOWUP_MIN_ITEMS = 3;
-const AUTO_CRITIC_FOLLOWUP_MAX_ITEMS = 8;
+const AUTO_CRITIC_ROUND1_MIN_ITEMS = 3;
+const AUTO_CRITIC_ROUND1_MAX_ITEMS = 12;
+const AUTO_CRITIC_FOLLOWUP_MIN_ITEMS = 1;
+const AUTO_CRITIC_FOLLOWUP_MAX_ITEMS = 6;
 const USE_MOCK_LLM =
   import.meta.env.MODE === 'e2e' ||
   (import.meta.env.DEV && !runtimeConfig.useRealLlm);
@@ -150,6 +155,8 @@ const BUILDER_PATCH_FORMAT = [
   '}',
   'Do not output alias operation names such as asset.create, file.add, or metadata.update.',
 ].join('\n');
+const PRICING_REVIEW_PING_TIMEOUT_MS = 12_000;
+const pricingConfig = pricingConfigRaw as PricingConfig;
 
 const baseTimestamp = new Date('2025-02-01T18:30:00Z').getTime();
 function buildSampleMessages(sessionId: string): ChatMessage[] {
@@ -690,6 +697,174 @@ function getOnDeckItemFromStore(): WorkItem | null {
     return null;
   }
   return state.items.find((item) => item.id === state.onDeckId) ?? null;
+}
+
+type PricingGapReport = {
+  sessionId: string;
+  missingByProvider: Record<LLMProviderName, string[]>;
+  checkedAt: number;
+  sources: string[];
+};
+
+async function discoverUnpricedOpenAIModels(
+  settings: SettingsPayload,
+): Promise<{ missingModelIds: string[]; source: 'proxy' | 'direct' } | null> {
+  const requestMode = runtimeConfig.openAIRequestMode;
+  const source: 'proxy' | 'direct' = requestMode === 'proxy' ? 'proxy' : 'direct';
+  const endpoint =
+    requestMode === 'proxy'
+      ? `${runtimeConfig.openAIProxyBaseUrl}/v1/models`
+      : 'https://api.openai.com/v1/models';
+  const headers: Record<string, string> = {};
+  if (requestMode === 'direct') {
+    const apiKey = settings.llmKeys.openai.trim();
+    if (!apiKey) {
+      return null;
+    }
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+  const controller = typeof AbortController === 'undefined' ? null : new AbortController();
+  const timeout =
+    controller === null
+      ? null
+      : setTimeout(() => {
+          controller.abort();
+        }, PRICING_REVIEW_PING_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers,
+      signal: controller?.signal,
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const body = (await response.json()) as {
+      data?: Array<{ id?: string }>;
+    };
+    const modelIds = Array.isArray(body.data)
+      ? body.data.map((entry) => entry.id).filter((value): value is string => typeof value === 'string')
+      : [];
+    if (modelIds.length === 0) {
+      return null;
+    }
+    const known = new Set(Object.keys(pricingConfig.models));
+    const missingModelIds = modelIds
+      .filter((modelId) => isOpenAIModelId(modelId))
+      .filter((modelId) => !known.has(modelId))
+      .sort((left, right) => left.localeCompare(right));
+    return { missingModelIds, source };
+  } catch {
+    return null;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+function buildPricingGapReport(
+  settings: SettingsPayload,
+  events: TelemetryEvent[],
+  sessionId: string,
+): PricingGapReport {
+  const known = new Set(Object.keys(pricingConfig.models));
+  const missingByProvider: Record<LLMProviderName, Set<string>> = {
+    openai: new Set<string>(),
+    anthropic: new Set<string>(),
+    google: new Set<string>(),
+  };
+  const sources = new Set<string>(['selection', 'telemetry']);
+
+  const selections = [
+    settings.llmModels.chat,
+    settings.llmModels.builder,
+    settings.llmModels.critic,
+  ];
+  for (const selection of selections) {
+    if (!known.has(selection.model)) {
+      missingByProvider[selection.provider].add(selection.model);
+    }
+  }
+
+  for (const event of events) {
+    if (event.sessionId !== sessionId || event.event !== 'llm.response') {
+      continue;
+    }
+    if (!event.data.unknownModel) {
+      continue;
+    }
+    missingByProvider[event.data.provider].add(event.data.model);
+  }
+
+  return {
+    sessionId,
+    missingByProvider: {
+      openai: Array.from(missingByProvider.openai).sort((a, b) => a.localeCompare(b)),
+      anthropic: Array.from(missingByProvider.anthropic).sort((a, b) => a.localeCompare(b)),
+      google: Array.from(missingByProvider.google).sort((a, b) => a.localeCompare(b)),
+    },
+    checkedAt: Date.now(),
+    sources: Array.from(sources),
+  };
+}
+
+function mergePricingGapReport(
+  base: PricingGapReport,
+  provider: LLMProviderName,
+  models: string[],
+  source: string,
+): PricingGapReport {
+  const merged = new Set([...(base.missingByProvider[provider] ?? []), ...models]);
+  return {
+    sessionId: base.sessionId,
+    missingByProvider: {
+      ...base.missingByProvider,
+      [provider]: Array.from(merged).sort((a, b) => a.localeCompare(b)),
+    },
+    checkedAt: Date.now(),
+    sources: Array.from(new Set([...base.sources, source])),
+  };
+}
+
+function mergePricingGapReports(base: PricingGapReport, incoming: PricingGapReport): PricingGapReport {
+  if (base.sessionId !== incoming.sessionId) {
+    return incoming;
+  }
+  const mergedOpenAI = new Set([
+    ...base.missingByProvider.openai,
+    ...incoming.missingByProvider.openai,
+  ]);
+  const mergedAnthropic = new Set([
+    ...base.missingByProvider.anthropic,
+    ...incoming.missingByProvider.anthropic,
+  ]);
+  const mergedGoogle = new Set([
+    ...base.missingByProvider.google,
+    ...incoming.missingByProvider.google,
+  ]);
+  return {
+    sessionId: base.sessionId,
+    missingByProvider: {
+      openai: Array.from(mergedOpenAI).sort((a, b) => a.localeCompare(b)),
+      anthropic: Array.from(mergedAnthropic).sort((a, b) => a.localeCompare(b)),
+      google: Array.from(mergedGoogle).sort((a, b) => a.localeCompare(b)),
+    },
+    checkedAt: Date.now(),
+    sources: Array.from(new Set([...base.sources, ...incoming.sources])),
+  };
+}
+
+function getPricingGapCount(report: PricingGapReport | null): number {
+  if (!report) {
+    return 0;
+  }
+  return (
+    report.missingByProvider.openai.length +
+    report.missingByProvider.anthropic.length +
+    report.missingByProvider.google.length
+  );
 }
 
 function reorderArray<T>(items: T[], fromIndex: number, toIndex: number): T[] {
@@ -1337,6 +1512,26 @@ type PreviewSwapPayload = {
   routes?: PreviewRouteMap;
 };
 
+function extractPreviewSectionIds(html: string): string[] {
+  const ids = new Set<string>();
+  const markerRegex = /<!--\s*PP:SECTION:([a-z0-9_-]+)\s*-->/gi;
+  for (const match of html.matchAll(markerRegex)) {
+    const sectionId = match[1]?.trim();
+    if (sectionId) {
+      ids.add(sectionId);
+    }
+  }
+  return [...ids];
+}
+
+function buildBacklogPreviewContext(payload: PreviewSwapPayload): BacklogPreviewContext {
+  return {
+    pagePath: payload.pagePath,
+    visibleSections: extractPreviewSectionIds(payload.html),
+    htmlSnippet: payload.html.slice(0, 8_000),
+  };
+}
+
 function buildPreviewRouteMap(vfs: VirtualFileSystem): PreviewRouteMap {
   const routeMap: PreviewRouteMap = {};
   const htmlFiles = vfs
@@ -1452,7 +1647,13 @@ export function Layout() {
   const [blockedTrayOpen, setBlockedTrayOpen] = useState(false);
   const [manualCriticQueued, setManualCriticQueued] = useState(false);
   const [manualCriticRunning, setManualCriticRunning] = useState(false);
+  const [pricingGapReport, setPricingGapReport] = useState<PricingGapReport | null>(null);
+  const [chatComposerHeightBounds, setChatComposerHeightBounds] = useState({
+    min: 220,
+    max: 440,
+  });
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatPanelRef = useRef<HTMLElement | null>(null);
   const revertTimerRef = useRef<number | null>(null);
   const deniedTimerRef = useRef<number | null>(null);
   const telemetryInitializedRef = useRef(false);
@@ -1462,6 +1663,7 @@ export function Layout() {
   const autonomousCriticCooldownUntilRef = useRef(0);
   const autonomousCriticStoppedRef = useRef(false);
   const manualCriticQueuedAtRef = useRef<number | null>(null);
+  const pricingGapNoticeSessionRef = useRef<string | null>(null);
   const sessionCreatedAtRef = useRef(Date.now());
   const sessionPathRef = useRef<SessionPath>('scratch');
   const sessionTemplateIdRef = useRef<string | undefined>(undefined);
@@ -1897,6 +2099,7 @@ export function Layout() {
     async (
       classification: ClassificationResult,
       template: TemplateConfig,
+      previewContext: BacklogPreviewContext,
       gateway: LLMGateway | null,
       providerName: LLMProviderName,
       requestSessionId: string,
@@ -1924,7 +2127,12 @@ export function Layout() {
         attempt += 1;
         const request =
           attempt === 1
-            ? buildBacklogPrompt(classification, template, firstUserMessage)
+            ? buildBacklogPrompt(
+                classification,
+                template,
+                firstUserMessage,
+                previewContext,
+              )
             : {
                 role: 'chat' as const,
                 systemPrompt: [
@@ -2204,6 +2412,7 @@ export function Layout() {
         const manifest = JSON.stringify(vfs.toManifest(), null, 2);
         const html = preview.ok ? preview.value.html.slice(0, 20_000) : '';
         const css = vfs.getFile('styles.css')?.content.slice(0, 20_000) ?? '';
+        const previewSections = extractPreviewSectionIds(html);
 
         const criticTargetRange =
           round === 1
@@ -2229,6 +2438,8 @@ export function Layout() {
             `If done=false, return ${criticTargetRange} actionable, implementation-ready items.`,
             'Do not return placeholder summaries or empty zero-score reports.',
             'Each item must be specific to this site and visibly testable in preview.',
+            'Treat the current preview as the baseline; do not propose scaffold/foundation tasks for sections already visible.',
+            'Recommend only delta improvements from the current preview state.',
             'No markdown or prose wrappers.',
           ].join('\n'),
           messages: [
@@ -2247,6 +2458,9 @@ export function Layout() {
                 manifest,
                 'Rendered HTML snapshot:',
                 html,
+                previewSections.length > 0
+                  ? `Visible preview sections: ${previewSections.join(', ')}`
+                  : 'Visible preview sections: unknown',
                 'Styles snapshot:',
                 css,
                 'Work item item schema:',
@@ -2294,11 +2508,32 @@ export function Layout() {
           }
           if (!quality.valid) {
             const excerpt = invalidPayload.replace(/\s+/g, ' ').trim().slice(0, 180);
-            llmFailureMessage =
-              `Web Designer returned invalid structured output after 3 attempts. ` +
-              `Last issue: ${quality.reason}` +
-              (excerpt ? ` Payload excerpt: "${excerpt}"` : '');
-            envelope = null;
+            const salvageEnvelope = envelope;
+            const salvageSizing = salvageEnvelope
+              ? validateAtomSizing(salvageEnvelope.items)
+              : null;
+            const canSalvage =
+              salvageEnvelope !== null &&
+              salvageEnvelope.items.length > 0 &&
+              (salvageSizing?.valid ?? false);
+            if (canSalvage) {
+              llmFailureMessage =
+                `Web Designer output format drifted after 3 attempts; salvaging actionable tasks. ` +
+                `Last issue: ${quality.reason}`;
+              envelope = {
+                score: salvageEnvelope.score,
+                done: false,
+                summary: salvageEnvelope.summary,
+                dimensions: salvageEnvelope.dimensions,
+                items: salvageEnvelope.items,
+              };
+            } else {
+              llmFailureMessage =
+                `Web Designer returned invalid structured output after 3 attempts. ` +
+                `Last issue: ${quality.reason}` +
+                (excerpt ? ` Payload excerpt: "${excerpt}"` : '');
+              envelope = null;
+            }
           }
         }
       }
@@ -2790,6 +3025,11 @@ export function Layout() {
           pagePath: firstResult.value.preview.pagePath,
           routes: firstResult.value.preview.routes,
         });
+        const previewContext = buildBacklogPreviewContext({
+          html: firstResult.value.preview.html,
+          pagePath: firstResult.value.preview.pagePath,
+          routes: firstResult.value.preview.routes,
+        });
         void telemetry.recordTemplateSelected({
           sessionId: requestSessionId,
           templateId: firstResult.value.template.id,
@@ -2826,6 +3066,7 @@ export function Layout() {
           backlog = await buildInitialBacklog(
             firstResult.value.classification,
             firstResult.value.template,
+            previewContext,
             USE_MOCK_LLM ? null : gateway,
             providerName,
             requestSessionId,
@@ -2911,6 +3152,84 @@ export function Layout() {
       setBacklogItems,
     ],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    const sessionId = activeSessionId;
+    if (!sessionId) {
+      return;
+    }
+    const settings = useSettingsStore.getState().settings;
+    const localReport = buildPricingGapReport(settings, telemetryEvents, sessionId);
+    setPricingGapReport((current) => {
+      if (!current || current.sessionId !== sessionId) {
+        return localReport;
+      }
+      return mergePricingGapReports(current, localReport);
+    });
+    if (pricingGapNoticeSessionRef.current === sessionId) {
+      return;
+    }
+
+    void (async () => {
+      let report = localReport;
+      const openAIReport = await discoverUnpricedOpenAIModels(settings);
+      if (openAIReport) {
+        report = mergePricingGapReport(
+          report,
+          'openai',
+          openAIReport.missingModelIds,
+          `openai_catalog_${openAIReport.source}`,
+        );
+      }
+      if (cancelled) {
+        return;
+      }
+      pricingGapNoticeSessionRef.current = sessionId;
+      setPricingGapReport((current) => {
+        if (!current || current.sessionId !== sessionId) {
+          return report;
+        }
+        return mergePricingGapReports(current, report);
+      });
+      const totalMissing = getPricingGapCount(report);
+      if (totalMissing === 0) {
+        return;
+      }
+      const summaryParts = (
+        [
+          ['OpenAI', report.missingByProvider.openai.length],
+          ['Anthropic', report.missingByProvider.anthropic.length],
+          ['Google', report.missingByProvider.google.length],
+        ] as const
+      )
+        .filter(([, count]) => count > 0)
+        .map(([label, count]) => `${label}: ${count}`);
+      const previewIds = [
+        ...report.missingByProvider.openai,
+        ...report.missingByProvider.anthropic,
+        ...report.missingByProvider.google,
+      ]
+        .slice(0, 5)
+        .join(', ');
+      addFocusedMessage(
+        buildNarrationMessage(
+          sessionId,
+          'system',
+          [
+            `Pricing review required: ${totalMissing} model IDs are missing from local pricing metadata.`,
+            `By provider: ${summaryParts.join(' | ')}`,
+            `Examples: ${previewIds}`,
+            'Open Settings to review and prepare a pricing metadata PR.',
+          ].join('\n'),
+        ),
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, addFocusedMessage, telemetryEvents]);
 
   useEffect(() => {
     if (!hasPreview) {
@@ -3496,6 +3815,35 @@ export function Layout() {
   }, [activeSessionId, telemetryEvents, telemetrySessionId]);
 
   useEffect(() => {
+    const panel = chatPanelRef.current;
+    if (!panel) {
+      return;
+    }
+
+    const recalcBounds = () => {
+      const panelHeight = panel.clientHeight;
+      if (panelHeight <= 0) {
+        return;
+      }
+      const oneThird = Math.round(panelHeight / 3);
+      const twoThirds = Math.round((panelHeight * 2) / 3);
+      setChatComposerHeightBounds({
+        min: Math.max(160, oneThird),
+        max: Math.max(240, twoThirds),
+      });
+    };
+
+    recalcBounds();
+    const observer = new ResizeObserver(() => {
+      recalcBounds();
+    });
+    observer.observe(panel);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!onDeckItem && hasBacklog) {
       promoteNext();
     }
@@ -3806,8 +4154,13 @@ export function Layout() {
         costTotal={sessionCostSummary.totalCost}
         costRoles={sessionCostSummary.roles}
         hasUnknownModel={sessionCostSummary.hasUnknownModel}
+        pricingGapCount={getPricingGapCount(pricingGapReport)}
       />
-      <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <SettingsModal
+        open={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        pricingGaps={pricingGapReport}
+      />
       <SessionRecoveryDialog
         open={isRecoveryOpen}
         recovery={recoveryState}
@@ -3908,6 +4261,7 @@ export function Layout() {
       <main className="relative z-10 mx-auto w-full max-w-[1800px] px-4 pb-10 pt-20">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <section
+            ref={chatPanelRef}
             aria-label="Chat panel"
             className={`${workPanelShell} order-2 lg:order-2`}
           >
@@ -4042,7 +4396,11 @@ export function Layout() {
                       rows={1}
                       aria-label="Chat composer"
                       placeholder={composerHint}
-                      className="min-h-[2.25rem] max-h-32 flex-1 resize-y bg-transparent text-sm text-slate-100 placeholder:text-xs placeholder:uppercase placeholder:tracking-[0.2em] placeholder:text-slate-500 focus:outline-none"
+                      className="flex-1 resize-y overflow-y-auto bg-transparent text-sm text-slate-100 placeholder:text-xs placeholder:uppercase placeholder:tracking-[0.2em] placeholder:text-slate-500 focus:outline-none"
+                      style={{
+                        minHeight: `${chatComposerHeightBounds.min}px`,
+                        maxHeight: `${chatComposerHeightBounds.max}px`,
+                      }}
                       onChange={(event) => {
                         setChatDraft(event.target.value);
                       }}

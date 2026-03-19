@@ -1,7 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const REVIEW_DATE = '2026-03-02';
+const OPENAI_REVIEW_MAX_STALE_DAYS = parseMaxAgeDays(
+  process.env.OPENAI_REVIEW_MAX_STALE_DAYS,
+  45,
+);
+const PRICING_GUARDRAIL_NOW = parseGuardrailNow(process.env.PRICING_GUARDRAIL_NOW);
 const OFFICIAL_OPENAI_HOSTS = new Set(['platform.openai.com', 'developers.openai.com']);
 
 const rootDir = path.join(__dirname, '..');
@@ -185,6 +189,20 @@ function scanModelPricingMetadata() {
     return;
   }
 
+  if (typeof parsed.lastUpdated !== 'string' || !isIsoDate(parsed.lastUpdated)) {
+    addFinding(modelPricingPath, 'lastUpdated must use YYYY-MM-DD format.');
+  } else {
+    const age = daysSinceDate(parsed.lastUpdated, PRICING_GUARDRAIL_NOW);
+    if (age === null) {
+      addFinding(modelPricingPath, 'lastUpdated must be a valid UTC date.');
+    } else if (age > OPENAI_REVIEW_MAX_STALE_DAYS) {
+      addFinding(
+        modelPricingPath,
+        `lastUpdated is ${age} days old; max allowed is ${OPENAI_REVIEW_MAX_STALE_DAYS} days.`,
+      );
+    }
+  }
+
   const models = parsed.models;
   for (const [modelId, pricing] of Object.entries(models)) {
     if (!isOpenAIModelId(modelId)) {
@@ -211,13 +229,64 @@ function scanModelPricingMetadata() {
       }
     }
 
-    if (pricing.reviewedAt !== REVIEW_DATE) {
+    if (!isIsoDate(pricing.reviewedAt)) {
       addFinding(
         modelPricingPath,
-        `OpenAI model ${modelId} must set reviewedAt to ${REVIEW_DATE}.`,
+        `OpenAI model ${modelId} must set reviewedAt as YYYY-MM-DD.`,
+      );
+      continue;
+    }
+
+    const reviewedAge = daysSinceDate(pricing.reviewedAt, PRICING_GUARDRAIL_NOW);
+    if (reviewedAge === null) {
+      addFinding(
+        modelPricingPath,
+        `OpenAI model ${modelId} has invalid reviewedAt date: ${pricing.reviewedAt}.`,
+      );
+      continue;
+    }
+    if (reviewedAge > OPENAI_REVIEW_MAX_STALE_DAYS) {
+      addFinding(
+        modelPricingPath,
+        `OpenAI model ${modelId} reviewedAt is ${reviewedAge} days old; max allowed is ${OPENAI_REVIEW_MAX_STALE_DAYS} days.`,
       );
     }
   }
+}
+
+function isIsoDate(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function daysSinceDate(value, now) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  const diffMs = now.getTime() - date.getTime();
+  if (diffMs < 0) {
+    return 0;
+  }
+  return Math.floor(diffMs / 86_400_000);
+}
+
+function parseMaxAgeDays(raw, fallback) {
+  const value = Number.parseInt(String(raw ?? ''), 10);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return value;
+}
+
+function parseGuardrailNow(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return new Date();
+  }
+  const parsed = new Date(raw.trim());
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date();
+  }
+  return parsed;
 }
 
 function reportAndExit() {

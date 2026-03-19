@@ -8,6 +8,7 @@ type HeaderBarProps = {
   costTotal?: number;
   costRoles?: CostRoleBreakdown[];
   hasUnknownModel?: boolean;
+  pricingGapCount?: number;
 };
 
 export function HeaderBar({
@@ -17,6 +18,7 @@ export function HeaderBar({
   costTotal = 0,
   costRoles = [],
   hasUnknownModel,
+  pricingGapCount = 0,
 }: HeaderBarProps) {
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-800/70 bg-slate-950/80 backdrop-blur">
@@ -35,6 +37,16 @@ export function HeaderBar({
           </div>
         </div>
         <div className="flex items-center gap-2 text-sm text-slate-200">
+          {pricingGapCount > 0 && (
+            <button
+              type="button"
+              onClick={() => onOpenSettings?.()}
+              className="hidden rounded-full border border-amber-300/70 bg-amber-300/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-amber-100 transition hover:bg-amber-300/30 sm:inline-flex"
+              title="New OpenAI models are missing pricing metadata. Open Settings and create/update pricing PR."
+            >
+              Pricing Review {pricingGapCount}
+            </button>
+          )}
           <CostTicker
             className="hidden sm:flex"
             totalCost={costTotal}

@@ -21,10 +21,17 @@ interface BacklogParseOptions {
   now?: () => number;
 }
 
+export interface BacklogPreviewContext {
+  pagePath?: string;
+  visibleSections?: string[];
+  htmlSnippet?: string;
+}
+
 export function buildBacklogPrompt(
   classification: ClassificationResult,
   templateConfig: TemplateConfig,
   userRequest?: string,
+  previewContext?: BacklogPreviewContext,
 ): LLMRequest {
   const templateSummary = buildTemplateSummary(templateConfig);
   const customizationSummary = buildCustomizationSummary(
@@ -32,6 +39,11 @@ export function buildBacklogPrompt(
   );
   const requestSummary = normalizeSentence(userRequest ?? '');
   const gapHints = inferTemplateGapHints(userRequest ?? '', templateConfig);
+  const previewSections =
+    previewContext?.visibleSections && previewContext.visibleSections.length > 0
+      ? previewContext.visibleSections.join(', ')
+      : '';
+  const previewSnippet = previewContext?.htmlSnippet?.trim() ?? '';
   const systemPrompt = [
     'You are the Product Owner (PO) for prontoproto.studio.',
     '',
@@ -76,6 +88,8 @@ export function buildBacklogPrompt(
     '- First 3-5 items must be high-visibility, user-intent-specific improvements (not generic hygiene).',
     '- Generic SEO/performance tasks belong only in lower-priority slots and only when clearly relevant.',
     '- Do not repeat boilerplate tasks that appear on every site unless the request explicitly asks for them.',
+    '- Treat the current preview as the baseline. Do not create scaffold/foundation tasks for pages or sections already present.',
+    '- Focus on the missing deltas between user intent and the current preview.',
     '- Include dependencies so implementation order preserves visible momentum.',
     '',
     'Output format:',
@@ -103,6 +117,9 @@ export function buildBacklogPrompt(
         `Template: ${templateSummary}`,
         customizationSummary ? `Customization hints: ${customizationSummary}` : '',
         `Template sections:\n${formatPageSections(templateConfig)}`,
+        previewContext?.pagePath ? `Current preview page: ${previewContext.pagePath}` : '',
+        previewSections ? `Current preview sections: ${previewSections}` : '',
+        previewSnippet ? `Current preview HTML snapshot (trimmed):\n${previewSnippet}` : '',
         gapHints.length > 0
           ? `Likely template-to-request gaps:\n${gapHints.map((entry) => `- ${entry}`).join('\n')}`
           : '',
