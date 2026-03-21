@@ -51,6 +51,7 @@ const roleLabels: Record<LLMRole, string> = {
   chat: 'Chat AI',
   builder: 'Builder AI',
   critic: 'Web Designer AI',
+  imaging: 'Imaging AI',
 };
 
 function formatUsdCompact(value: number): string {

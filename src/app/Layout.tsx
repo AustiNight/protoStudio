@@ -4,12 +4,12 @@ import { resetChlorastroliteSession } from '@/components/preview/ChlorastroliteL
 import { PreviewPanel } from '@/components/preview/PreviewPanel';
 import { HeaderBar } from '@/components/shared/HeaderBar';
 import { LogViewerPanel } from '@/components/shared/LogViewerPanel';
+import { MediaPanel } from '@/components/shared/MediaPanel';
 import { NewConversationDialog } from '@/components/shared/NewConversationDialog';
 import { SessionRecoveryDialog } from '@/components/shared/SessionRecoveryDialog';
 import { SettingsModal } from '@/components/shared/SettingsModal';
 import { supportsOpenAIReasoningForModel } from '@/config/openai-reasoning';
 import pricingConfigRaw from '@/config/model-pricing.json';
-import { isOpenAIModelId } from '@/config/model-pricing-schema';
 import { runtimeConfig } from '@/config/runtime-config';
 import { BuilderLoop, type BacklogController } from '@/engine/builder/builder-loop';
 import { FirstMessagePath } from '@/engine/chat/first-message';
@@ -27,9 +27,27 @@ import {
   parseWorkItemsResponse,
   validateAtomSizing,
 } from '@/engine/chat/po-logic';
+import { assessImageryEscalation } from '@/engine/content/image-escalation';
 import { buildPreviewSecurityHeaders } from '@/engine/guardrails/guardrails';
+import {
+  clearImageryConsecutiveBlocks,
+  createImageryBlockTracker,
+  formatImageryPauseProgress,
+  formatPauseTrigger,
+  registerImageryBlock,
+  resetImageryBlockTracker,
+} from '@/engine/imagery/block-policy';
+import { detectImageryTargetSlots } from '@/engine/imagery/executor';
+import { generateImageAsset, toGeneratedImageryAssetRecord } from '@/engine/imagery/generation';
+import { fetchPublicDomainImageAsset, fetchPublicDomainImageUrl } from '@/engine/imagery/public-domain';
+import { resolvePricingModelId } from '@/engine/llm/cost';
 import { ContextManager } from '@/engine/llm/context';
 import { LLMGateway } from '@/engine/llm/gateway';
+import { isOpenAIChatCompletionsCapableModelId } from '@/engine/llm/openai-model-support';
+import {
+  getRuntimePricingModels,
+  PRICING_OVERRIDES_UPDATED_EVENT,
+} from '@/engine/llm/pricing-overrides';
 import { OpenAIProvider } from '@/engine/llm/providers/openai';
 import { TEMPLATE_CATALOG } from '@/engine/templates/catalog';
 import { buildPreviewHtml } from '@/engine/vfs/preview';
@@ -38,6 +56,7 @@ import { SessionCheckpoint } from '@/persistence/checkpoint';
 import { useBacklogStore } from '@/store/backlog-store';
 import { useBuildStore } from '@/store/build-store';
 import { useChatStore } from '@/store/chat-store';
+import { useMediaStore } from '@/store/media-store';
 import type { SettingsPayload } from '@/store/settings-store';
 import { useSettingsStore } from '@/store/settings-store';
 import { buildSessionCostSummary, useTelemetryStore } from '@/store/telemetry-store';
@@ -59,6 +78,7 @@ import type {
 import type { BuildPhase } from '@/types/build';
 import type { RecoveryState } from '@/types/persistence';
 import type { TelemetrySessionPath } from '@/types/telemetry';
+import type { ImageryAssetRecord } from '@/types/imagery';
 import type { LLMConfig, LLMProviderName, Session, SessionPath, StudioState } from '@/types/session';
 import type { TemplateConfig } from '@/types/template';
 import type { PricingConfig } from '@/types/pricing';
@@ -67,7 +87,7 @@ import type { TelemetryEvent } from '@/types/telemetry';
 import { studioLog } from '@/utils/studio-logger';
 import { groupChatMessages, type GroupPosition } from '@/utils/chatGrouping';
 
-type PanelKey = 'chat' | 'preview' | 'backlog' | 'logs';
+type PanelKey = 'chat' | 'preview' | 'backlog' | 'media' | 'logs';
 type PreviewSlot = 'blue' | 'green';
 
 const panels: Array<{
@@ -89,6 +109,10 @@ const panels: Array<{
   {
     id: 'logs',
     label: 'Log Viewer',
+  },
+  {
+    id: 'media',
+    label: 'Media Registry',
   },
 ];
 
@@ -155,6 +179,17 @@ const BUILDER_PATCH_FORMAT = [
   '}',
   'Do not output alias operation names such as asset.create, file.add, or metadata.update.',
 ].join('\n');
+
+function isImageryBlockOutcome(atom: WorkItem, blockedCode?: string): boolean {
+  if (blockedCode && blockedCode.startsWith('imagery_')) {
+    return true;
+  }
+  const intent = assessImageryEscalation(
+    `${atom.title} ${atom.description} ${atom.visibleChange}`,
+    'aggressive',
+  );
+  return intent.hasVisualIntent;
+}
 const PRICING_REVIEW_PING_TIMEOUT_MS = 12_000;
 const pricingConfig = pricingConfigRaw as PricingConfig;
 
@@ -280,6 +315,7 @@ function buildLlmConfigFromSettings(settings: SettingsPayload): LLMConfig {
   const chatSelection = settings.llmModels.chat;
   const builderSelection = settings.llmModels.builder;
   const criticSelection = settings.llmModels.critic;
+  const imagingSelection = settings.llmModels.imaging;
 
   return {
     chatModel: buildSelection(
@@ -297,10 +333,16 @@ function buildLlmConfigFromSettings(settings: SettingsPayload): LLMConfig {
       criticSelection.model,
       settings.llmKeys[criticSelection.provider].trim(),
     ),
+    imagingModel: buildSelection(
+      imagingSelection.provider,
+      imagingSelection.model,
+      settings.llmKeys[imagingSelection.provider].trim(),
+    ),
     openAIReasoning: {
       chat: settings.openaiThinking.chat,
       builder: settings.openaiThinking.builder,
       critic: settings.openaiThinking.critic,
+      imaging: settings.openaiThinking.chat,
     },
   };
 }
@@ -749,10 +791,11 @@ async function discoverUnpricedOpenAIModels(
     if (modelIds.length === 0) {
       return null;
     }
-    const known = new Set(Object.keys(pricingConfig.models));
+    const known = new Set(Object.keys(getRuntimePricingModels(pricingConfig.models)));
     const missingModelIds = modelIds
-      .filter((modelId) => isOpenAIModelId(modelId))
+      .filter((modelId) => isOpenAIChatCompletionsCapableModelId(modelId))
       .filter((modelId) => !known.has(modelId))
+      .filter((modelId) => isActionablePricingGapModel('openai', modelId))
       .sort((left, right) => left.localeCompare(right));
     return { missingModelIds, source };
   } catch {
@@ -769,7 +812,7 @@ function buildPricingGapReport(
   events: TelemetryEvent[],
   sessionId: string,
 ): PricingGapReport {
-  const known = new Set(Object.keys(pricingConfig.models));
+  const known = new Set(Object.keys(getRuntimePricingModels(pricingConfig.models)));
   const missingByProvider: Record<LLMProviderName, Set<string>> = {
     openai: new Set<string>(),
     anthropic: new Set<string>(),
@@ -781,9 +824,13 @@ function buildPricingGapReport(
     settings.llmModels.chat,
     settings.llmModels.builder,
     settings.llmModels.critic,
+    settings.llmModels.imaging,
   ];
   for (const selection of selections) {
-    if (!known.has(selection.model)) {
+    if (
+      !known.has(selection.model) &&
+      isActionablePricingGapModel(selection.provider, selection.model)
+    ) {
       missingByProvider[selection.provider].add(selection.model);
     }
   }
@@ -795,7 +842,9 @@ function buildPricingGapReport(
     if (!event.data.unknownModel) {
       continue;
     }
-    missingByProvider[event.data.provider].add(event.data.model);
+    if (isActionablePricingGapModel(event.data.provider, event.data.model)) {
+      missingByProvider[event.data.provider].add(event.data.model);
+    }
   }
 
   return {
@@ -867,6 +916,16 @@ function getPricingGapCount(report: PricingGapReport | null): number {
   );
 }
 
+function isActionablePricingGapModel(
+  provider: LLMProviderName,
+  modelId: string,
+): boolean {
+  if (provider === 'openai' && !isOpenAIChatCompletionsCapableModelId(modelId)) {
+    return false;
+  }
+  return resolvePricingModelId(modelId) !== null;
+}
+
 function reorderArray<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   const next = [...items];
   const [moved] = next.splice(fromIndex, 1);
@@ -918,22 +977,6 @@ function applyQueueOrder(items: WorkItem[], queueOrder: string[]): WorkItem[] {
   });
 
   return nextItems.map((item, index) => ({ ...item, order: index + 1 }));
-}
-
-function pickNextBacklogItem(items: WorkItem[], excludeId: string | null): WorkItem | null {
-  let next: WorkItem | null = null;
-  for (const item of items) {
-    if (item.status !== 'backlog') {
-      continue;
-    }
-    if (excludeId && item.id === excludeId) {
-      continue;
-    }
-    if (!next || item.order < next.order) {
-      next = item;
-    }
-  }
-  return next;
 }
 
 function emitBacklogReorder(fromId: string, toId: string, order: string[]): void {
@@ -1207,6 +1250,56 @@ function upgradePlannedWorkItems(
       source: 'request_planner',
     };
   });
+}
+
+function splitMixedImagerySchemaAtoms(items: WorkItem[]): WorkItem[] {
+  const splitItems: WorkItem[] = [];
+  for (const item of items) {
+    const text = `${item.title} ${item.description} ${item.visibleChange}`.toLowerCase();
+    const mentionsOgImage = /\bog:image\b|\bog image\b|\bopen graph\b/.test(text);
+    const mentionsSchema = /\bschema\b/.test(text);
+    const mentionsImagery = /\bimage\b|\blogo\b|\bthumbnail\b|\bicon\b/.test(text);
+    const isMixed = mentionsSchema && (mentionsOgImage || mentionsImagery);
+    if (!isMixed) {
+      splitItems.push(item);
+      continue;
+    }
+
+    const imageryId = `${item.id}-imagery`;
+    const schemaId = `${item.id}-schema`;
+    const imageryItem: WorkItem = {
+      ...item,
+      id: imageryId,
+      title: 'Replace OG image with branded thumbnail',
+      description:
+        'Update page metadata and visual imagery source assets so og:image and primary branded thumbnail point to concrete image assets.',
+      atomType: 'content',
+      filesTouch: Array.from(new Set([...item.filesTouch, 'index.html'])),
+      visibleChange: 'Open Graph image and branded thumbnail image source are visibly updated.',
+      estimatedLines: Math.max(25, Math.round(item.estimatedLines * 0.6)),
+      effort: inferEffortFromLines(Math.max(25, Math.round(item.estimatedLines * 0.6))),
+      dependencies: item.dependencies.filter((dep) => dep !== item.id),
+    };
+    const schemaItem: WorkItem = {
+      ...item,
+      id: schemaId,
+      title: 'Add business contact schema',
+      description:
+        'Add or update application/ld+json LocalBusiness schema with contact fields and image linkage to align with branding metadata.',
+      atomType: 'integration',
+      filesTouch: Array.from(new Set([...item.filesTouch, 'index.html'])),
+      visibleChange: 'Structured data now includes business contact fields and linked image metadata.',
+      estimatedLines: Math.max(20, Math.round(item.estimatedLines * 0.5)),
+      effort: inferEffortFromLines(Math.max(20, Math.round(item.estimatedLines * 0.5))),
+      dependencies: Array.from(new Set([imageryId, ...item.dependencies.filter((dep) => dep !== item.id)])),
+    };
+    splitItems.push(imageryItem, schemaItem);
+  }
+
+  return splitItems.map((item, index) => ({
+    ...item,
+    order: index + 1,
+  }));
 }
 
 type AutonomousCriticEnvelope = {
@@ -1524,6 +1617,49 @@ function extractPreviewSectionIds(html: string): string[] {
   return [...ids];
 }
 
+function sectionTokens(sectionId: string): string[] {
+  return sectionId
+    .toLowerCase()
+    .split(/[-_]/g)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 3);
+}
+
+function isScaffoldLikeItem(item: WorkItem): boolean {
+  const corpus = `${item.title} ${item.description} ${item.visibleChange}`.toLowerCase();
+  const structureSignals = ['scaffold', 'foundation', 'boilerplate', 'skeleton', 'wireframe'];
+  const buildSignals = ['create', 'set up', 'bootstrap', 'establish'];
+  const targetSignals = ['section', 'layout', 'structure', 'page', 'framework'];
+  const hasStructureSignal = structureSignals.some((signal) => corpus.includes(signal));
+  const hasBuildSignal = buildSignals.some((signal) => corpus.includes(signal));
+  const hasTargetSignal = targetSignals.some((signal) => corpus.includes(signal));
+  return hasStructureSignal || (hasBuildSignal && hasTargetSignal);
+}
+
+function filterPreviewRedundantScaffoldItems(
+  items: WorkItem[],
+  visibleSections: string[] | undefined,
+): WorkItem[] {
+  if (!visibleSections || visibleSections.length === 0) {
+    return items;
+  }
+  const tokenSet = new Set<string>();
+  visibleSections.forEach((sectionId) => {
+    tokenSet.add(sectionId.toLowerCase());
+    sectionTokens(sectionId).forEach((token) => tokenSet.add(token));
+  });
+  return items.filter((item) => {
+    if (!isScaffoldLikeItem(item)) {
+      return true;
+    }
+    const corpus = `${item.title} ${item.description} ${item.visibleChange}`.toLowerCase();
+    const mentionsVisibleSection = Array.from(tokenSet).some((token) =>
+      corpus.includes(token),
+    );
+    return !mentionsVisibleSection;
+  });
+}
+
 function buildBacklogPreviewContext(payload: PreviewSwapPayload): BacklogPreviewContext {
   return {
     pagePath: payload.pagePath,
@@ -1620,7 +1756,6 @@ export function Layout() {
   const insertItemsAfterActive = useBacklogStore((state) => state.insertItemsAfterActive);
   const setBacklogItems = useBacklogStore((state) => state.setItems);
   const updateBacklogItem = useBacklogStore((state) => state.updateItem);
-  const moveBacklogItemToEnd = useBacklogStore((state) => state.moveToEnd);
   const clearBacklog = useBacklogStore((state) => state.clearBacklog);
   const isPaused = useBuildStore((state) => state.isPaused);
   const buildPhase = useBuildStore((state) => state.buildState.phase);
@@ -1648,6 +1783,10 @@ export function Layout() {
   const [manualCriticQueued, setManualCriticQueued] = useState(false);
   const [manualCriticRunning, setManualCriticRunning] = useState(false);
   const [pricingGapReport, setPricingGapReport] = useState<PricingGapReport | null>(null);
+  const [pricingRefreshEpoch, setPricingRefreshEpoch] = useState(0);
+  const addMediaAsset = useMediaStore((state) => state.addAsset);
+  const addMediaAssets = useMediaStore((state) => state.addAssets);
+  const clearMediaAssets = useMediaStore((state) => state.clearAssets);
   const [chatComposerHeightBounds, setChatComposerHeightBounds] = useState({
     min: 220,
     max: 440,
@@ -1667,6 +1806,7 @@ export function Layout() {
   const sessionCreatedAtRef = useRef(Date.now());
   const sessionPathRef = useRef<SessionPath>('scratch');
   const sessionTemplateIdRef = useRef<string | undefined>(undefined);
+  const imageryBlockTrackerRef = useRef(createImageryBlockTracker());
   const isReorderPending = pendingReorder !== null;
 
   const triggerRevertPulse = () => {
@@ -2109,10 +2249,16 @@ export function Layout() {
         const parsed = parseBacklogResponse(buildMockBacklogResponse(template.id), {
           sessionId: requestSessionId,
         });
-        return parsed.map((item) => ({
+        const normalized = parsed.map((item) => ({
           ...item,
           source: item.source ?? 'first_message_planner',
         }));
+        return splitMixedImagerySchemaAtoms(
+          filterPreviewRedundantScaffoldItems(
+            normalized,
+            previewContext.visibleSections,
+          ),
+        );
       }
       if (!gateway) {
         throw new Error('Backlog generation gateway unavailable.');
@@ -2125,6 +2271,7 @@ export function Layout() {
 
       while (attempt < maxAttempts) {
         attempt += 1;
+        const imageryDecision = assessImageryEscalation(firstUserMessage, 'aggressive');
         const request =
           attempt === 1
             ? buildBacklogPrompt(
@@ -2142,6 +2289,9 @@ export function Layout() {
                   '- 8-20 items',
                   '- each item uses atom schema fields',
                   '- each item is implementation-ready and visibly testable',
+                  imageryDecision.shouldEscalate
+                    ? '- include concrete imagery tasks (generated raster assets or SVG assets) when they improve user satisfaction'
+                    : '',
                   '- no markdown, no prose wrapper',
                 ].join('\n'),
                 messages: [
@@ -2150,9 +2300,19 @@ export function Layout() {
                     content: [
                       `User request: ${firstUserMessage}`,
                       `Template: ${template.id}`,
+                      previewContext.pagePath
+                        ? `Current preview page: ${previewContext.pagePath}`
+                        : '',
+                      previewContext.visibleSections &&
+                      previewContext.visibleSections.length > 0
+                        ? `Current preview sections: ${previewContext.visibleSections.join(', ')}`
+                        : '',
                       `Previous payload issue: ${lastReason}`,
                       'Previous malformed payload:',
                       lastRaw.slice(0, 24_000),
+                      previewContext.htmlSnippet
+                        ? `Current preview HTML snapshot (trimmed):\n${previewContext.htmlSnippet}`
+                        : '',
                     ].join('\n\n'),
                   },
                 ],
@@ -2173,10 +2333,16 @@ export function Layout() {
         });
         const quality = validateInitialBacklogPayload(parsed);
         if (quality.valid) {
-          return parsed.map((item) => ({
+          const normalized = parsed.map((item) => ({
             ...item,
             source: item.source ?? 'first_message_planner',
           }));
+          return splitMixedImagerySchemaAtoms(
+            filterPreviewRedundantScaffoldItems(
+              normalized,
+              previewContext.visibleSections,
+            ),
+          );
         }
         lastReason = quality.reason;
       }
@@ -2227,6 +2393,9 @@ export function Layout() {
       }
 
       try {
+        const previewHtml = injectedPreviewHtmlRef.current ?? '';
+        const previewSections = previewHtml ? extractPreviewSectionIds(previewHtml) : [];
+        const imageryDecision = assessImageryEscalation(content, 'aggressive');
         const settings = useSettingsStore.getState().settings;
         const llmConfig = buildLlmConfigFromSettings(settings);
         const providerName = settings.llmModels.chat.provider;
@@ -2246,12 +2415,19 @@ export function Layout() {
             'Each description must mention concrete implementation intent and likely files touched.',
             'Keep total output text roughly similar in length to the user input.',
             'Return JSON object only with shape { "items": [ ... ] }.',
+            'Treat the current preview as baseline; avoid scaffold/foundation tasks for visible sections.',
           ].join('\n'),
           messages: [
             {
               role: 'user',
               content: [
                 `Session request: ${content}`,
+                previewSections.length > 0
+                  ? `Visible preview sections: ${previewSections.join(', ')}`
+                  : 'Visible preview sections: unknown',
+                imageryDecision.shouldEscalate
+                  ? 'Visual intent detected: include at least one concrete imagery task when useful (logo, iconography, illustration, or photo assets).'
+                  : '',
                 'Output shape:',
                 '{ "items": [WorkItemLike] }',
                 'WorkItem schema:',
@@ -2274,10 +2450,13 @@ export function Layout() {
         const parsed = parseWorkItemsResponse(response.value, {
           sessionId: activeSessionId,
         });
-        if (parsed.length === 0) {
+        const filtered = filterPreviewRedundantScaffoldItems(parsed, previewSections);
+        if (filtered.length === 0) {
           return buildFallback();
         }
-        return upgradePlannedWorkItems(parsed, content, activeSessionId);
+        return splitMixedImagerySchemaAtoms(
+          upgradePlannedWorkItems(filtered, content, activeSessionId),
+        );
       } catch {
         return buildFallback();
       }
@@ -2339,6 +2518,7 @@ export function Layout() {
       );
       let envelope: AutonomousCriticEnvelope | null = null;
       let llmFailureMessage: string | null = null;
+      let previewSections: string[] = [];
 
       if (USE_MOCK_LLM) {
         envelope = {
@@ -2412,7 +2592,7 @@ export function Layout() {
         const manifest = JSON.stringify(vfs.toManifest(), null, 2);
         const html = preview.ok ? preview.value.html.slice(0, 20_000) : '';
         const css = vfs.getFile('styles.css')?.content.slice(0, 20_000) ?? '';
-        const previewSections = extractPreviewSectionIds(html);
+        previewSections = extractPreviewSectionIds(html);
 
         const criticTargetRange =
           round === 1
@@ -2559,15 +2739,20 @@ export function Layout() {
           source: 'web_designer' as WorkItemSource,
         }),
       );
+      const filteredSafeItems = filterPreviewRedundantScaffoldItems(
+        safeItems,
+        previewSections,
+      );
+      const normalizedSafeItems = splitMixedImagerySchemaAtoms(filteredSafeItems);
       const rawItemCount = envelope.items.length;
-      const acceptedCount = safeItems.length;
+      const acceptedCount = normalizedSafeItems.length;
       const rejectedCount = Math.max(0, rawItemCount - acceptedCount);
       const dimensionsSummary = envelope.dimensions
         ? `ux ${envelope.dimensions.ux}, visual ${envelope.dimensions.visual}, accessibility ${envelope.dimensions.accessibility}, trust ${envelope.dimensions.trust}, conversion ${envelope.dimensions.conversion}, performance ${envelope.dimensions.performance}`
         : 'dimensions unavailable';
 
-      if (safeItems.length > 0) {
-        insertItemsAfterActive(safeItems);
+      if (normalizedSafeItems.length > 0) {
+        insertItemsAfterActive(normalizedSafeItems);
         autonomousCriticNoopRoundsRef.current = 0;
         addFocusedMessage(
           buildNarrationMessage(
@@ -2576,11 +2761,11 @@ export function Layout() {
             [
               `Web Designer review ${round}/${AUTO_CRITIC_MAX_ROUNDS} summary:`,
               `- Score ${envelope.score}; ${dimensionsSummary}.`,
-              `- Findings: ${rawItemCount} proposed, ${acceptedCount} queued${rejectedCount > 0 ? `, ${rejectedCount} filtered by validation` : ''}.`,
+              `- Findings: ${rawItemCount} proposed, ${acceptedCount} queued${rejectedCount > 0 ? `, ${rejectedCount} filtered by validation/baseline` : ''}.`,
               `- Top finding: ${envelope.summary}`,
               'Review backlog content/order, delete anything you do not want, then unpause when satisfied.',
             ].join('\n'),
-            safeItems[0]?.id ?? null,
+            normalizedSafeItems[0]?.id ?? null,
           ),
         );
       } else {
@@ -2607,12 +2792,12 @@ export function Layout() {
         );
       const doneByScore =
         envelope.score >= AUTO_CRITIC_MIN_ACCEPTABLE_SCORE &&
-        safeItems.length === 0 &&
+        normalizedSafeItems.length === 0 &&
         dimensionsMeetFloor;
       const doneByReviewer =
         envelope.done &&
         envelope.score >= AUTO_CRITIC_MIN_ACCEPTABLE_SCORE &&
-        safeItems.length === 0 &&
+        normalizedSafeItems.length === 0 &&
         dimensionsMeetFloor;
       const doneByNoop =
         autonomousCriticNoopRoundsRef.current >= AUTO_CRITIC_MAX_NOOP_ROUNDS &&
@@ -2659,6 +2844,8 @@ export function Layout() {
     const settings = useSettingsStore.getState().settings;
     const llmConfig = buildLlmConfigFromSettings(settings);
     const providerName = settings.llmModels.builder.provider;
+    const imagingSelection = settings.llmModels.imaging;
+    const imagingApiKey = settings.llmKeys[imagingSelection.provider].trim();
     const telemetry = useTelemetryStore.getState();
     studioLog({
       level: 'debug',
@@ -2787,6 +2974,105 @@ export function Layout() {
     });
 
     const previewPayloadRef: { current: PreviewSwapPayload | null } = { current: null };
+    const resolvePublicDomainAsset = async (
+      query: string,
+    ): Promise<ImageryAssetRecord | null> => {
+        const result = await fetchPublicDomainImageAsset(query);
+        if (!result.ok) {
+          studioLog({
+            level: 'warn',
+            source: 'imagery.public-domain',
+            sessionId: requestSessionId,
+            message: 'Public-domain image lookup failed.',
+            details: {
+              query,
+              error: result.error,
+            },
+          });
+          return null;
+        }
+        const asset = {
+          ...result.value,
+          sessionId: requestSessionId,
+          query,
+          targetSlots: result.value.targetSlots,
+        };
+        addMediaAsset(asset);
+        return asset;
+      };
+    const resolveGeneratedAsset = async (
+      prompt: string,
+    ): Promise<ImageryAssetRecord | null> => {
+      const generated = await generateImageAsset({
+        provider: imagingSelection.provider,
+        model: imagingSelection.model,
+        prompt,
+        requestMode: runtimeConfig.openAIRequestMode,
+        proxyBaseUrl: runtimeConfig.openAIProxyBaseUrl,
+        apiKey: shouldRequireClientApiKey(imagingSelection.provider)
+          ? imagingApiKey
+          : undefined,
+      });
+      if (!generated.ok) {
+        studioLog({
+          level: 'warn',
+          source: 'imagery.generation',
+          sessionId: requestSessionId,
+          message: 'Image generation failed.',
+          details: {
+            prompt,
+            provider: imagingSelection.provider,
+            model: imagingSelection.model,
+            error: generated.error,
+          },
+        });
+        return null;
+      }
+      void telemetry.recordImagingUsage({
+        sessionId: requestSessionId,
+        provider: generated.value.provider,
+        model: generated.value.model,
+        cost: generated.value.estimatedCostUsd,
+        latencyMs: generated.value.latencyMs,
+        unknownModel: false,
+      });
+      const asset: ImageryAssetRecord = {
+        ...toGeneratedImageryAssetRecord(generated.value, prompt),
+        sessionId: requestSessionId,
+        targetSlots: ['general'],
+      };
+      addMediaAsset(asset);
+      return asset;
+    };
+    const imageryResolver = {
+      resolvePublicDomainAsset,
+      resolvePublicDomain: async (query: string): Promise<string | null> => {
+        const asset = await resolvePublicDomainAsset(query);
+        if (asset) {
+          return asset.source;
+        }
+        const result = await fetchPublicDomainImageUrl(query);
+        if (!result.ok) {
+          studioLog({
+            level: 'warn',
+            source: 'imagery.public-domain',
+            sessionId: requestSessionId,
+            message: 'Public-domain image lookup failed.',
+            details: {
+              query,
+              error: result.error,
+            },
+          });
+          return null;
+        }
+        return result.value;
+      },
+      resolveGeneratedAsset,
+      resolveGenerated: async (prompt: string): Promise<string | null> => {
+        const asset = await resolveGeneratedAsset(prompt);
+        return asset?.source ?? null;
+      },
+    };
     const backlogController: BacklogController = {
       getOnDeck: () =>
         activeSessionIdRef.current === requestSessionId ? getOnDeckItemFromStore() : null,
@@ -2836,6 +3122,7 @@ export function Layout() {
           .getState()
           .messages.filter((message) => message.sessionId === requestSessionId),
         preview: previewAdapter,
+        imagery: imageryResolver,
         guardrails: {
           deploy: {
             selectedHost: 'github_pages',
@@ -2879,11 +3166,119 @@ export function Layout() {
             attempts: result.value.attempts,
           },
         });
+        if (result.value.status === 'success' && result.value.atom) {
+          if (
+            (result.value.imageryAssets && result.value.imageryAssets.length > 0) ||
+            assessImageryEscalation(
+              `${result.value.atom.title} ${result.value.atom.description} ${result.value.atom.visibleChange}`,
+              'aggressive',
+            ).hasVisualIntent
+          ) {
+            imageryBlockTrackerRef.current = clearImageryConsecutiveBlocks(
+              imageryBlockTrackerRef.current,
+            );
+          }
+          if (result.value.imageryAssets && result.value.imageryAssets.length > 0) {
+            addMediaAssets(
+              result.value.imageryAssets.map((asset) => ({
+                ...asset,
+                sessionId: requestSessionId,
+                workItemId: result.value.atom?.id ?? asset.workItemId,
+              })),
+            );
+          }
+          addFocusedMessage(
+            buildNarrationMessage(
+              requestSessionId,
+              'chat_ai',
+              getSwapChatMessage(result.value.atom),
+              result.value.atom.id,
+            ),
+          );
+        }
+        if (result.value.status === 'skipped' && result.value.atom) {
+          const nextAtom = getOnDeckItemFromStore();
+          addFocusedMessage(
+            buildNarrationMessage(
+              requestSessionId,
+              'chat_ai',
+              [
+                getSkipChatMessage(result.value.atom, nextAtom),
+                result.value.skipReason
+                  ? `Skip reason: ${result.value.skipReason}`
+                  : '',
+              ]
+                .filter((line) => line.length > 0)
+                .join('\n\n'),
+              result.value.atom.id,
+            ),
+          );
+        }
+        if (result.value.status === 'blocked' && result.value.atom) {
+          if (result.value.imageryAssets && result.value.imageryAssets.length > 0) {
+            addMediaAssets(
+              result.value.imageryAssets.map((asset) => ({
+                ...asset,
+                sessionId: requestSessionId,
+                workItemId: result.value.atom?.id ?? asset.workItemId,
+              })),
+            );
+          }
+          const imageryBlocked = isImageryBlockOutcome(
+            result.value.atom,
+            result.value.blockedCode,
+          );
+          const settingsSnapshot = useSettingsStore.getState().settings;
+          let shouldPause = !imageryBlocked;
+          let thresholdNarration = '';
+          let triggerNarration = '';
+          if (imageryBlocked) {
+            const decision = registerImageryBlock({
+              mode: settingsSnapshot.imageryPauseMode,
+              tracker: imageryBlockTrackerRef.current,
+              intentText: `${result.value.atom.title} ${result.value.atom.description} ${result.value.atom.visibleChange}`,
+              slots: detectImageryTargetSlots(result.value.atom),
+            });
+            imageryBlockTrackerRef.current = decision.nextTracker;
+            shouldPause = decision.shouldPause;
+            thresholdNarration = formatImageryPauseProgress(
+              settingsSnapshot.imageryPauseMode,
+              decision,
+            );
+            if (decision.shouldPause) {
+              triggerNarration = `Pause trigger: ${formatPauseTrigger(decision.trigger)}.`;
+            }
+          }
+          if (shouldPause) {
+            useBuildStore.getState().pauseBuild();
+          }
+          addFocusedMessage(
+            buildNarrationMessage(
+              requestSessionId,
+              'chat_ai',
+              [
+                `Blocked: "${result.value.atom.title}"`,
+                result.value.skipReason ?? 'The task was blocked after retries.',
+                result.value.blockedCode
+                  ? `Blocked code: ${result.value.blockedCode}`
+                  : '',
+                thresholdNarration,
+                triggerNarration,
+                shouldPause
+                  ? 'Automation is paused. Review the Media Registry, adjust assets if needed, then resume.'
+                  : 'Automation continues under the current imagery auto-pause threshold.',
+              ]
+                .filter((line) => line.length > 0)
+                .join('\n\n'),
+              result.value.atom.id,
+            ),
+          );
+        }
       }
     } finally {
       builderRunningRef.current = false;
     }
-  }, [addFocusedMessage, emitPreviewSwap]);
+  }, [addFocusedMessage, addMediaAsset, addMediaAssets, emitPreviewSwap]);
 
   const runFirstMessageFlow = useCallback(
     async (firstUserMessage: string) => {
@@ -3154,6 +3549,22 @@ export function Layout() {
   );
 
   useEffect(() => {
+    const onPricingOverridesUpdated = () => {
+      setPricingRefreshEpoch((current) => current + 1);
+    };
+    window.addEventListener(
+      PRICING_OVERRIDES_UPDATED_EVENT,
+      onPricingOverridesUpdated as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        PRICING_OVERRIDES_UPDATED_EVENT,
+        onPricingOverridesUpdated as EventListener,
+      );
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     const sessionId = activeSessionId;
     if (!sessionId) {
@@ -3196,40 +3607,12 @@ export function Layout() {
       if (totalMissing === 0) {
         return;
       }
-      const summaryParts = (
-        [
-          ['OpenAI', report.missingByProvider.openai.length],
-          ['Anthropic', report.missingByProvider.anthropic.length],
-          ['Google', report.missingByProvider.google.length],
-        ] as const
-      )
-        .filter(([, count]) => count > 0)
-        .map(([label, count]) => `${label}: ${count}`);
-      const previewIds = [
-        ...report.missingByProvider.openai,
-        ...report.missingByProvider.anthropic,
-        ...report.missingByProvider.google,
-      ]
-        .slice(0, 5)
-        .join(', ');
-      addFocusedMessage(
-        buildNarrationMessage(
-          sessionId,
-          'system',
-          [
-            `Pricing review required: ${totalMissing} model IDs are missing from local pricing metadata.`,
-            `By provider: ${summaryParts.join(' | ')}`,
-            `Examples: ${previewIds}`,
-            'Open Settings to review and prepare a pricing metadata PR.',
-          ].join('\n'),
-        ),
-      );
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, addFocusedMessage, telemetryEvents]);
+  }, [activeSessionId, pricingRefreshEpoch, telemetryEvents]);
 
   useEffect(() => {
     if (!hasPreview) {
@@ -3871,46 +4254,6 @@ export function Layout() {
       return;
     }
 
-    if (buildPhase === 'skipping') {
-      if (current.status === 'blocked') {
-        return;
-      }
-      const loweredError = (buildError ?? '').toLowerCase();
-      const shouldBlock =
-        loweredError.includes('intent validation failed') ||
-        loweredError.includes('exceeded') ||
-        loweredError.includes('color change');
-      if (shouldBlock) {
-        updateBacklogItem(current.id, {
-          status: 'blocked',
-          blockedCode: 'intent_unmet',
-          blockedReason: buildError ?? 'Validation failed repeatedly.',
-        });
-        return;
-      }
-      if (current.status !== 'backlog') {
-        updateBacklogItem(current.id, {
-          status: 'backlog',
-          blockedCode: undefined,
-          blockedReason: undefined,
-        });
-      }
-      if (backlogItems[backlogItems.length - 1]?.id !== current.id) {
-        moveBacklogItemToEnd(current.id);
-      }
-      if (onDeckItem?.id === current.id) {
-        promoteNext();
-      }
-      return;
-    }
-
-    if (buildPhase === 'swapping') {
-      if (current.status !== 'done') {
-        updateBacklogItem(current.id, { status: 'done' });
-      }
-      return;
-    }
-
     if (buildPhase !== 'idle' && current.status !== 'in_progress') {
       updateBacklogItem(current.id, { status: 'in_progress' });
     }
@@ -3919,9 +4262,6 @@ export function Layout() {
     buildAtom,
     buildPhase,
     buildError,
-    moveBacklogItemToEnd,
-    onDeckItem?.id,
-    promoteNext,
     updateBacklogItem,
   ]);
 
@@ -3964,32 +4304,6 @@ export function Layout() {
       return;
     }
 
-    if (buildPhase === 'swapping' && buildAtom) {
-      addFocusedMessage(
-        buildNarrationMessage(
-          activeSessionId,
-          'chat_ai',
-          getSwapChatMessage(buildAtom),
-          buildAtom.id,
-        ),
-      );
-    }
-
-    if (buildPhase === 'skipping' && buildAtom) {
-      const nextAtom =
-        onDeckItem && onDeckItem.id !== buildAtom.id
-          ? onDeckItem
-          : pickNextBacklogItem(backlogItems, buildAtom.id);
-      addFocusedMessage(
-        buildNarrationMessage(
-          activeSessionId,
-          'chat_ai',
-          getSkipChatMessage(buildAtom, nextAtom),
-          buildAtom.id,
-        ),
-      );
-    }
-
     if (buildPhase === 'error') {
       const errorMessage = buildError ?? 'Unexpected build error.';
       addFocusedMessage(
@@ -4025,10 +4339,88 @@ export function Layout() {
     });
   }, [groupedMessages.length, isTyping]);
 
+  const replaceMediaSource = useCallback(
+    async (oldSource: string, nextSource: string) => {
+      const vfs = workingVfsRef.current;
+      if (!vfs) {
+        return;
+      }
+      const from = oldSource.trim();
+      const to = nextSource.trim();
+      if (!from || !to || from === to) {
+        return;
+      }
+      let touched = 0;
+      for (const path of vfs.listFiles()) {
+        if (!/\.(html|css)$/i.test(path)) {
+          continue;
+        }
+        const file = vfs.getFile(path);
+        if (!file) {
+          continue;
+        }
+        if (!file.content.includes(from)) {
+          continue;
+        }
+        const next = file.content.split(from).join(to);
+        if (next !== file.content) {
+          await vfs.updateFile(path, next);
+          touched += 1;
+        }
+      }
+      if (touched === 0) {
+        addFocusedMessage(
+          buildNarrationMessage(
+            activeSessionId,
+            'chat_ai',
+            'No matching media references were found for replacement.',
+          ),
+        );
+        return;
+      }
+      const preview = buildPreviewHtml(vfs);
+      if (preview.ok) {
+        emitPreviewSwap({
+          html: preview.value.html,
+          pagePath: preview.value.pagePath,
+          routes: preview.value.routes,
+        });
+      }
+      addMediaAsset({
+        id: `asset-manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        sessionId: activeSessionId,
+        source: to,
+        provenance: 'manual',
+        targetSlots: ['general'],
+        createdAt: Date.now(),
+      });
+      imageryBlockTrackerRef.current = clearImageryConsecutiveBlocks(
+        imageryBlockTrackerRef.current,
+      );
+      addFocusedMessage(
+        buildNarrationMessage(
+          activeSessionId,
+          'chat_ai',
+          `Media source replaced in ${touched} file(s) and preview refreshed.`,
+        ),
+      );
+    },
+    [activeSessionId, addFocusedMessage, addMediaAsset, emitPreviewSwap],
+  );
+
   const handleStartNewConversation = () => {
     if (isResetting) return;
     setIsResetDialogOpen(true);
   };
+
+  const handlePauseToggle = useCallback(() => {
+    if (isPaused) {
+      imageryBlockTrackerRef.current = clearImageryConsecutiveBlocks(
+        imageryBlockTrackerRef.current,
+      );
+    }
+    togglePause();
+  }, [isPaused, togglePause]);
 
   const resetTransientUi = () => {
     if (revertTimerRef.current) {
@@ -4058,6 +4450,8 @@ export function Layout() {
     clearMessages();
     setChatDraft('');
     clearBacklog();
+    clearMediaAssets();
+    imageryBlockTrackerRef.current = resetImageryBlockTracker();
     resetBuild();
     resetTransientUi();
     narrationRef.current = null;
@@ -4112,6 +4506,8 @@ export function Layout() {
     setMessages(conversation);
     setChatDraft('');
     setBacklogItems(backlog);
+    clearMediaAssets();
+    imageryBlockTrackerRef.current = resetImageryBlockTracker();
     const restoredVfs = hydrateVfsFromSnapshot(vfsSnapshot);
     workingVfsRef.current = restoredVfs;
     const restoredPreview = buildPreviewHtml(restoredVfs);
@@ -4466,7 +4862,7 @@ export function Layout() {
                 )}
                 <button
                   type="button"
-                  onClick={togglePause}
+                  onClick={handlePauseToggle}
                   className="rounded-full border border-slate-800/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300 transition hover:border-emerald-300/70 hover:text-emerald-200"
                 >
                   {isPaused ? 'Resume' : 'Pause'}
@@ -4887,10 +5283,22 @@ export function Layout() {
               </div>
             </div>
           </section>
+          <section
+            aria-label="Media registry panel"
+            className={`${logsPanelShell} order-4 lg:order-4 lg:col-span-2`}
+          >
+            <MediaPanel
+              label={panels[4].label}
+              sessionId={activeSessionId}
+              onReplaceSource={(oldSource, nextSource) => {
+                void replaceMediaSource(oldSource, nextSource);
+              }}
+            />
+          </section>
           {runtimeConfig.logViewerEnabled && (
             <section
               aria-label="Log viewer panel"
-              className={`${logsPanelShell} order-4 lg:order-4 lg:col-span-2`}
+              className={`${logsPanelShell} order-5 lg:order-5 lg:col-span-2`}
             >
               <LogViewerPanel
                 label={panels[3].label}

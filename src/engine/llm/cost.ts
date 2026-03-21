@@ -2,6 +2,7 @@ import pricingConfigJson from '../../config/model-pricing.json';
 import { isPricingConfig } from '../../config/model-pricing-schema';
 import type { CostCalculation } from '../../types/llm';
 import type { ModelPricing, PricingConfig, TokenUsage } from '../../types/pricing';
+import { getRuntimePricingModels } from './pricing-overrides';
 
 const pricingConfig = normalizePricingConfig(pricingConfigJson);
 const EXPLICIT_MODEL_PRICE_ALIASES: Record<string, string> = {
@@ -60,12 +61,13 @@ interface ResolvedPricingModel extends PricingResolution {
 }
 
 function resolvePricingModel(model: string): ResolvedPricingModel | null {
+  const runtimeModels = getRuntimePricingModels(pricingConfig.models);
   const normalized = normalizeModelId(model);
   if (!normalized) {
     return null;
   }
 
-  const exactRates = pricingConfig.models[normalized];
+  const exactRates = runtimeModels[normalized];
   if (exactRates) {
     return {
       modelId: normalized,
@@ -76,7 +78,7 @@ function resolvePricingModel(model: string): ResolvedPricingModel | null {
 
   const explicitAlias = EXPLICIT_MODEL_PRICE_ALIASES[normalized];
   if (explicitAlias) {
-    const aliasRates = pricingConfig.models[explicitAlias];
+    const aliasRates = runtimeModels[explicitAlias];
     if (aliasRates) {
       return {
         modelId: explicitAlias,
@@ -88,7 +90,7 @@ function resolvePricingModel(model: string): ResolvedPricingModel | null {
 
   const trimmedLatest = stripLatestSuffix(normalized);
   if (trimmedLatest !== normalized) {
-    const latestRates = pricingConfig.models[trimmedLatest];
+    const latestRates = runtimeModels[trimmedLatest];
     if (latestRates) {
       return {
         modelId: trimmedLatest,
@@ -100,7 +102,7 @@ function resolvePricingModel(model: string): ResolvedPricingModel | null {
 
   const strippedVersion = stripNumericVersionSuffix(trimmedLatest);
   if (strippedVersion !== trimmedLatest) {
-    const versionRates = pricingConfig.models[strippedVersion];
+    const versionRates = runtimeModels[strippedVersion];
     if (versionRates) {
       return {
         modelId: strippedVersion,
@@ -112,7 +114,7 @@ function resolvePricingModel(model: string): ResolvedPricingModel | null {
 
   const prefixFallback = resolveLongestKnownPrefix(strippedVersion);
   if (prefixFallback) {
-    const prefixRates = pricingConfig.models[prefixFallback];
+    const prefixRates = runtimeModels[prefixFallback];
     if (prefixRates) {
       return {
         modelId: prefixFallback,
@@ -124,7 +126,7 @@ function resolvePricingModel(model: string): ResolvedPricingModel | null {
 
   const familyFallback = resolveOpenAIFamilyFallback(strippedVersion);
   if (familyFallback) {
-    const familyRates = pricingConfig.models[familyFallback];
+    const familyRates = runtimeModels[familyFallback];
     if (familyRates) {
       return {
         modelId: familyFallback,
@@ -146,11 +148,12 @@ function stripLatestSuffix(model: string): string {
 }
 
 function stripNumericVersionSuffix(model: string): string {
+  const runtimeModels = getRuntimePricingModels(pricingConfig.models);
   let candidate = model;
   while (/-\d{2,}$/i.test(candidate)) {
     const next = candidate.replace(/-\d{2,}$/i, '');
     candidate = next;
-    if (candidate in pricingConfig.models) {
+    if (candidate in runtimeModels) {
       return candidate;
     }
   }
@@ -158,13 +161,15 @@ function stripNumericVersionSuffix(model: string): string {
 }
 
 function resolveLongestKnownPrefix(model: string): string | null {
-  const candidates = Object.keys(pricingConfig.models)
+  const runtimeModels = getRuntimePricingModels(pricingConfig.models);
+  const candidates = Object.keys(runtimeModels)
     .filter((known) => model.startsWith(`${known}-`))
     .sort((left, right) => right.length - left.length);
   return candidates[0] ?? null;
 }
 
 function resolveOpenAIFamilyFallback(model: string): string | null {
+  const runtimeModels = getRuntimePricingModels(pricingConfig.models);
   const gptMatch = /^gpt-(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-.+)?$/i.exec(model);
   if (gptMatch) {
     const major = gptMatch[1];
@@ -175,7 +180,7 @@ function resolveOpenAIFamilyFallback(model: string): string | null {
     ].filter((candidate): candidate is string => Boolean(candidate));
 
     for (const candidate of candidates) {
-      if (candidate in pricingConfig.models) {
+      if (candidate in runtimeModels) {
         return candidate;
       }
     }

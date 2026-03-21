@@ -485,4 +485,28 @@ describe('PatchEngine', () => {
     expect(js).toContain('PP:FUNC:perf-init');
     expect(js).toContain('function perfInit(){return true;}');
   });
+
+  it('should remap missing css file path to canonical stylesheet for css.append', async () => {
+    const vfs = await createVfsFromFixture();
+    const patch = {
+      workItemId: 'WI-css-remap-missing-path',
+      targetVersion: 1,
+      operations: [
+        {
+          op: 'css.append',
+          file: 'src/styles/navigation.css',
+          blockId: 'header-branding-nav-colors',
+          css: '.nav{color:#111;}',
+          ifVersion: 1,
+        },
+      ],
+    } as unknown as BuildPatch;
+
+    const result = await engine.apply(vfs, patch);
+
+    expect(result.success).toBe(true);
+    const css = vfs.getFile('styles.css')?.content ?? '';
+    expect(css).toContain('PP:BLOCK:header-branding-nav-colors');
+    expect(css).toContain('.nav{color:#111;}');
+  });
 });

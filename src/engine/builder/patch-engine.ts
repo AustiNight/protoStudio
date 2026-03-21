@@ -67,7 +67,7 @@ function normalizeOperation(
     ['file', 'path', 'filePath', 'targetFile', 'targetPath', 'filename'],
   );
   const inferredFile = inferDefaultFile(opName, vfs);
-  const normalizedFile = fileFromAlias ?? inferredFile;
+  const normalizedFile = resolveOperationFilePath(opName, fileFromAlias, inferredFile, vfs);
   if (normalizedFile) {
     record.file = normalizedFile;
   }
@@ -205,6 +205,32 @@ function normalizeOperation(
   }
 
   return record as unknown as PatchOperation;
+}
+
+function resolveOperationFilePath(
+  opName: string,
+  requestedFile: string | null,
+  inferredFile: string | null,
+  vfs: VirtualFileSystem,
+): string | null {
+  if (requestedFile && vfs.hasFile(requestedFile)) {
+    return requestedFile;
+  }
+  // Builder occasionally references template-relative paths that do not exist in current VFS.
+  // Prefer canonical in-project files for append/replace ops when the requested path is missing.
+  switch (opName) {
+    case 'css.append':
+    case 'css.replace':
+    case 'js.append':
+    case 'js.replace':
+    case 'section.replace':
+    case 'section.insert':
+    case 'section.delete':
+    case 'meta.update':
+      return inferredFile ?? requestedFile;
+    default:
+      return requestedFile ?? inferredFile;
+  }
 }
 
 function pickString(

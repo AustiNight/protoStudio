@@ -235,7 +235,7 @@ describe('LLMGateway', () => {
     if (!result.ok) {
       expect(result.error.category).toBe('user_action');
       expect(result.error.code).toBe('provider_error');
-      expect(result.error.message).toContain('Responses API');
+      expect(result.error.message).toContain('Chat Completions');
     }
     expect(provider.lastCall).toBeNull();
   });

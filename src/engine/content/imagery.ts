@@ -1,14 +1,28 @@
 export interface ImageryPolicy {
   allowUnsplash: boolean;
+  allowRasterDataUri: boolean;
+  allowRemoteHttps: boolean;
+  allowLocalAssetPaths: boolean;
 }
 
 export const DEFAULT_IMAGERY_POLICY: ImageryPolicy = {
   allowUnsplash: true,
+  allowRasterDataUri: true,
+  allowRemoteHttps: true,
+  allowLocalAssetPaths: true,
 };
 
 const UNSPLASH_HOSTS = ['images.unsplash.com', 'source.unsplash.com'];
 const UNSPLASH_PLACEHOLDER = 'images.unsplash.com/placeholder';
 const IMAGE_FIELD_KEYS = new Set(['image', 'src', 'photo', 'avatar', 'logo', 'ogImage']);
+const RASTER_DATA_URI_PREFIXES = [
+  'data:image/png',
+  'data:image/jpeg',
+  'data:image/jpg',
+  'data:image/webp',
+  'data:image/avif',
+  'data:image/gif',
+];
 
 const FALLBACK_SVG_DATA_URI = buildFallbackSvgDataUri();
 
@@ -31,6 +45,13 @@ export function isAllowedImageSource(
     return true;
   }
 
+  if (
+    policy.allowRasterDataUri &&
+    RASTER_DATA_URI_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+  ) {
+    return true;
+  }
+
   if (normalized.startsWith('data:image/')) {
     return false;
   }
@@ -39,11 +60,19 @@ export function isAllowedImageSource(
     return true;
   }
 
+  if (policy.allowLocalAssetPaths && isLocalImageAssetPath(trimmed)) {
+    return true;
+  }
+
   if (normalized.includes(UNSPLASH_PLACEHOLDER)) {
     return false;
   }
 
   if (policy.allowUnsplash && isUnsplashUrl(normalized)) {
+    return true;
+  }
+
+  if (policy.allowRemoteHttps && normalized.startsWith('https://')) {
     return true;
   }
 
@@ -97,4 +126,20 @@ function isUnsplashUrl(value: string): boolean {
 
 function isSvgPath(value: string): boolean {
   return /\.svg(\?|#|$)/i.test(value);
+}
+
+function isLocalImageAssetPath(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (
+    normalized.startsWith('http://') ||
+    normalized.startsWith('https://') ||
+    normalized.startsWith('data:') ||
+    normalized.startsWith('//')
+  ) {
+    return false;
+  }
+  return /\.(svg|png|jpe?g|webp|avif|gif)(\?|#|$)/i.test(normalized);
 }

@@ -152,6 +152,17 @@ export interface TelemetryStoreState {
     reason: TelemetryTemplateInvalidationReason;
     timestamp?: number;
   }) => Promise<boolean>;
+  recordImagingUsage: (input: {
+    sessionId?: string;
+    provider: 'openai' | 'anthropic' | 'google';
+    model: string;
+    cost: number;
+    latencyMs?: number;
+    promptTokens?: number;
+    completionTokens?: number;
+    unknownModel?: boolean;
+    timestamp?: number;
+  }) => Promise<boolean>;
   createGatewayTelemetry: () => LLMGatewayTelemetry;
   appendEvent: (event: TelemetryEvent) => Promise<boolean>;
   loadEvents: (sessionId: string) => Promise<boolean>;
@@ -497,6 +508,62 @@ export const createTelemetryStore = () => {
           ),
         );
       },
+      recordImagingUsage: async ({
+        sessionId,
+        provider,
+        model,
+        cost,
+        latencyMs,
+        promptTokens,
+        completionTokens,
+        unknownModel,
+        timestamp,
+      }) => {
+        const resolvedSessionId = resolveSessionId(sessionId, get());
+        if (!resolvedSessionId) {
+          return false;
+        }
+        const eventTimestamp = timestamp ?? Date.now();
+        const safePrompt = Math.max(0, Math.floor(promptTokens ?? 0));
+        const safeCompletion = Math.max(0, Math.floor(completionTokens ?? 0));
+        const safeCost = Number.isFinite(cost) ? Math.max(0, cost) : 0;
+        const safeLatency =
+          typeof latencyMs === 'number' && Number.isFinite(latencyMs)
+            ? Math.max(0, latencyMs)
+            : 0;
+        await appendEventInternal(
+          buildTelemetryEvent(
+            resolvedSessionId,
+            eventTimestamp,
+            'llm.request',
+            {
+              role: 'imaging',
+              provider,
+              model,
+              estimatedPromptTokens: safePrompt,
+              estimatedPromptChars: safePrompt * 4,
+              estimatedMessageCount: 1,
+            },
+          ),
+        );
+        return appendEventInternal(
+          buildTelemetryEvent(
+            resolvedSessionId,
+            eventTimestamp,
+            'llm.response',
+            {
+              role: 'imaging',
+              provider,
+              model,
+              promptTokens: safePrompt,
+              completionTokens: safeCompletion,
+              cost: safeCost,
+              latencyMs: safeLatency,
+              unknownModel: Boolean(unknownModel),
+            },
+          ),
+        );
+      },
       createGatewayTelemetry: () => {
         const selectionByRole = new Map<LLMRequest['role'], LLMModelSelection>();
         const handleRequest = async (
@@ -663,7 +730,7 @@ export const selectTelemetryCount = (state: TelemetryStoreState) => state.events
 export const selectTelemetryTotals = (state: TelemetryStoreState) =>
   buildTotals(state.events);
 
-const TELEMETRY_ROLE_ORDER: TelemetryLLMRole[] = ['chat', 'builder', 'critic'];
+const TELEMETRY_ROLE_ORDER: TelemetryLLMRole[] = ['chat', 'builder', 'critic', 'imaging'];
 
 type MutableRoleSummary = Omit<SessionCostRoleBreakdown, 'models'> & {
   models: Map<string, SessionCostModelBreakdown>;

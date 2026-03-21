@@ -54,12 +54,14 @@ function buildSettingsPayload(): SettingsPayload {
       chat: { provider: 'openai', model: 'gpt-4o-mini' },
       builder: { provider: 'openai', model: 'gpt-4o-mini' },
       critic: { provider: 'openai', model: 'gpt-4o-mini' },
+      imaging: { provider: 'openai', model: 'gpt-image-1.5' },
     },
     openaiThinking: {
       chat: 'default',
       builder: 'default',
       critic: 'default',
     },
+    imageryPauseMode: 'balanced',
     deployTokens: {
       github: 'ghp-token',
       cloudflare: 'cf-token',

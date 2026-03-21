@@ -60,12 +60,17 @@ export interface LLMConfig {
    */
   criticModel?: LLMModelSelection;
   /**
+   * Optional model selection used for image generation tasks.
+   */
+  imagingModel?: LLMModelSelection;
+  /**
    * Optional OpenAI reasoning defaults by role.
    */
   openAIReasoning?: {
     chat: OpenAIReasoningSetting;
     builder: OpenAIReasoningSetting;
     critic?: OpenAIReasoningSetting;
+    imaging?: OpenAIReasoningSetting;
   };
 }
 

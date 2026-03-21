@@ -12,7 +12,11 @@ type ProxyErrorCode =
 
 const OPENAI_API_BASE_URL = 'https://api.openai.com';
 const OPENAI_PROXY_PREFIX = '/api/openai';
-const ALLOWED_PATHS = new Set(['/v1/chat/completions', '/v1/models']);
+const ALLOWED_PATHS = new Set([
+  '/v1/chat/completions',
+  '/v1/models',
+  '/v1/images/generations',
+]);
 
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
@@ -60,6 +64,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     return jsonError(405, 'Method not allowed.', cors, 'method_not_allowed');
   }
   if (openAIPath === '/v1/chat/completions' && request.method !== 'POST') {
+    return jsonError(405, 'Method not allowed.', cors, 'method_not_allowed');
+  }
+  if (openAIPath === '/v1/images/generations' && request.method !== 'POST') {
     return jsonError(405, 'Method not allowed.', cors, 'method_not_allowed');
   }
 

@@ -34,6 +34,8 @@ export function buildPreviewHtml(
   const css = vfs.getFile('styles.css')?.content ?? null;
   const js = vfs.getFile('main.js')?.content ?? null;
 
+  html = inlineLocalImageAssets(html, vfs, pagePath);
+
   if (css) {
     html = inlineStylesheet(html, css);
   }
@@ -119,7 +121,7 @@ function buildRoutes(
       continue;
     }
 
-    let html = file.content;
+    let html = inlineLocalImageAssets(file.content, vfs, path);
     if (css) {
       html = inlineStylesheet(html, css);
     }
@@ -130,6 +132,111 @@ function buildRoutes(
   }
 
   return routes;
+}
+
+function inlineLocalImageAssets(
+  html: string,
+  vfs: VirtualFileSystem,
+  pagePath: string,
+): string {
+  const attributeRegex = /\b(src|href|poster)\s*=\s*(["'])(.*?)\2/gi;
+  return html.replace(attributeRegex, (match, attrName: string, quote: string, value: string) => {
+    const resolved = resolveLocalImageToDataUri(value, vfs, pagePath);
+    if (!resolved) {
+      return match;
+    }
+    return `${attrName}=${quote}${resolved}${quote}`;
+  });
+}
+
+function resolveLocalImageToDataUri(
+  value: string,
+  vfs: VirtualFileSystem,
+  pagePath: string,
+): string | null {
+  const raw = value.trim();
+  if (!raw) {
+    return null;
+  }
+  if (
+    raw.startsWith('http://') ||
+    raw.startsWith('https://') ||
+    raw.startsWith('data:') ||
+    raw.startsWith('//') ||
+    raw.startsWith('#') ||
+    raw.startsWith('blob:') ||
+    raw.startsWith('file:')
+  ) {
+    return null;
+  }
+
+  const sanitized = raw.split('#')[0]?.split('?')[0] ?? raw;
+  if (!/\.(svg|png|jpe?g|webp|avif|gif)$/i.test(sanitized)) {
+    return null;
+  }
+
+  const resolvedPath = resolveRelativePath(pagePath, sanitized);
+  const file = vfs.getFile(resolvedPath);
+  if (!file) {
+    return null;
+  }
+  return toImageDataUri(resolvedPath, file.content);
+}
+
+function resolveRelativePath(pagePath: string, targetPath: string): string {
+  if (targetPath.startsWith('/')) {
+    return targetPath.replace(/^\/+/, '');
+  }
+  const pageSegments = pagePath.split('/').filter(Boolean);
+  pageSegments.pop();
+  const targetSegments = targetPath.split('/').filter(Boolean);
+  const merged = [...pageSegments];
+  for (const segment of targetSegments) {
+    if (segment === '.') {
+      continue;
+    }
+    if (segment === '..') {
+      merged.pop();
+      continue;
+    }
+    merged.push(segment);
+  }
+  return merged.join('/');
+}
+
+function toImageDataUri(path: string, content: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'svg') {
+    return `data:image/svg+xml;utf8,${encodeURIComponent(content)}`;
+  }
+  const mimeByExt: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    webp: 'image/webp',
+    avif: 'image/avif',
+    gif: 'image/gif',
+  };
+  const mime = mimeByExt[ext] ?? 'application/octet-stream';
+  const normalized = content.trim().replace(/\s+/g, '');
+  const base64 = isLikelyBase64(normalized)
+    ? normalized
+    : toBase64(content);
+  return `data:${mime};base64,${base64}`;
+}
+
+function isLikelyBase64(value: string): boolean {
+  if (!value || value.length < 16) {
+    return false;
+  }
+  return /^[A-Za-z0-9+/=]+$/.test(value);
+}
+
+function toBase64(value: string): string {
+  if (typeof btoa === 'function') {
+    return btoa(unescape(encodeURIComponent(value)));
+  }
+  return Buffer.from(value, 'utf8').toString('base64');
 }
 
 function okResult<T, E>(value: T): Result<T, E> {

@@ -6,7 +6,7 @@ export type { LLMModelSelection, LLMProviderName } from './session';
 /**
  * Supported LLM roles within the studio.
  */
-export type LLMRole = 'chat' | 'builder' | 'critic';
+export type LLMRole = 'chat' | 'builder' | 'critic' | 'imaging';
 
 /**
  * Supported response formats for LLM calls.
@@ -207,6 +207,10 @@ export interface LLMRunningTotal {
    * Cumulative critic cost.
    */
   critic: number;
+  /**
+   * Cumulative imaging cost.
+   */
+  imaging: number;
   /**
    * Combined total cost.
    */

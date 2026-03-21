@@ -7,6 +7,7 @@ import {
   writeEncryptedSettings,
 } from '../persistence/settings-storage';
 import type { OpenAIReasoningSetting } from '../types/llm';
+import type { ImageryPauseMode } from '../types/imagery-policy';
 import type { LLMProviderName } from '../types/session';
 
 export type SettingsDeployHost = 'github' | 'cloudflare' | 'netlify' | 'vercel';
@@ -29,8 +30,10 @@ export interface SettingsPayload {
     chat: ModelSelection;
     builder: ModelSelection;
     critic: ModelSelection;
+    imaging: ModelSelection;
   };
   openaiThinking: OpenAIThinkingSettings;
+  imageryPauseMode: ImageryPauseMode;
   deployTokens: Record<SettingsDeployHost, string>;
   updatedAt: number;
 }
@@ -141,12 +144,17 @@ function buildDefaultSettings(): SettingsPayload {
         provider: defaults.criticProvider,
         model: defaults.criticModel,
       },
+      imaging: {
+        provider: defaults.imagingProvider,
+        model: defaults.imagingModel,
+      },
     },
     openaiThinking: {
       chat: defaults.openAIReasoning.chat,
       builder: defaults.openAIReasoning.builder,
       critic: defaults.openAIReasoning.critic,
     },
+    imageryPauseMode: 'balanced',
     deployTokens: {
       github: defaults.deployTokens.github,
       cloudflare: defaults.deployTokens.cloudflare,
@@ -178,8 +186,10 @@ function normalizeSettings(settings: SettingsPayload): SettingsPayload {
       chat: { ...settings.llmModels.chat },
       builder: { ...settings.llmModels.builder },
       critic: { ...settings.llmModels.critic },
+      imaging: { ...settings.llmModels.imaging },
     },
     openaiThinking: normalizeOpenAIThinking(settings.openaiThinking),
+    imageryPauseMode: normalizeImageryPauseMode(settings.imageryPauseMode),
     deployTokens: { ...settings.deployTokens },
     updatedAt: now,
   };
@@ -193,8 +203,10 @@ function cloneSettings(settings: SettingsPayload): SettingsPayload {
       chat: { ...settings.llmModels.chat },
       builder: { ...settings.llmModels.builder },
       critic: { ...settings.llmModels.critic },
+      imaging: { ...settings.llmModels.imaging },
     },
     openaiThinking: normalizeOpenAIThinking(settings.openaiThinking),
+    imageryPauseMode: normalizeImageryPauseMode(settings.imageryPauseMode),
     deployTokens: { ...settings.deployTokens },
     updatedAt: settings.updatedAt,
   };
@@ -217,8 +229,10 @@ function parseSettingsPayload(payload: string): SettingsPayload | null {
         chat: { ...defaults.llmModels.chat, ...parsed.llmModels?.chat },
         builder: { ...defaults.llmModels.builder, ...parsed.llmModels?.builder },
         critic: { ...defaults.llmModels.critic, ...parsed.llmModels?.critic },
+        imaging: { ...defaults.llmModels.imaging, ...parsed.llmModels?.imaging },
       },
       openaiThinking: normalizeOpenAIThinking(parsed.openaiThinking),
+      imageryPauseMode: normalizeImageryPauseMode(parsed.imageryPauseMode),
       deployTokens: { ...defaults.deployTokens, ...parsed.deployTokens },
     };
   } catch (error) {
@@ -260,10 +274,16 @@ function isSettingsPayload(value: unknown): value is SettingsPayload {
   if (hasValue(value.llmModels, 'critic') && !isModelSelection(value.llmModels.critic)) {
     return false;
   }
+  if (hasValue(value.llmModels, 'imaging') && !isModelSelection(value.llmModels.imaging)) {
+    return false;
+  }
   if (
     hasValue(value, 'openaiThinking') &&
     !isOpenAIThinkingSettings(value.openaiThinking)
   ) {
+    return false;
+  }
+  if (hasValue(value, 'imageryPauseMode') && !isImageryPauseMode(value.imageryPauseMode)) {
     return false;
   }
   if (!isRecord(value.deployTokens)) {
@@ -320,6 +340,10 @@ function normalizeOpenAIThinking(value: unknown): OpenAIThinkingSettings {
   };
 }
 
+function normalizeImageryPauseMode(value: unknown): ImageryPauseMode {
+  return isImageryPauseMode(value) ? value : 'balanced';
+}
+
 function isOpenAIReasoningSetting(value: unknown): value is OpenAIReasoningSetting {
   return (
     value === 'default' ||
@@ -330,6 +354,10 @@ function isOpenAIReasoningSetting(value: unknown): value is OpenAIReasoningSetti
     value === 'high' ||
     value === 'xhigh'
   );
+}
+
+function isImageryPauseMode(value: unknown): value is ImageryPauseMode {
+  return value === 'strict' || value === 'balanced' || value === 'lenient';
 }
 
 function isModelSelection(value: unknown): value is ModelSelection {

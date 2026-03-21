@@ -7,10 +7,14 @@ import type { DeploySelection, PreviewSecurityInput } from '../../types/guardrai
 import type { TelemetryBuildErrorCategory, TelemetryBuildStatus } from '../../types/telemetry';
 
 import { runGuardrails, decideGuardrailAction } from '../guardrails/guardrails';
+import { assessImageryEscalation } from '../content/image-escalation';
+import { runImageryExecutor } from '../imagery/executor';
+import { resolveImageryPlaceholdersInVfs, type ImageryResolver } from '../imagery/placeholders';
 import { ContextManager } from '../llm/context';
 import { LLMGateway } from '../llm/gateway';
 import { buildPreviewHtml } from '../vfs/preview';
 import { VirtualFileSystem } from '../vfs/vfs';
+import type { ImageryAssetRecord } from '../../types/imagery';
 import { CircuitBreakerTracker } from './circuit-breaker';
 import { validateContinuity } from './continuity';
 import { BuildHeartbeat } from './heartbeat';
@@ -18,7 +22,7 @@ import { PatchEngine } from './patch-engine';
 import { ScaffoldAuditor } from './scaffold';
 import { ScaffoldHealthManager } from './scaffold-health';
 
-export type BuilderLoopStatus = 'idle' | 'paused' | 'success' | 'skipped';
+export type BuilderLoopStatus = 'idle' | 'paused' | 'success' | 'skipped' | 'blocked';
 
 export interface BuilderLoopOutcome {
   status: BuilderLoopStatus;
@@ -26,6 +30,9 @@ export interface BuilderLoopOutcome {
   attempts: number;
   previewHtml?: string;
   violations?: string[];
+  skipReason?: string;
+  imageryAssets?: ImageryAssetRecord[];
+  blockedCode?: string;
 }
 
 export type BuilderLoopResult = Result<BuilderLoopOutcome, AppError>;
@@ -95,6 +102,7 @@ export interface BuilderLoopInput {
   conversation: ChatMessage[];
   preview: PreviewAdapter;
   guardrails: GuardrailContext;
+  imagery?: ImageryResolver;
   isPaused?: () => boolean;
 }
 
@@ -309,6 +317,22 @@ export class BuilderLoop {
         return okResult(outcome);
       }
 
+      const imageryResolution = await resolveImageryPlaceholdersInVfs(
+        sandbox,
+        input.imagery,
+      );
+      if (!imageryResolution.ok) {
+        const reason = imageryResolution.error.message;
+        const decision = this.recordFailure(atom, reason, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'patch');
+        if (decision.action === 'retry') {
+          retryContext = { reason };
+          continue;
+        }
+        const outcome = this.skipAtom(atom, input.backlog, reason, attempt);
+        return okResult(outcome);
+      }
+
       this.setPhase('rendering_preview');
       const previewResult = buildPreviewHtml(sandbox);
       if (!previewResult.ok) {
@@ -414,11 +438,154 @@ export class BuilderLoop {
       const intentValidationError = validateIntentSatisfaction(atom, before, sandbox);
       if (intentValidationError) {
         const reason = `Intent validation failed: ${intentValidationError}`;
+        const imageryIntent = assessImageryEscalation(
+          `${atom.title} ${atom.description} ${atom.visibleChange}`,
+          'aggressive',
+        );
+        const isFinalAttempt = attempt >= this.maxAttempts;
+        if (!isFinalAttempt) {
+          const decision = this.recordFailure(atom, reason, attempt);
+          this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
+          if (decision.action === 'retry') {
+            retryContext = { reason };
+            continue;
+          }
+        }
+
+        if (imageryIntent.hasVisualIntent && input.imagery) {
+          const execResult = await runImageryExecutor({
+            atom,
+            vfs: sandbox,
+            resolver: input.imagery,
+          });
+          if (execResult.ok && execResult.value.applied) {
+            this.setPhase('rendering_preview');
+            const recoveredPreview = buildPreviewHtml(sandbox);
+            if (!recoveredPreview.ok) {
+              const failReason = recoveredPreview.error.message;
+              const decision = this.recordFailure(atom, failReason, attempt);
+              this.recordBuildFailure(atom, attemptStartedAt, 'patch');
+              if (decision.action === 'retry' && !isFinalAttempt) {
+                retryContext = { reason: failReason };
+                continue;
+              }
+              const outcome = this.blockAtom(
+                atom,
+                input.backlog,
+                failReason,
+                attempt,
+                'imagery_executor_preview_failed',
+                execResult.value.assets,
+              );
+              return okResult(outcome);
+            }
+            previewResult.value = recoveredPreview.value;
+            const postError = validateIntentSatisfaction(atom, before, sandbox);
+            if (!postError) {
+              const beforePreviewAfterExec = buildPreviewHtml(before, previewResult.value.pagePath);
+              if (
+                beforePreviewAfterExec.ok &&
+                !hasVisiblePreviewDelta(beforePreviewAfterExec.value.html, previewResult.value.html)
+              ) {
+                const failReason = 'Intent validation failed: no visible preview change detected.';
+                const outcome = this.blockAtom(
+                  atom,
+                  input.backlog,
+                  failReason,
+                  attempt,
+                  'imagery_executor_no_visible_delta',
+                  execResult.value.assets,
+                );
+                this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
+                return okResult(outcome);
+              }
+              commitSandbox(input.vfs, sandbox);
+              const nextVersion = input.vfs.getVersion();
+              input.backlog.updateItem(atom.id, {
+                status: 'done',
+                buildVersion: nextVersion,
+                completedAt: this.now(),
+                blockedCode: undefined,
+                blockedReason: undefined,
+              });
+              input.backlog.promoteNext();
+              this.setPhase('swapping');
+              input.preview.inject(previewResult.value.html);
+              input.preview.swap();
+              this.emit({
+                type: 'swap',
+                atom,
+                slot: input.preview.getInactiveSlot?.(),
+              });
+              this.telemetry?.onBuildSwap?.({
+                atom,
+                slot: input.preview.getInactiveSlot?.(),
+                timestamp: this.now(),
+              });
+              await this.scaffoldHealth.evaluate(input.vfs);
+              this.circuitBreaker.recordSuccess(atom.id, this.maxAttempts);
+              this.telemetry?.onBuildComplete?.({
+                atom,
+                durationMs: Math.max(0, this.now() - attemptStartedAt),
+                status: 'success',
+                timestamp: this.now(),
+              });
+              this.resetBuildState();
+              return okResult({
+                status: 'success',
+                atom,
+                attempts: attempt,
+                previewHtml: previewResult.value.html,
+                imageryAssets: execResult.value.assets,
+              });
+            }
+          }
+          const blockReason = execResult.ok
+            ? `Intent validation failed: ${validateIntentSatisfaction(atom, before, sandbox)}`
+            : `Imagery executor failed: ${execResult.error.message}`;
+          const outcome = this.blockAtom(
+            atom,
+            input.backlog,
+            blockReason,
+            attempt,
+            'imagery_intent_unmet',
+            execResult.ok ? execResult.value.assets : undefined,
+          );
+          this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
+          return okResult(outcome);
+        }
+
+        const decision = this.recordFailure(atom, reason, attempt);
+        this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
+        if (decision.action === 'retry' && !isFinalAttempt) {
+          retryContext = { reason };
+          continue;
+        }
+        const outcome = this.skipAtom(atom, input.backlog, reason, attempt);
+        return okResult(outcome);
+      }
+
+      if (hasUnresolvedImageryPlaceholders(sandbox)) {
+        const reason = 'Intent validation failed: imagery placeholders remain unresolved.';
+        const imageryIntent = assessImageryEscalation(
+          `${atom.title} ${atom.description} ${atom.visibleChange}`,
+          'aggressive',
+        );
         const decision = this.recordFailure(atom, reason, attempt);
         this.recordBuildFailure(atom, attemptStartedAt, 'guardrail');
         if (decision.action === 'retry') {
           retryContext = { reason };
           continue;
+        }
+        if (imageryIntent.hasVisualIntent) {
+          const outcome = this.blockAtom(
+            atom,
+            input.backlog,
+            reason,
+            attempt,
+            'imagery_placeholders_unresolved',
+          );
+          return okResult(outcome);
         }
         const outcome = this.skipAtom(atom, input.backlog, reason, attempt);
         return okResult(outcome);
@@ -584,6 +751,34 @@ export class BuilderLoop {
       atom,
       attempts,
       violations,
+      skipReason: reason,
+    };
+  }
+
+  private blockAtom(
+    atom: WorkItem,
+    backlog: BacklogController,
+    reason: string,
+    attempts: number,
+    blockedCode: string,
+    imageryAssets?: ImageryAssetRecord[],
+  ): BuilderLoopOutcome {
+    backlog.updateItem(atom.id, {
+      status: 'blocked',
+      blockedCode,
+      blockedReason: reason,
+    });
+    const next = backlog.promoteNext();
+    this.setPhase('skipping');
+    this.emit({ type: 'skip', atom, reason, next });
+    this.resetBuildState();
+    return {
+      status: 'blocked',
+      atom,
+      attempts,
+      skipReason: reason,
+      blockedCode,
+      imageryAssets,
     };
   }
 
@@ -635,6 +830,9 @@ function buildBuilderPrompt(context: {
   );
   sections.push('- Do not emit alias op names such as asset.create or file.add.');
   sections.push('- Set targetVersion and each ifVersion to the current VFS version.');
+  sections.push(
+    '- For imagery tasks, use either inline SVG/data URIs, https URLs, or imagery placeholders: pp://public-domain/<url-encoded-query> and pp://generate-image/<url-encoded-prompt>.',
+  );
   sections.push(`- Expected section delta: ${expectedSectionDelta}.`);
   if (expectedSectionDelta === 0) {
     sections.push('- Do not add or remove sections. Avoid section.insert and section.delete.');
@@ -798,6 +996,54 @@ function validateIntentSatisfaction(
   after: VirtualFileSystem,
 ): string | null {
   const intentText = `${atom.title} ${atom.description} ${atom.visibleChange}`.toLowerCase();
+  const imageryIntent = assessImageryEscalation(intentText, 'aggressive');
+  const wantsOgImage = /\bog:image\b|\bog image\b|\bopen graph\b/.test(intentText);
+  const wantsRealAsset = /\breal asset\b|\bnot inline\b|\bnot data svg\b|\bnot inline data svg\b/.test(
+    intentText,
+  );
+  const wantsFavicon = /\bfavicon\b/.test(intentText) || /\bsite icon\b/.test(intentText);
+  const wantsSchemaImage = /\bschema\b/.test(intentText) && /\bimage\b/.test(intentText);
+  const wantsSchemaContact = /\bschema\b/.test(intentText) && /\bcontact\b/.test(intentText);
+  const ogImageSatisfied = !wantsOgImage || hasOgImageDelta(before, after);
+  const ogImageRealAssetSatisfied = !wantsRealAsset || hasOgImageRealAsset(after);
+  const faviconSatisfied = !wantsFavicon || hasFaviconDelta(before, after);
+  const schemaImageSatisfied = !wantsSchemaImage || hasSchemaImageDelta(before, after);
+  const schemaContactSatisfied = !wantsSchemaContact || hasSchemaContactDelta(before, after);
+  const hasSpecializedImageryIntent =
+    wantsOgImage || wantsSchemaImage || wantsSchemaContact || wantsFavicon;
+  const specializedImagerySatisfied =
+    hasSpecializedImageryIntent &&
+    ogImageSatisfied &&
+    ogImageRealAssetSatisfied &&
+    faviconSatisfied &&
+    schemaImageSatisfied &&
+    schemaContactSatisfied;
+  if (imageryIntent.hasVisualIntent) {
+    if (hasUnresolvedImageryPlaceholders(after)) {
+      return 'imagery placeholders remain unresolved after patch application.';
+    }
+    const beforeImagery = collectImagerySignature(before);
+    const afterImagery = collectImagerySignature(after);
+    if (!hasImageryDelta(beforeImagery, afterImagery) && !specializedImagerySatisfied) {
+      return 'imagery-focused task did not add or change image assets.';
+    }
+  }
+  if (!ogImageSatisfied) {
+    return 'og:image intent not satisfied; meta[property="og:image"] did not change.';
+  }
+  if (!ogImageRealAssetSatisfied) {
+    return 'og:image intent not satisfied; og:image must resolve to a non-data asset URL.';
+  }
+  if (!faviconSatisfied) {
+    return 'favicon intent not satisfied; favicon link did not change to a concrete asset.';
+  }
+  if (!schemaImageSatisfied) {
+    return 'schema image intent not satisfied; application/ld+json image field did not change.';
+  }
+  if (!schemaContactSatisfied) {
+    return 'schema contact intent not satisfied; application/ld+json contact fields did not change.';
+  }
+
   const isStyleIntent =
     atom.atomType === 'style' ||
     /\b(color|theme|background|palette|contrast|dark|light|font|typography)\b/.test(intentText);
@@ -823,6 +1069,140 @@ function validateIntentSatisfaction(
   }
 
   return null;
+}
+
+function hasOgImageDelta(before: VirtualFileSystem, after: VirtualFileSystem): boolean {
+  const beforeValue = extractMetaTagContent(before, 'og:image');
+  const afterValue = extractMetaTagContent(after, 'og:image');
+  return beforeValue !== afterValue && Boolean(afterValue);
+}
+
+function hasSchemaImageDelta(before: VirtualFileSystem, after: VirtualFileSystem): boolean {
+  const beforeImage = extractSchemaField(before, 'image');
+  const afterImage = extractSchemaField(after, 'image');
+  return beforeImage !== afterImage && Boolean(afterImage);
+}
+
+function hasSchemaContactDelta(before: VirtualFileSystem, after: VirtualFileSystem): boolean {
+  const fields = ['telephone', 'contactPoint', 'email'];
+  for (const field of fields) {
+    const beforeValue = extractSchemaField(before, field);
+    const afterValue = extractSchemaField(after, field);
+    if (beforeValue !== afterValue && Boolean(afterValue)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasOgImageRealAsset(vfs: VirtualFileSystem): boolean {
+  const value = extractMetaTagContent(vfs, 'og:image');
+  return Boolean(value) && !isDataUri(value ?? '');
+}
+
+function hasFaviconDelta(before: VirtualFileSystem, after: VirtualFileSystem): boolean {
+  const beforeValue = extractFaviconHref(before);
+  const afterValue = extractFaviconHref(after);
+  if (!afterValue || beforeValue === afterValue) {
+    return false;
+  }
+  return !isDataUri(afterValue);
+}
+
+function extractMetaTagContent(vfs: VirtualFileSystem, propertyName: string): string | null {
+  for (const path of vfs.listFiles()) {
+    if (!path.toLowerCase().endsWith('.html')) {
+      continue;
+    }
+    const content = vfs.getFile(path)?.content ?? '';
+    const regex = new RegExp(
+      `<meta\\s+property=["']${escapeRegex(propertyName)}["']\\s+content=["']([^"']*)["']\\s*\\/?>`,
+      'i',
+    );
+    const match = content.match(regex);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+  return null;
+}
+
+function extractSchemaField(vfs: VirtualFileSystem, field: string): string | null {
+  for (const path of vfs.listFiles()) {
+    if (!path.toLowerCase().endsWith('.html')) {
+      continue;
+    }
+    const content = vfs.getFile(path)?.content ?? '';
+    const scriptRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = scriptRegex.exec(content)) !== null) {
+      const raw = match[1]?.trim();
+      if (!raw) {
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        const value = extractSchemaFieldValue(parsed, field);
+        if (value !== null) {
+          return value;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+  return null;
+}
+
+function extractFaviconHref(vfs: VirtualFileSystem): string | null {
+  for (const path of vfs.listFiles()) {
+    if (!path.toLowerCase().endsWith('.html')) {
+      continue;
+    }
+    const content = vfs.getFile(path)?.content ?? '';
+    const linkRegex = /<link\b[^>]*\brel=["'][^"']*icon[^"']*["'][^>]*>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = linkRegex.exec(content)) !== null) {
+      const tag = match[0];
+      const hrefMatch = tag.match(/\bhref=["']([^"']+)["']/i);
+      const href = hrefMatch?.[1]?.trim();
+      if (href) {
+        return href;
+      }
+    }
+  }
+  return null;
+}
+
+function extractSchemaFieldValue(parsed: unknown, field: string): string | null {
+  if (Array.isArray(parsed)) {
+    for (const entry of parsed) {
+      const value = extractSchemaFieldValue(entry, field);
+      if (value !== null) {
+        return value;
+      }
+    }
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  const value = record[field];
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (value && typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return null;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function extractRootVariable(css: string, variableName: string): string | null {
@@ -966,6 +1346,143 @@ function shallowEqual<T extends object, U extends object>(left: T, right: U): bo
     }
   }
   return true;
+}
+
+interface ImagerySignature {
+  sources: Set<string>;
+  imgLikeTagCount: number;
+  inlineSvgCount: number;
+  cssImageUrlCount: number;
+}
+
+function collectImagerySignature(vfs: VirtualFileSystem): ImagerySignature {
+  const sources = new Set<string>();
+  let imgLikeTagCount = 0;
+  let inlineSvgCount = 0;
+  let cssImageUrlCount = 0;
+
+  for (const path of vfs.listFiles()) {
+    const file = vfs.getFile(path);
+    if (!file) {
+      continue;
+    }
+    if (path.toLowerCase().endsWith('.html')) {
+      const htmlSig = collectImageryFromHtml(file.content);
+      htmlSig.sources.forEach((source) => sources.add(source));
+      imgLikeTagCount += htmlSig.imgLikeTagCount;
+      inlineSvgCount += htmlSig.inlineSvgCount;
+      continue;
+    }
+    if (path.toLowerCase().endsWith('.css')) {
+      const cssSig = collectImageryFromCss(file.content);
+      cssSig.sources.forEach((source) => sources.add(source));
+      cssImageUrlCount += cssSig.cssImageUrlCount;
+    }
+  }
+
+  return { sources, imgLikeTagCount, inlineSvgCount, cssImageUrlCount };
+}
+
+function collectImageryFromHtml(content: string): {
+  sources: Set<string>;
+  imgLikeTagCount: number;
+  inlineSvgCount: number;
+} {
+  const sources = new Set<string>();
+  let imgLikeTagCount = 0;
+  const tagRegex = /<(img|source|video|image|use|object)\b[^>]*>/gi;
+  let tagMatch: RegExpExecArray | null;
+  while ((tagMatch = tagRegex.exec(content)) !== null) {
+    imgLikeTagCount += 1;
+    const tag = tagMatch[0];
+    const attrs = extractAttributeSources(tag);
+    for (const attr of attrs) {
+      sources.add(attr);
+    }
+  }
+
+  const inlineSvgCount = (content.match(/<svg\b/gi) ?? []).length;
+  return { sources, imgLikeTagCount, inlineSvgCount };
+}
+
+function collectImageryFromCss(content: string): {
+  sources: Set<string>;
+  cssImageUrlCount: number;
+} {
+  const sources = new Set<string>();
+  const urlRegex = /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi;
+  let count = 0;
+  let match: RegExpExecArray | null;
+  while ((match = urlRegex.exec(content)) !== null) {
+    const value = match[2]?.trim();
+    if (!value) {
+      continue;
+    }
+    count += 1;
+    sources.add(value);
+  }
+  return {
+    sources,
+    cssImageUrlCount: count,
+  };
+}
+
+function extractAttributeSources(tag: string): string[] {
+  const attrs: string[] = [];
+  const attrRegex = /\b(src|poster|href|data)\s*=\s*(["'])(.*?)\2/gi;
+  let match: RegExpExecArray | null;
+  while ((match = attrRegex.exec(tag)) !== null) {
+    const value = match[3]?.trim();
+    if (value) {
+      attrs.push(value);
+    }
+  }
+  return attrs;
+}
+
+function hasImageryDelta(before: ImagerySignature, after: ImagerySignature): boolean {
+  if (before.imgLikeTagCount !== after.imgLikeTagCount) {
+    return true;
+  }
+  if (before.inlineSvgCount !== after.inlineSvgCount) {
+    return true;
+  }
+  if (before.cssImageUrlCount !== after.cssImageUrlCount) {
+    return true;
+  }
+  return !setEquals(before.sources, after.sources);
+}
+
+function setEquals<T>(left: Set<T>, right: Set<T>): boolean {
+  if (left.size !== right.size) {
+    return false;
+  }
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isDataUri(value: string): boolean {
+  return /^data:/i.test(value.trim());
+}
+
+function hasUnresolvedImageryPlaceholders(vfs: VirtualFileSystem): boolean {
+  for (const path of vfs.listFiles()) {
+    if (!/\.(html|css)$/i.test(path)) {
+      continue;
+    }
+    const content = vfs.getFile(path)?.content ?? '';
+    if (
+      content.includes('pp://public-domain/') ||
+      content.includes('pp://generate-image/')
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function extractJsonPayload(raw: string): string | null {

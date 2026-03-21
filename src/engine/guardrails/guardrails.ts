@@ -429,7 +429,7 @@ function checkImageSources(html: string, css: string): GuardrailViolation[] {
   if (invalidSources.length > 0) {
     violations.push({
       id: 'content_image_source',
-      message: `Disallowed image source detected (${invalidSources[0]}). Use SVG, gradients, or Unsplash.`,
+      message: `Disallowed image source detected (${invalidSources[0]}). Use approved HTTPS, SVG, or safe raster sources.`,
       severity: 'error',
     });
   }

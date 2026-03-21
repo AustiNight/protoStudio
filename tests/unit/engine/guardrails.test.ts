@@ -178,11 +178,11 @@ describe('guardrails', () => {
     );
   });
 
-  it('should reject non-Unsplash image sources', () => {
+  it('should reject blocked image source schemes', () => {
     const input = buildBaseInput();
     input.html = input.html.replace(
       'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=800&q=80',
-      'https://example.com/hero.jpg',
+      'blob:https://example.com/hero.jpg',
     );
     const report = runGuardrails(input);
     expect(report.pass).toBe(false);

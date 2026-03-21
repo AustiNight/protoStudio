@@ -10,6 +10,7 @@ import type {
 } from '../../types/llm';
 import type { LLMConfig, LLMModelSelection, LLMProviderName } from '../../types/session';
 import { resolveOpenAIReasoningEffortForModel } from '../../config/openai-reasoning';
+import { isOpenAIChatCompletionsCapableModelId } from './openai-model-support';
 import { calculateCost } from './cost';
 import { AnthropicProvider } from './providers/anthropic';
 import { GoogleProvider } from './providers/google';
@@ -35,7 +36,7 @@ export class LLMGateway {
       ...options?.providers,
     };
     this.telemetry = options?.telemetry;
-    this.runningTotal = { chat: 0, builder: 0, critic: 0, total: 0 };
+    this.runningTotal = { chat: 0, builder: 0, critic: 0, imaging: 0, total: 0 };
   }
 
   async send(request: LLMRequest): Promise<Result<LLMResponse, LLMError>> {
@@ -108,7 +109,7 @@ export class LLMGateway {
   }
 
   resetTotal(): void {
-    this.runningTotal = { chat: 0, builder: 0, critic: 0, total: 0 };
+    this.runningTotal = { chat: 0, builder: 0, critic: 0, imaging: 0, total: 0 };
   }
 
   private getConfigForRole(role: LLMRequest['role']): LLMModelSelection {
@@ -118,6 +119,9 @@ export class LLMGateway {
     if (role === 'builder') {
       return this.config.builderModel;
     }
+    if (role === 'imaging') {
+      return this.config.imagingModel ?? this.config.builderModel;
+    }
     return this.config.criticModel ?? this.config.chatModel;
   }
 
@@ -126,12 +130,17 @@ export class LLMGateway {
       this.runningTotal.chat += cost;
     } else if (role === 'builder') {
       this.runningTotal.builder += cost;
+    } else if (role === 'imaging') {
+      this.runningTotal.imaging += cost;
     } else {
       this.runningTotal.critic += cost;
     }
 
     this.runningTotal.total =
-      this.runningTotal.chat + this.runningTotal.builder + this.runningTotal.critic;
+      this.runningTotal.chat +
+      this.runningTotal.builder +
+      this.runningTotal.critic +
+      this.runningTotal.imaging;
   }
 }
 
@@ -157,25 +166,18 @@ function getModelCompatibilityError(
   provider: LLMProviderName,
   model: string,
 ): LLMError | null {
-  if (
-    provider === 'openai' &&
-    isResponsesOnlyOpenAIModel(model)
-  ) {
+  if (provider === 'openai' && !isOpenAIChatCompletionsCapableModelId(model)) {
     return {
       category: 'user_action',
       code: 'provider_error',
       message:
-        `${model} requires the OpenAI Responses API. ` +
-        'This app currently uses Chat Completions for OpenAI requests.',
+        `${model} is not compatible with this app's OpenAI Chat Completions path. ` +
+        'Choose a chat-completions-capable model in Settings.',
       provider,
     };
   }
 
   return null;
-}
-
-function isResponsesOnlyOpenAIModel(model: string): boolean {
-  return /-codex(?:$|-)/i.test(model.trim());
 }
 
 function resolveOpenAIReasoningEffort(

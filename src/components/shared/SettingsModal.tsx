@@ -11,6 +11,12 @@ import { isOpenAIModelId } from '@/config/model-pricing-schema';
 import { runtimeConfig } from '@/config/runtime-config';
 import { DEPLOY_TOKEN_GUIDES, LLM_KEY_GUIDES } from '@/config/token-guides';
 import { resolvePricingModelId } from '@/engine/llm/cost';
+import { isOpenAIChatCompletionsCapableModelId } from '@/engine/llm/openai-model-support';
+import {
+  getRuntimePricingModels,
+  PRICING_OVERRIDES_UPDATED_EVENT,
+  upsertPricingOverrides,
+} from '@/engine/llm/pricing-overrides';
 import { createOpenAIKeyValidationRunner } from '@/engine/llm/openai-key-validation';
 import {
   useSettingsStore,
@@ -20,6 +26,7 @@ import {
   type SettingsPayload,
 } from '@/store/settings-store';
 import { useTelemetryStore } from '@/store/telemetry-store';
+import { IMAGERY_PAUSE_MODES, type ImageryPauseMode } from '@/types/imagery-policy';
 import type { OpenAIReasoningSetting } from '@/types/llm';
 import type { PricingConfig } from '@/types/pricing';
 
@@ -58,25 +65,18 @@ const OPENAI_SERVER_MANAGED = runtimeConfig.openAIRequestMode === 'proxy';
 
 const pricingConfig = pricingConfigRaw as PricingConfig;
 
-const NON_SELECTABLE_OPENAI_MODEL_PATTERNS: RegExp[] = [
-  /^chatgpt-/i,
-  /-codex$/i,
-  /-preview$/i,
-  /-search-preview$/i,
-];
-
 // Keep this list in sync with OpenAI docs when pricing config trails newest releases.
 const MANUALLY_INCLUDED_OPENAI_MODEL_IDS = ['gpt-5-chat-latest', 'gpt-5.3-chat-latest'];
 
 function isSelectableOpenAIModelId(modelId: string): boolean {
-  if (!isOpenAIModelId(modelId)) {
-    return false;
-  }
-
-  return NON_SELECTABLE_OPENAI_MODEL_PATTERNS.every((pattern) => !pattern.test(modelId));
+  return isOpenAIChatCompletionsCapableModelId(modelId);
 }
 
-const MODEL_OPTIONS = buildModelOptions(pricingConfig.models);
+const IMAGE_MODEL_OPTIONS: Record<ProviderName, string[]> = {
+  openai: ['gpt-image-1.5', 'gpt-image-1-mini', 'gpt-image-1', 'gpt-image-latest', 'dall-e-3'],
+  anthropic: [],
+  google: [],
+};
 
 const OPENAI_THINKING_LABELS: Record<OpenAIReasoningSetting, string> = {
   default: 'Model default',
@@ -88,19 +88,27 @@ const OPENAI_THINKING_LABELS: Record<OpenAIReasoningSetting, string> = {
   xhigh: 'XHigh',
 };
 
+const IMAGERY_PAUSE_MODE_LABELS: Record<ImageryPauseMode, string> = {
+  strict: 'Strict',
+  balanced: 'Balanced',
+  lenient: 'Lenient',
+};
+
 const DEFAULT_SETTINGS: SettingsPayload = {
   version: 1,
   llmKeys: { openai: '', anthropic: '', google: '' },
   llmModels: {
-    chat: { provider: 'openai', model: defaultModelFor('openai') },
-    builder: { provider: 'openai', model: defaultModelFor('openai') },
-    critic: { provider: 'openai', model: defaultModelFor('openai') },
+    chat: { provider: 'openai', model: '' },
+    builder: { provider: 'openai', model: '' },
+    critic: { provider: 'openai', model: '' },
+    imaging: { provider: 'openai', model: defaultImageModelFor('openai') },
   },
   openaiThinking: {
     chat: runtimeConfig.settingsDefaults.openAIReasoning.chat,
     builder: runtimeConfig.settingsDefaults.openAIReasoning.builder,
     critic: runtimeConfig.settingsDefaults.openAIReasoning.critic,
   },
+  imageryPauseMode: 'balanced',
   deployTokens: { github: '', cloudflare: '', netlify: '', vercel: '' },
   updatedAt: 0,
 };
@@ -116,7 +124,7 @@ const TABS: Array<{ id: TabKey; label: string; description: string }> = [
   {
     id: 'models',
     label: 'Models',
-    description: 'Pick the active models for chat, builder, and Web Designer roles.',
+    description: 'Pick the active models for chat, builder, Web Designer, and imaging roles.',
   },
   {
     id: 'deploy',
@@ -171,6 +179,7 @@ export function SettingsModal({ open, onClose, pricingGaps = null }: SettingsMod
   );
   const [isExportingTelemetry, setIsExportingTelemetry] = useState(false);
   const [isCopyingPricingChecklist, setIsCopyingPricingChecklist] = useState(false);
+  const [pricingOverridesVersion, setPricingOverridesVersion] = useState(0);
 
   const telemetrySessionId = useTelemetryStore((state) => state.sessionId);
   const telemetryCounters = useTelemetryStore((state) => state.counters);
@@ -183,7 +192,10 @@ export function SettingsModal({ open, onClose, pricingGaps = null }: SettingsMod
   const saveSettingsToStore = useSettingsStore((state) => state.saveSettings);
   const clearSettingsInStore = useSettingsStore((state) => state.clearSettings);
 
-  const modelOptions = useMemo(() => MODEL_OPTIONS, []);
+  const modelOptions = useMemo(
+    () => buildModelOptions(getRuntimePricingModels(pricingConfig.models)),
+    [pricingOverridesVersion],
+  );
   const openAIKeyValidationRunner = useMemo(
     () =>
       createOpenAIKeyValidationRunner({
@@ -211,6 +223,22 @@ export function SettingsModal({ open, onClose, pricingGaps = null }: SettingsMod
     setTokenStatus(buildValidationMap(DEPLOY_HOSTS));
     setNotice(null);
   }, [open, hydrateFromStorage, modelOptions, setRuntimeSettings]);
+
+  useEffect(() => {
+    const onPricingOverridesUpdated = () => {
+      setPricingOverridesVersion((current) => current + 1);
+    };
+    window.addEventListener(
+      PRICING_OVERRIDES_UPDATED_EVENT,
+      onPricingOverridesUpdated as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        PRICING_OVERRIDES_UPDATED_EVENT,
+        onPricingOverridesUpdated as EventListener,
+      );
+    };
+  }, []);
 
   useEffect(() => {
     if (open) return;
@@ -325,10 +353,21 @@ export function SettingsModal({ open, onClose, pricingGaps = null }: SettingsMod
   };
 
   const handleModelProviderChange = (
-    role: 'chat' | 'builder' | 'critic',
+    role: 'chat' | 'builder' | 'critic' | 'imaging',
     provider: ProviderName,
   ) => {
     updateRuntimeSettings((current) => {
+      if (role === 'imaging') {
+        return {
+          ...current,
+          llmModels: {
+            ...current.llmModels,
+            imaging: normalizeImageModelSelection(
+              { provider, model: current.llmModels.imaging.model },
+            ),
+          },
+        };
+      }
       const normalized = normalizeModelSelection(
         { provider, model: current.llmModels[role].model },
         modelOptions,
@@ -353,24 +392,38 @@ export function SettingsModal({ open, onClose, pricingGaps = null }: SettingsMod
   };
 
   const handleModelChange = (
-    role: 'chat' | 'builder' | 'critic',
+    role: 'chat' | 'builder' | 'critic' | 'imaging',
     model: string,
   ) => {
-    updateRuntimeSettings((current) => ({
-      ...current,
-      llmModels: {
-        ...current.llmModels,
-        [role]: { ...current.llmModels[role], model },
-      },
-      openaiThinking: {
-        ...current.openaiThinking,
-        [role]:
-          current.llmModels[role].provider === 'openai' &&
-          supportsOpenAIReasoningForModel(model)
-            ? normalizeOpenAIReasoningSettingForModel(model, current.openaiThinking[role])
-            : current.openaiThinking[role],
-      },
-    }));
+    updateRuntimeSettings((current) => {
+      if (role === 'imaging') {
+        return {
+          ...current,
+          llmModels: {
+            ...current.llmModels,
+            imaging: normalizeImageModelSelection({
+              ...current.llmModels.imaging,
+              model,
+            }),
+          },
+        };
+      }
+      return {
+        ...current,
+        llmModels: {
+          ...current.llmModels,
+          [role]: { ...current.llmModels[role], model },
+        },
+        openaiThinking: {
+          ...current.openaiThinking,
+          [role]:
+            current.llmModels[role].provider === 'openai' &&
+            supportsOpenAIReasoningForModel(model)
+              ? normalizeOpenAIReasoningSettingForModel(model, current.openaiThinking[role])
+              : current.openaiThinking[role],
+        },
+      };
+    });
   };
 
   const handleOpenAIThinkingChange = (
@@ -383,6 +436,13 @@ export function SettingsModal({ open, onClose, pricingGaps = null }: SettingsMod
         ...current.openaiThinking,
         [role]: value,
       },
+    }));
+  };
+
+  const handleImageryPauseModeChange = (mode: ImageryPauseMode) => {
+    updateRuntimeSettings((current) => ({
+      ...current,
+      imageryPauseMode: mode,
     }));
   };
 
@@ -666,10 +726,61 @@ export function SettingsModal({ open, onClose, pricingGaps = null }: SettingsMod
                 onThinkingChange={(value) => handleOpenAIThinkingChange('critic', value)}
                 modelOptions={modelOptions}
               />
+              <ModelCard
+                title="Imaging model"
+                selection={settings.llmModels.imaging}
+                onProviderChange={(provider) => handleModelProviderChange('imaging', provider)}
+                onModelChange={(model) => handleModelChange('imaging', model)}
+                thinkingLevel={settings.openaiThinking.chat}
+                onThinkingChange={() => {
+                  // Imaging models do not expose reasoning controls in this UI.
+                }}
+                modelOptions={IMAGE_MODEL_OPTIONS}
+                providerOptions={['openai']}
+              />
+            </div>
+            <div className="mt-4 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
+              <label
+                htmlFor="imagery-pause-mode"
+                className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.22em] text-slate-400"
+              >
+                Imagery Block Auto-pause
+              </label>
+              <p className="mt-2 text-xs text-slate-400">
+                Controls when automation pauses after repeated imagery task blocks.
+              </p>
+              <select
+                id="imagery-pause-mode"
+                value={settings.imageryPauseMode}
+                onChange={(event) =>
+                  handleImageryPauseModeChange(event.target.value as ImageryPauseMode)
+                }
+                className="mt-3 w-full rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
+              >
+                {IMAGERY_PAUSE_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {IMAGERY_PAUSE_MODE_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-slate-500">
+                Balanced (recommended): pause at 2 consecutive, 3 in 8, weighted severity 4, or
+                2 repeats of the same intent.
+              </p>
             </div>
             <PricingGapPanel
               pricingGaps={pricingGaps}
               isCopying={isCopyingPricingChecklist}
+              onAutoAdd={(result) => {
+                setPricingOverridesVersion((current) => current + 1);
+                setNotice({
+                  tone: result.added > 0 ? 'success' : 'info',
+                  message:
+                    result.added > 0
+                      ? `Auto-added ${result.added} pricing entries${result.skipped > 0 ? ` (${result.skipped} skipped)` : ''}.`
+                      : `No pricing entries were added${result.skipped > 0 ? ` (${result.skipped} skipped)` : '.'}`,
+                });
+              }}
               onCopy={async () => {
                 if (!pricingGaps) {
                   return;
@@ -1002,6 +1113,7 @@ type ModelCardProps = {
   thinkingLevel: OpenAIReasoningSetting;
   onThinkingChange: (value: OpenAIReasoningSetting) => void;
   modelOptions: Record<ProviderName, string[]>;
+  providerOptions?: ProviderName[];
 };
 
 function ModelCard({
@@ -1012,6 +1124,7 @@ function ModelCard({
   thinkingLevel,
   onThinkingChange,
   modelOptions,
+  providerOptions = LLM_PROVIDERS,
 }: ModelCardProps) {
   const modelsForProvider = modelOptions[selection.provider];
   const openAIThinkingOptions = buildOpenAIThinkingOptions(selection.model);
@@ -1034,7 +1147,7 @@ function ModelCard({
           onChange={(event) => onProviderChange(event.target.value as ProviderName)}
           className="w-full rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
         >
-          {LLM_PROVIDERS.map((provider) => (
+          {providerOptions.map((provider) => (
             <option key={provider} value={provider}>
               {provider}
             </option>
@@ -1142,8 +1255,16 @@ export function buildModelOptions(
 }
 
 function defaultModelFor(provider: ProviderName): string {
-  const models = MODEL_OPTIONS[provider];
+  const models = buildModelOptions(getRuntimePricingModels(pricingConfig.models))[provider];
   return models[0] ?? '';
+}
+
+function defaultImageModelFor(provider: ProviderName): string {
+  const models = IMAGE_MODEL_OPTIONS[provider];
+  if (models.length > 0) {
+    return models[0] ?? '';
+  }
+  return defaultModelFor(provider);
 }
 
 function normalizeSettings(
@@ -1159,8 +1280,10 @@ function normalizeSettings(
       chat: { ...DEFAULT_SETTINGS.llmModels.chat, ...payload.llmModels?.chat },
       builder: { ...DEFAULT_SETTINGS.llmModels.builder, ...payload.llmModels?.builder },
       critic: { ...DEFAULT_SETTINGS.llmModels.critic, ...payload.llmModels?.critic },
+      imaging: { ...DEFAULT_SETTINGS.llmModels.imaging, ...payload.llmModels?.imaging },
     },
     openaiThinking: normalizeOpenAIThinkingSettings(payload.openaiThinking),
+    imageryPauseMode: normalizeImageryPauseMode(payload.imageryPauseMode),
     updatedAt: payload.updatedAt ?? DEFAULT_SETTINGS.updatedAt,
   };
 
@@ -1168,6 +1291,7 @@ function normalizeSettings(
     chat: normalizeModelSelection(merged.llmModels.chat, modelOptions),
     builder: normalizeModelSelection(merged.llmModels.builder, modelOptions),
     critic: normalizeModelSelection(merged.llmModels.critic, modelOptions),
+    imaging: normalizeImageModelSelection(merged.llmModels.imaging),
   };
 
   return {
@@ -1212,6 +1336,17 @@ function normalizeModelSelection(
   return { provider, model };
 }
 
+function normalizeImageModelSelection(selection: ModelSelection): ModelSelection {
+  const provider = isProvider(selection.provider) ? selection.provider : 'openai';
+  const models = IMAGE_MODEL_OPTIONS[provider];
+  const fallbackModel = defaultImageModelFor(provider);
+  if (!selection.model || models.length === 0) {
+    return { provider, model: fallbackModel };
+  }
+  const model = models.includes(selection.model) ? selection.model : fallbackModel;
+  return { provider, model };
+}
+
 function normalizeOpenAIThinkingSettings(
   value: unknown,
 ): OpenAIThinkingSettings {
@@ -1224,6 +1359,12 @@ function normalizeOpenAIThinkingSettings(
     builder: isOpenAIReasoningSetting(value.builder) ? value.builder : defaults.builder,
     critic: isOpenAIReasoningSetting(value.critic) ? value.critic : defaults.critic,
   };
+}
+
+function normalizeImageryPauseMode(value: unknown): ImageryPauseMode {
+  return value === 'strict' || value === 'balanced' || value === 'lenient'
+    ? value
+    : DEFAULT_SETTINGS.imageryPauseMode;
 }
 
 function buildOpenAIThinkingOptions(
@@ -1441,16 +1582,33 @@ function formatShortTime(timestamp: number): string {
 function PricingGapPanel({
   pricingGaps,
   isCopying,
+  onAutoAdd,
   onCopy,
 }: {
   pricingGaps: SettingsModalProps['pricingGaps'];
   isCopying: boolean;
+  onAutoAdd: (result: { added: number; skipped: number }) => void;
   onCopy: () => void;
 }) {
+  const [isAutoAdding, setIsAutoAdding] = useState(false);
+  const effectivePricingGaps = useMemo(
+    () => filterAlreadyPricedGaps(pricingGaps),
+    [pricingGaps],
+  );
   const total =
-    (pricingGaps?.missingByProvider.openai.length ?? 0) +
-    (pricingGaps?.missingByProvider.anthropic.length ?? 0) +
-    (pricingGaps?.missingByProvider.google.length ?? 0);
+    (effectivePricingGaps?.missingByProvider.openai.length ?? 0) +
+    (effectivePricingGaps?.missingByProvider.anthropic.length ?? 0) +
+    (effectivePricingGaps?.missingByProvider.google.length ?? 0);
+
+  const handleAutoAdd = async () => {
+    if (!effectivePricingGaps || total === 0 || isAutoAdding) {
+      return;
+    }
+    setIsAutoAdding(true);
+    const result = autoAddPricingEntries(effectivePricingGaps);
+    setIsAutoAdding(false);
+    onAutoAdd(result);
+  };
 
   return (
     <div className="mt-4 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 text-xs text-slate-300">
@@ -1463,28 +1621,103 @@ function PricingGapPanel({
             {total > 0 ? `${total} unpriced model IDs detected` : 'No pricing gaps detected'}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onCopy}
-          disabled={!pricingGaps || total === 0 || isCopying}
-          className="rounded-full border border-slate-700/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-200 transition hover:border-emerald-300/70 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isCopying ? 'Copying' : 'Copy PR Checklist'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleAutoAdd}
+            disabled={!effectivePricingGaps || total === 0 || isAutoAdding}
+            className="rounded-full border border-emerald-300/50 bg-emerald-300/15 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-100 transition hover:border-emerald-200 hover:bg-emerald-300/25 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isAutoAdding ? 'Adding' : 'Auto-add Compatible'}
+          </button>
+          <button
+            type="button"
+            onClick={onCopy}
+            disabled={!effectivePricingGaps || total === 0 || isCopying}
+            className="rounded-full border border-slate-700/80 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-200 transition hover:border-emerald-300/70 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isCopying ? 'Copying' : 'Copy PR Checklist'}
+          </button>
+        </div>
       </div>
-      {pricingGaps && (
+      {effectivePricingGaps && (
         <div className="mt-3 space-y-2">
           <div className="text-[11px] text-slate-400">
-            Checked {formatLongDate(pricingGaps.checkedAt)} · Sources:{' '}
-            {pricingGaps.sources.join(', ')}
+            Checked {formatLongDate(effectivePricingGaps.checkedAt)} · Sources:{' '}
+            {effectivePricingGaps.sources.join(', ')}
           </div>
-          <ProviderGapRow label="OpenAI" ids={pricingGaps.missingByProvider.openai} />
-          <ProviderGapRow label="Anthropic" ids={pricingGaps.missingByProvider.anthropic} />
-          <ProviderGapRow label="Google" ids={pricingGaps.missingByProvider.google} />
+          <ProviderGapRow label="OpenAI" ids={effectivePricingGaps.missingByProvider.openai} />
+          <ProviderGapRow label="Anthropic" ids={effectivePricingGaps.missingByProvider.anthropic} />
+          <ProviderGapRow label="Google" ids={effectivePricingGaps.missingByProvider.google} />
         </div>
       )}
     </div>
   );
+}
+
+function filterAlreadyPricedGaps(
+  pricingGaps: SettingsModalProps['pricingGaps'],
+): SettingsModalProps['pricingGaps'] {
+  if (!pricingGaps) {
+    return pricingGaps;
+  }
+  const known = new Set(Object.keys(getRuntimePricingModels(pricingConfig.models)));
+  return {
+    ...pricingGaps,
+    missingByProvider: {
+      openai: pricingGaps.missingByProvider.openai.filter(
+        (id) =>
+          !known.has(id) &&
+          isOpenAIChatCompletionsCapableModelId(id) &&
+          resolvePricingModelId(id) !== null,
+      ),
+      anthropic: pricingGaps.missingByProvider.anthropic.filter(
+        (id) => !known.has(id) && resolvePricingModelId(id) !== null,
+      ),
+      google: pricingGaps.missingByProvider.google.filter(
+        (id) => !known.has(id) && resolvePricingModelId(id) !== null,
+      ),
+    },
+  };
+}
+
+function autoAddPricingEntries(
+  pricingGaps: NonNullable<SettingsModalProps['pricingGaps']>,
+): { added: number; skipped: number } {
+  const runtimeModels = getRuntimePricingModels(pricingConfig.models);
+  const ids = [
+    ...pricingGaps.missingByProvider.openai,
+    ...pricingGaps.missingByProvider.anthropic,
+    ...pricingGaps.missingByProvider.google,
+  ];
+  const additions: Record<string, { promptPer1K: number; completionPer1K: number }> = {};
+  let skipped = 0;
+
+  for (const modelId of ids) {
+    if (runtimeModels[modelId]) {
+      continue;
+    }
+    const resolution = resolvePricingModelId(modelId);
+    if (!resolution) {
+      skipped += 1;
+      continue;
+    }
+    const sourceRates = runtimeModels[resolution.modelId];
+    if (!sourceRates) {
+      skipped += 1;
+      continue;
+    }
+    additions[modelId] = {
+      promptPer1K: sourceRates.promptPer1K,
+      completionPer1K: sourceRates.completionPer1K,
+    };
+  }
+
+  const added = Object.keys(additions).length;
+  if (added > 0) {
+    upsertPricingOverrides(additions);
+  }
+  return { added, skipped };
 }
 
 function ProviderGapRow({ label, ids }: { label: string; ids: string[] }) {

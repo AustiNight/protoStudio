@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:unit": "vitest run tests/unit/",
     "test:integration": "vitest run tests/integration/",
+    "test:imagery": "vitest run tests/unit/engine/public-domain.test.ts tests/unit/engine/imagery-placeholders.test.ts tests/unit/engine/preview-image-assets.test.ts tests/integration/builder-loop-imagery.test.ts",
     "test:e2e": "playwright test",
     "test:watch": "vitest watch tests/unit/",
     "typecheck": "tsc --noEmit",

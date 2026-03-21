@@ -13,6 +13,8 @@ interface RuntimeSettingsDefaults {
   builderModel: string;
   criticProvider: LLMProviderName;
   criticModel: string;
+  imagingProvider: LLMProviderName;
+  imagingModel: string;
   openAIReasoning: {
     chat: OpenAIReasoningSetting;
     builder: OpenAIReasoningSetting;
@@ -40,6 +42,7 @@ const DEFAULT_IFRAME_SANDBOX = 'allow-scripts allow-forms allow-same-origin';
 const DEFAULT_CHAT_MODEL = 'gpt-5-mini';
 const DEFAULT_BUILDER_MODEL = 'gpt-5.4-mini';
 const DEFAULT_CRITIC_MODEL = 'gpt-5-mini';
+const DEFAULT_IMAGING_MODEL = 'gpt-image-1.5';
 const DEFAULT_OPENAI_REASONING: OpenAIReasoningSetting = 'xhigh';
 
 export const runtimeConfig: RuntimeConfig = {
@@ -82,6 +85,8 @@ export const runtimeConfig: RuntimeConfig = {
     builderModel: readEnvString('VITE_DEFAULT_BUILDER_MODEL', DEFAULT_BUILDER_MODEL),
     criticProvider: parseProvider(readEnv('VITE_DEFAULT_CRITIC_PROVIDER'), 'openai'),
     criticModel: readEnvString('VITE_DEFAULT_CRITIC_MODEL', DEFAULT_CRITIC_MODEL),
+    imagingProvider: parseProvider(readEnv('VITE_DEFAULT_IMAGING_PROVIDER'), 'openai'),
+    imagingModel: readEnvString('VITE_DEFAULT_IMAGING_MODEL', DEFAULT_IMAGING_MODEL),
     openAIReasoning: {
       chat: parseOpenAIReasoning(
         readEnv('VITE_OPENAI_CHAT_THINKING_LEVEL'),

@@ -57,7 +57,7 @@ export function buildBacklogPrompt(
     '- One visible change per atom.',
     '- <= 5 files touched, <= 150 lines changed.',
     '- No paid services unless the user explicitly consents.',
-    '- No user image upload; use SVG, gradients, or Unsplash.',
+    '- No user image upload; use SVG, approved HTTPS assets, generated safe raster, or Unsplash.',
     '- No autoplay media, modal-on-load, or dark patterns.',
     '- All generated site CSS uses var(--*) tokens and BEM class naming.',
     '- When a request violates guardrails: push back twice, then comply with a clear caveat.',

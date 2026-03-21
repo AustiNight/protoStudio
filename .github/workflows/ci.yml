@@ -41,6 +41,8 @@ jobs:
         run: npm run test:unit -- --passWithNoTests
       - name: Integration tests
         run: npm run test:integration -- --passWithNoTests
+      - name: Imagery regression tests
+        run: npm run test:imagery -- --passWithNoTests
       - name: Build
         run: npm run build
       - name: Bundle size gate
